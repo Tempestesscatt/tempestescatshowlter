@@ -32,6 +32,28 @@ git push origin main --force-with-lease
 
 
 
+
+
+
+
+historial
+
+# 1. Primer, crea la branca main des de master
+git branch -m master main
+
+# 2. Esborra TOTES les branques remotes excepte la que volem
+git push origin --delete master
+
+# 3. Puja la branca main neta
+git push -f origin main
+
+# 4. Si hi ha altres branques remotes (com l'antiga main)
+git push origin --delete old-branch-name
+
+
+
+
+
 ----------------------------------------------------------
 
 
