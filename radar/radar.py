@@ -290,11 +290,17 @@ def procesar_producte(config, api_key, regio):
     for dt, content in frames_candidats:
         try:
             data = process_frame(content, regio, config["clau_valor"])
+            # IMPORTANT: es guarda el frame SEMPRE, encara que no hi
+            # hagi cap punt de pluja dins la regió. Un frame "buit" és
+            # una lectura vàlida (no plou enlloc en aquell instant), i
+            # descartar-lo feia que el timestamp mostrat a la web es
+            # quedés congelat en l'últim moment amb pluja, en comptes
+            # de reflectir sempre l'instant més recent disponible.
+            frames_nous.append((dt, data))
             if data["points"]:
-                frames_nous.append((dt, data))
                 print(f"    Processat: {len(data['points']):,} punts")
             else:
-                print(f"    Buit a la regió")
+                print(f"    Buit a la regió (es guarda igualment, 0 punts)")
         except Exception as e:
             print(f"    Error: {e}")
 
