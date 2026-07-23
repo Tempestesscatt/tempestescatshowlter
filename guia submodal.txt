@@ -1,0 +1,118 @@
+================================================================================
+   GUIA: COM ACTUALITZAR EL SUBMODULE PRIVAT AL REPO PÚBLIC
+================================================================================
+
+
+================================================================================
+PASO 1: FACI UN CANVI AL REPO PRIVAT
+================================================================================
+
+1. 
+   cd ~/Documents/GitHub/joctempestes/private-scripts
+   git add .
+   git commit -m "canvi"
+   git push origin main
+
+
+PASO 2: 
+
+
+1.
+   cd ~/Documents/GitHub/joctempestes
+   git add .
+   git commit -m "canvi"
+   git push origin main
+
+   git pull origin main --rebase
+   git push origin main
+-----
+git push origin main --force-with-lease
+
+
+
+
+
+----------------------------------------------------------
+
+
+cd C:\Users\simob\Documents\GitHub\joctempestes
+git add private-scripts
+git commit -m "🔧 Actualitzada referència del submodule privat"
+git push origin main
+
+git push origin main --force
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2. Entra al submodule i restaura els fitxers de configuració:
+   cd private-scripts
+   git restore config2.json config.json 2>/dev/null || true
+   cd ..
+
+3. Actualitza el submodule:
+   git submodule update --remote
+
+4. Commit i push:
+   git add private-scripts
+   git commit -m "Update private scripts submodule"
+   git push origin main
+
+================================================================================
+LISTO! ✅
+================================================================================
+
+Els canvis del repo PRIVAT ara es reflexen al repo PÚBLIC!
+
+================================================================================
+SI HI HA ERRORS (MERGE PENDENT)
+================================================================================
+
+Si veus error "You have not concluded your merge":
+
+1. Aborteu el merge:
+   git merge --abort
+
+2. Reset al remote:
+   git reset --hard origin/main
+
+3. Força el push:
+   git push origin main --force
+
+4. Intenta de nou des del PASO 2
+
+================================================================================
+COMANDA RÀPIDA (COPIAR I ENGANXAR)
+================================================================================
+
+cd ~/Documents/GitHub/joctempestes/private-scripts
+git restore config2.json config.json 2>/dev/null || true
+cd ..
+git submodule update --remote
+git add private-scripts
+git commit -m "Update private scripts submodule"
+git push origin main
+
+================================================================================

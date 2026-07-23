@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="utf-8">
+    <title>Radar Meteorològic — NE Península Ibèrica</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent: #58a6ff;
+            --danger: #f85149;
+            --warning: #ffa726;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: var(--bg-primary); color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px; line-height: 1.5; overflow: hidden; height: 100vh;
+        }
+        #map { width:100%; height:100vh; z-index:1; background:var(--bg-primary); }
+
+        .topbar {
+            position:fixed; top:0; left:0; right:0; z-index:1000; height:56px;
+            background: rgba(13,17,23,0.88); backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px); border-bottom:1px solid var(--border);
+            display:flex; align-items:center; justify-content:space-between; padding:0 24px;
+        }
+        .topbar-brand { display:flex; align-items:center; gap:10px; }
+        .topbar-brand svg { width:20px; height:20px; color:var(--accent); }
+        .topbar-brand h1 { font-size:15px; font-weight:600; color:var(--text-primary); }
+        .topbar-brand h1 span { color:var(--text-secondary); font-weight:400; }
+        .topbar-badge {
+            font-size:11px; font-weight:500; color:var(--text-secondary);
+            background:var(--bg-tertiary); border:1px solid var(--border);
+            padding:4px 12px; border-radius:20px;
+        }
+
+        .status-bar {
+            position:fixed; top:66px; left:24px; z-index:999;
+            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
+            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
+            border-radius:var(--radius-md); padding:8px 14px; display:flex;
+            align-items:center; gap:8px; box-shadow:var(--shadow); font-size:12px;
+            color:var(--text-secondary);
+        }
+        .status-dot {
+            width:7px; height:7px; border-radius:50%; background:#3fb950;
+            animation: statusBlink 2s infinite;
+        }
+        .status-dot.offline { background:var(--danger); }
+        @keyframes statusBlink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .btn-refresh {
+            width:26px; height:26px; background:transparent; border:none;
+            color:var(--text-secondary); cursor:pointer; border-radius:50%;
+            display:inline-flex; align-items:center; justify-content:center;
+        }
+        .btn-refresh:hover { background:var(--bg-tertiary); color:var(--accent); }
+        .btn-refresh svg { width:14px; height:14px; }
+
+        .clock {
+            position:fixed; top:76px; right:24px; z-index:999;
+            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
+            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
+            border-radius:var(--radius-md); padding:14px 20px;
+            box-shadow:var(--shadow); text-align:center; min-width:100px;
+        }
+        .clock-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-muted); margin-bottom:4px; }
+        .clock-time { font-size:28px; font-weight:700; color:var(--text-primary); }
+        .clock-date { font-size:11px; color:var(--text-muted); margin-top:4px; }
+
+        .legend {
+            position:fixed; bottom:140px; right:24px; z-index:999;
+            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
+            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
+            border-radius:var(--radius-md); padding:14px; box-shadow:var(--shadow);
+        }
+        .legend-header { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-muted); text-align:center; margin-bottom:10px; }
+        .legend-body { display:flex; gap:10px; }
+        .legend-gradient { width:14px; height:140px; border-radius:4px; }
+        .legend-gradient.dbz {
+            background: linear-gradient(to bottom,
+                #00ecec 0%, #01a0f6 12%, #0000f6 25%,
+                #00f000 38%, #01c800 44%, #009000 50%,
+                #ffff00 56%, #ff9000 62%, #ff0000 69%,
+                #c00000 75%, #780000 81%, #ff00ff 88%,
+                #a020f0 94%, #ffffff 100%
+            );
+        }
+        .legend-labels {
+            display:flex; flex-direction:column; justify-content:space-between;
+            height:140px; font-size:10px; color:var(--text-secondary);
+        }
+
+        .control-bar {
+            position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:1000;
+            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
+            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
+            border-radius:var(--radius-lg); padding:6px 8px; display:flex;
+            align-items:center; gap:2px; box-shadow:var(--shadow);
+        }
+        .control-bar button {
+            height:36px; padding:0 16px; background:transparent; border:1px solid transparent;
+            color:var(--text-secondary); font-size:13px; font-weight:500; font-family:inherit;
+            border-radius:var(--radius-sm); cursor:pointer; display:inline-flex;
+            align-items:center; gap:6px; white-space:nowrap;
+        }
+        .control-bar button:hover { background:var(--bg-tertiary); color:var(--text-primary); }
+        .control-bar button.accent { color:var(--accent); }
+        .control-bar button.primary { color:var(--accent); font-weight:600; }
+        .control-bar button.primary.active { color:var(--warning); }
+        .control-bar .separator { width:1px; height:20px; background:var(--border); margin:0 6px; }
+        .control-bar .frame-counter {
+            font-size:12px; color:var(--text-muted); padding:0 12px;
+            min-width:80px; text-align:center; font-variant-numeric:tabular-nums;
+        }
+
+        .loading-overlay {
+            position:fixed; inset:0; z-index:2000; background:var(--bg-primary);
+            display:flex; align-items:center; justify-content:center;
+            transition:opacity 0.4s;
+        }
+        .loading-overlay.hidden { opacity:0; pointer-events:none; }
+        .loading-card {
+            text-align:center; padding:48px 56px; background:var(--bg-secondary);
+            border:1px solid var(--border); border-radius:var(--radius-lg);
+            box-shadow:var(--shadow);
+        }
+        .loading-spinner {
+            width:36px; height:36px; margin:0 auto 24px; position:relative;
+        }
+        .loading-spinner::before {
+            content:''; position:absolute; inset:0;
+            border:2.5px solid var(--border); border-top-color:var(--accent);
+            border-radius:50%; animation:spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .loading-title { font-size:16px; font-weight:600; color:var(--text-primary); margin-bottom:6px; }
+        .loading-subtitle { font-size:13px; color:var(--text-muted); }
+        .loading-source { margin-top:20px; font-size:11px; color:var(--text-muted); }
+        .loading-error { display:none; text-align:center; }
+        .loading-error svg { width:32px; height:32px; color:var(--danger); margin-bottom:12px; }
+        .loading-error p { color:var(--text-secondary); font-size:14px; margin-bottom:16px; }
+        .loading-error button {
+            padding:8px 20px; background:var(--bg-tertiary); color:var(--text-secondary);
+            border:1px solid var(--border); border-radius:var(--radius-sm);
+            font-size:13px; font-family:inherit; cursor:pointer;
+        }
+
+        .leaflet-control-zoom { border:1px solid var(--border)!important; border-radius:var(--radius-sm)!important; }
+        .leaflet-control-zoom a { background:rgba(13,17,23,0.88)!important; color:var(--text-secondary)!important; }
+        .leaflet-control-attribution { background:rgba(13,17,23,0.8)!important; color:var(--text-muted)!important; font-size:10px!important; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <header class="topbar">
+        <div class="topbar-brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <h1>Radar Meteorològic <span>· NE Ibèric</span></h1>
+        </div>
+        <div class="topbar-right">
+            <div class="topbar-badge">CIRRUS · dBZ</div>
+        </div>
+    </header>
+
+    <div class="status-bar" id="statusBar">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Carregant dades...</span>
+        <span style="color:var(--text-muted);font-size:11px;margin-left:4px;padding-left:8px;border-left:1px solid var(--border);">auto cada 10 min</span>
+        <button class="btn-refresh" id="btnRefresh" title="Actualitzar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+    </div>
+
+    <div class="clock">
+        <div class="clock-label">Hora Madrid</div>
+        <div class="clock-time" id="timeDisplay">--:--</div>
+        <div class="clock-date" id="dateDisplay"></div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-header">Reflectivitat (dBZ)</div>
+        <div class="legend-body">
+            <div class="legend-gradient dbz"></div>
+            <div class="legend-labels">
+                <span>75</span><span>65</span><span>55</span><span>45</span>
+                <span>35</span><span>25</span><span>15</span><span>5</span><span>-5</span>
+            </div>
+        </div>
+    </div>
+
+    <nav class="control-bar" id="bottombar">
+        <button id="btnPrev">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+            Anterior
+        </button>
+        <div class="separator"></div>
+        <span class="frame-counter" id="frameIndicator">— / —</span>
+        <div class="separator"></div>
+        <button id="btnNext">
+            Següent
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button id="btnLatest" class="accent">Actual</button>
+    </nav>
+
+    <div class="loading-overlay" id="loading">
+        <div class="loading-card">
+            <div class="loading-spinner"></div>
+            <div class="loading-title">Carregant dades del radar</div>
+            <div class="loading-subtitle">Obtenint imatges de reflectivitat</div>
+            <div class="loading-source">Font: EUMETNET · Météo-France</div>
+            <div class="loading-error" id="loadingError">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <p id="errorMessage">No s'han pogut carregar les dades</p>
+                <button onclick="location.reload()">Reintentar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="radar.js"></script>
+
+</body>
+</html>

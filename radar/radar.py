@@ -1,0 +1,317 @@
+import requests
+import h5py
+import numpy as np
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pyproj import CRS, Transformer
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# CONFIGURACIÓ
+# ---------------------------------------------------------------------------
+
+API_KEY = os.environ.get("METEOFRANCE_API_KEY")
+BASE_URL_CIRRUS = "https://partner-api.meteofrance.fr/partner/radar/opera/1.0/realtime/cirrus/composite/REFLECTIVITY/{date}?format=HDF5"
+
+OUTPUT_DIR_CIRRUS = Path("public/radar")
+
+REGIO = {"lat_min": 38.5, "lat_max": 45.0, "lon_min": -2.0, "lon_max": 5.0}
+
+CONFIG = {
+    "cirrus": {"output_dir": OUTPUT_DIR_CIRRUS, "base_url": BASE_URL_CIRRUS, "interval": 10, "frames_desitjats": 6, "clau_valor": "dbz", "label": "CIRRUS (dBZ)"}
+}
+
+MAX_FRAMES = 5
+
+# Patró del nom de fitxer d'un frame: radar_frame_DD_MM_YYYY_HHMMz.js
+FRAME_FILENAME_RE = re.compile(
+    r"^radar_frame_(\d{2})_(\d{2})_(\d{4})_(\d{2})(\d{2})Z\.js$"
+)
+
+# ---------------------------------------------------------------------------
+# FUNCIONS
+# ---------------------------------------------------------------------------
+
+def round_down_interval(dt, interval_min):
+    minute = (dt.minute // interval_min) * interval_min
+    return dt.replace(minute=minute, second=0, microsecond=0)
+
+def format_mida(b):
+    if b < 1024: return f"{b} B"
+    elif b < 1024*1024: return f"{b/1024:.1f} KB"
+    else: return f"{b/(1024*1024):.2f} MB"
+
+def frame_filename(dt_utc):
+    """Nom de fitxer per un frame, a partir del seu timestamp UTC real."""
+    return f"radar_frame_{dt_utc.strftime('%d_%m_%Y_%H%M')}Z.js"
+
+def parse_frame_filename(nom_fitxer):
+    """
+    Extreu el datetime UTC codificat al nom del fitxer, o None si el
+    nom no segueix el patró esperat (p. ex. metadata.js, status.js, o
+    un frame_N.js de la versió antiga que encara pugui quedar penjat).
+    """
+    m = FRAME_FILENAME_RE.match(nom_fitxer)
+    if not m:
+        return None
+    dia, mes, any_, hora, minut = m.groups()
+    try:
+        return datetime(int(any_), int(mes), int(dia), int(hora), int(minut), tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+def netejar_frames_dia_anterior(carpeta, avui_utc):
+    """
+    Esborra TOTS els frames (i qualsevol .js residual del format antic
+    frame_N.js) la data dels quals sigui diferent del dia d'avui (UTC).
+    Els frames del dia actual es conserven perquè es van acumulant.
+    """
+    if not carpeta.exists():
+        carpeta.mkdir(parents=True, exist_ok=True)
+        return 0
+
+    esborrats = 0
+    for f in carpeta.glob("*.js"):
+        if f.name in ("radar_metadata.js", "status.js"):
+            continue
+        dt_frame = parse_frame_filename(f.name)
+        if dt_frame is None:
+            # Format antic (frame_0.js, frame_1.js...) o desconegut:
+            # ja no té sentit mantenir-lo, es considera "d'un dia
+            # anterior" per purgar-lo net.
+            f.unlink()
+            esborrats += 1
+            continue
+        if dt_frame.date() != avui_utc:
+            f.unlink()
+            esborrats += 1
+
+    if esborrats:
+        print(f"    🗑️  Esborrats {esborrats} frames d'un dia anterior")
+    return esborrats
+
+def frames_existents(carpeta):
+    """
+    Retorna el conjunt de datetimes UTC (arrodonits a minut) dels
+    frames que ja existeixen en disc per avui, per evitar tornar a
+    descarregar el mateix instant.
+    """
+    existents = set()
+    if not carpeta.exists():
+        return existents
+    for f in carpeta.glob("radar_frame_*.js"):
+        dt_frame = parse_frame_filename(f.name)
+        if dt_frame is not None:
+            existents.add(dt_frame)
+    return existents
+
+def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_existents, max_intents=10):
+    """
+    Cerca els darrers `frames_desitjats` instants disponibles. Si un
+    instant concret ja existeix en disc (`ja_existents`), se salta la
+    descàrrega d'aquest instant (ja el tenim) però se segueix comptant
+    per completar els frames_desitjats amb instants més antics si cal.
+    """
+    now = datetime.now(timezone.utc)
+    candidate = round_down_interval(now, interval_min)
+    headers = {"accept": "application/x-hdf", "apikey": api_key}
+    frames = []
+    ja_tenim = 0
+    for i in range(max_intents):
+        if candidate in ja_existents:
+            print(f"    ↺ {candidate.strftime('%Y-%m-%dT%H%M%SZ')} ja existeix, s'omet descàrrega")
+            ja_tenim += 1
+            candidate -= timedelta(minutes=interval_min)
+            if (len(frames) + ja_tenim) >= frames_desitjats:
+                break
+            continue
+        ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
+        url = base_url.format(date=ts)
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            if resp.status_code == 200 and resp.content:
+                frames.append((candidate, resp.content))
+                print(f"    ✅ {ts} ({format_mida(len(resp.content))})")
+                if (len(frames) + ja_tenim) >= frames_desitjats: break
+            else:
+                print(f"    ❌ {ts} HTTP {resp.status_code}")
+        except Exception as e:
+            print(f"    ⚠️  {ts} Error: {e}")
+        candidate -= timedelta(minutes=interval_min)
+    return frames
+
+def is_point_in_region(lat, lon, regio):
+    return regio["lat_min"] <= lat <= regio["lat_max"] and regio["lon_min"] <= lon <= regio["lon_max"]
+
+def process_frame(h5data, regio, clau_valor):
+    """
+    Processa el frame HDF5 a MÀXIMA RESOLUCIÓ NATIVA: es recorre
+    l'array `valor` complet punt a punt (`valor_reduced = valor`, sense
+    cap pas de submostreig ni `[::N]`), de manera que no es perd cap
+    píxel disponible a la font OPERA dins de la regió d'interès.
+    """
+    with tempfile.NamedTemporaryFile(suffix='.hdf', delete=False) as tmp:
+        tmp.write(h5data)
+        tmp_path = tmp.name
+    try:
+        with h5py.File(tmp_path, "r") as f:
+            where = f["where"].attrs
+            what = f["what"].attrs
+            data_grp = f["dataset1"]["data1"]
+            raw = data_grp["data"][:]
+            dw = data_grp["what"].attrs
+            gain = float(dw.get("gain", 1.0))
+            offset = float(dw.get("offset", 0.0))
+            nodata = dw.get("nodata", None)
+            undetect = dw.get("undetect", None)
+            valor = raw.astype(float) * gain + offset
+            if nodata is not None: valor = np.where(raw == nodata, np.nan, valor)
+            if undetect is not None: valor = np.where(raw == undetect, np.nan, valor)
+            projdef = where["projdef"]
+            if isinstance(projdef, bytes): projdef = projdef.decode()
+            proj_crs = CRS.from_proj4(projdef)
+            ll_lon, ll_lat = float(where["LL_lon"]), float(where["LL_lat"])
+            ur_lon, ur_lat = float(where["UR_lon"]), float(where["UR_lat"])
+            fwd = Transformer.from_crs("EPSG:4326", proj_crs, always_xy=True)
+            x0, y0 = fwd.transform(ll_lon, ll_lat)
+            x1, y1 = fwd.transform(ur_lon, ur_lat)
+            ny, nx = valor.shape
+            xs = np.linspace(x0, x1, nx)
+            ys = np.linspace(y1, y0, ny)
+            # MÀXIMA RESOLUCIÓ: es fa servir l'array complet, sense
+            # submostrejar (no hi ha cap `[::step]` aquí).
+            valor_reduced = valor
+            xx, yy = np.meshgrid(xs, ys)
+            inv = Transformer.from_crs(proj_crs, "EPSG:4326", always_xy=True)
+            lons, lats = inv.transform(xx, yy)
+            points = []
+            min_lat, max_lat = 90, -90
+            min_lon, max_lon = 180, -180
+            for i in range(valor_reduced.shape[0]):
+                for j in range(valor_reduced.shape[1]):
+                    if not np.isnan(valor_reduced[i, j]):
+                        lat, lon = float(lats[i, j]), float(lons[i, j])
+                        if is_point_in_region(lat, lon, regio):
+                            points.append({"lat": lat, "lon": lon, clau_valor: float(valor_reduced[i, j])})
+                            if lat < min_lat: min_lat = lat
+                            if lat > max_lat: max_lat = lat
+                            if lon < min_lon: min_lon = lon
+                            if lon > max_lon: max_lon = lon
+            if len(points) == 0:
+                min_lat, max_lat = regio["lat_min"], regio["lat_max"]
+                min_lon, max_lon = regio["lon_min"], regio["lon_max"]
+            else:
+                m = 0.1; min_lat -= m; max_lat += m; min_lon -= m; max_lon += m
+            date_str = what.get("date", b"")
+            time_str = what.get("time", b"")
+            if isinstance(date_str, bytes): date_str = date_str.decode()
+            if isinstance(time_str, bytes): time_str = time_str.decode()
+            ts = str(date_str) if date_str else ""
+            if len(ts) == 8: ts = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+            ts += f"T{time_str}Z" if time_str else "T00:00:00Z"
+            return {"bounds": {"north": float(max_lat), "south": float(min_lat), "east": float(max_lon), "west": float(min_lon)}, "points": points, "timestamp": ts}
+    finally:
+        os.unlink(tmp_path)
+
+def generate_web_files(frames_nous, output_dir, interval_min, product_label, avui_utc):
+    """
+    Desa cada frame NOU amb el seu nom basat en timestamp real, i
+    després regenera radar_metadata.js llegint TOTS els frames vigents
+    (els que ja hi havia + els nous d'aquesta execució) del dia actual,
+    ordenats cronològicament.
+    """
+    for dt_frame, data in frames_nous:
+        nom = frame_filename(dt_frame)
+        js = f"""window.radarFrame = {{\n    timestamp: "{data['timestamp']}",\n    bounds: {json.dumps(data['bounds'])},\n    points: {json.dumps(data['points'], separators=(',', ':'))}\n}};"""
+        with open(output_dir / nom, 'w', encoding='utf-8') as f:
+            f.write(js)
+
+    # Reconstruir la llista de frames vigents (dia actual) directament
+    # des del disc, per tenir sempre l'estat real i no només els nous
+    # d'aquesta execució.
+    frames_vigents = []
+    for f in output_dir.glob("radar_frame_*.js"):
+        dt_frame = parse_frame_filename(f.name)
+        if dt_frame is not None and dt_frame.date() == avui_utc:
+            frames_vigents.append((dt_frame, f.name))
+    frames_vigents.sort(key=lambda x: x[0])
+
+    if not frames_vigents:
+        return False
+
+    metadata = {
+        "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "region": "NE_Espanya",
+        "product": product_label,
+        "resolution": "màxima (sense submostreig)",
+        "interval": f"{interval_min} min",
+        "frames": [
+            {"timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"), "file": nom}
+            for dt, nom in frames_vigents
+        ],
+    }
+    metadata["latest_frame"] = frames_vigents[-1][1]
+    with open(output_dir / "radar_metadata.js", 'w', encoding='utf-8') as f:
+        f.write(f"window.radarMetadata = {json.dumps(metadata, indent=2)};")
+
+    ara = datetime.now(timezone.utc)
+    with open(output_dir / "status.js", 'w', encoding='utf-8') as f:
+        f.write(
+            f"""window.radarStatus = {{\n    executedAtUTC: "{ara.strftime('%Y-%m-%dT%H:%M:%SZ')}",\n    executedAtEpochMs: {int(ara.timestamp() * 1000)},\n    framesNousAquestaExecucio: {len(frames_nous)},\n    framesVigentsAvui: {len(frames_vigents)}\n}};"""
+        )
+    print(f"    ✅ {len(frames_nous)} frames nous | {len(frames_vigents)} frames vigents avui")
+    return True
+
+def procesar_producte(config, api_key, regio):
+    label = config["label"]
+    output_dir = config["output_dir"]
+    avui_utc = datetime.now(timezone.utc).date()
+
+    print(f"\n  📡 {label}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    netejar_frames_dia_anterior(output_dir, avui_utc)
+
+    ja_existents = frames_existents(output_dir)
+    frames_candidats = find_latest_frames(
+        config["base_url"], api_key, config["interval"], config["frames_desitjats"],
+        ja_existents, MAX_FRAMES
+    )
+
+    if not frames_candidats and not ja_existents:
+        print(f"    ❌ Sense frames")
+        return False
+
+    frames_nous = []
+    for dt, content in frames_candidats:
+        try:
+            data = process_frame(content, regio, config["clau_valor"])
+            if data["points"]:
+                frames_nous.append((dt, data))
+                print(f"    Processat: {len(data['points']):,} punts")
+            else:
+                print(f"    Buit a la regió")
+        except Exception as e:
+            print(f"    Error: {e}")
+
+    return generate_web_files(frames_nous, output_dir, config["interval"], label, avui_utc)
+
+# ---------------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("  RADAR OPERA — CICLE ÚNIC")
+    print("  CIRRUS (dBZ) → public/radar/")
+    print("  Frames acumulatius per timestamp real (purga diària)")
+    print("=" * 60)
+
+    ok_cirrus = procesar_producte(CONFIG["cirrus"], API_KEY, REGIO)
+
+    print(f"\n  ✅ CIRRUS: {'OK' if ok_cirrus else 'ERROR'}")
+    sys.exit(0 if ok_cirrus else 1)

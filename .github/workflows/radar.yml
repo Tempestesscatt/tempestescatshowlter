@@ -1,0 +1,64 @@
+name: Actualitza dades radar
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  actualitzar-dades:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: radar-update
+      cancel-in-progress: true
+
+    steps:
+      - name: Clonar repositori
+        uses: actions/checkout@v4
+
+      - name: Crear carpetes de dades
+        run: |
+          mkdir -p radar/public/radar
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències del sistema (HDF5)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev
+
+      - name: Instal·lar dependències de Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests h5py numpy pyproj
+
+      - name: Executar radar.py (CIRRUS / dBZ)
+        env:
+          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cd radar
+          python -u radar.py
+
+      - name: Mostrar contingut generat
+        run: |
+          echo "--- public/radar ---"
+          ls -la radar/public/radar/ 2>/dev/null || echo "buit"
+
+      - name: Pujar dades a R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          for f in radar/public/radar/*.js; do
+            [ -e "$f" ] || continue
+            npx wrangler r2 object put "tempestes-radar-data/radar/$(basename "$f")" \
+              --file="$f" --remote --content-type="application/javascript"
+          done
