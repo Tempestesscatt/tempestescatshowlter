@@ -8,21 +8,21 @@
 
     // Dades servides des del bucket R2 (Cloudflare), no des del mateix
     // origen que la web. Actualitzat pel workflow de GitHub Actions
-    // cada 5 min sense necessitat de re-deploy de la web.
+    // cada 10 min sense necessitat de re-deploy de la web.
     const BASE_PATH = 'https://radar-data.tempestes.cat/radar';
     const VALOR_KEY = 'dbz';
-    const REFRESH_MS = 5 * 60 * 1000; // 5 min, ajusta si canvies l'interval real
+    const REFRESH_MS = 5 * 60 * 1000; // 5 min
 
     console.log('[Radar] Iniciant...');
 
     // ═══ HORA MADRID ═══
     function horaMadrid(ts) {
-        const año = ts.slice(0,4);
+        const any_ = ts.slice(0,4);
         const mes = ts.slice(5,7);
         const dia = ts.slice(8,10);
         const hh = ts.slice(11,13);
         const mm = ts.slice(13,15);
-        const d = new Date(Date.UTC(año, mes-1, dia, hh, mm, 0));
+        const d = new Date(Date.UTC(any_, mes-1, dia, hh, mm, 0));
         const madrid = new Date(d.toLocaleString('en-US', {timeZone: 'Europe/Madrid'}));
         const h = String(madrid.getHours()).padStart(2,'0');
         const m = String(madrid.getMinutes()).padStart(2,'0');
@@ -30,12 +30,12 @@
     }
 
     function dataMadrid(ts) {
-        const año = ts.slice(0,4);
+        const any_ = ts.slice(0,4);
         const mes = ts.slice(5,7);
         const dia = ts.slice(8,10);
         const hh = ts.slice(11,13);
         const mm = ts.slice(13,15);
-        const d = new Date(Date.UTC(año, mes-1, dia, hh, mm, 0));
+        const d = new Date(Date.UTC(any_, mes-1, dia, hh, mm, 0));
         const madrid = new Date(d.toLocaleString('en-US', {timeZone: 'Europe/Madrid'}));
         const dies = ['dg.','dl.','dt.','dc.','dj.','dv.','ds.'];
         return dies[madrid.getDay()] + ' ' +
@@ -45,17 +45,9 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  PALETES DE COLORS (múltiples estils seleccionables)
+    //  PALETES DE COLORS
     // ═══════════════════════════════════════════════════════════════════
-    //
-    //  Cada paleta és un array de "stops" { v, r, g, b, a }.
-    //  getColor() interpola linealment RGBA entre stops consecutius,
-    //  així que els degradats surten suaus dins de cada banda i el
-    //  "look" de cada paleta ve determinat per quins colors/talls poses.
-    //
     const PALETTES = {
-
-        // ── 1) CLÀSSICA (la que ja tenies — PRINCIPAL / per defecte) ──
         classica: {
             label: 'Clàssica dBZ',
             stops: [
@@ -83,10 +75,8 @@
                 {v:75,  r:255, g:255, b:255, a:255}
             ]
         },
-
-        // ── 2) TIPUS "WINDY" (blaus-verds-grocs-vermells més saturats i suaus) ──
         windy: {
-            label: 'Estil Windy',
+            label: 'Estil nexard',
             stops: [
                 {v:-30, r:0,   g:0,   b:0,   a:0},
                 {v:-10, r:100, g:100, b:100, a:40},
@@ -105,8 +95,6 @@
                 {v:75,  r:255, g:255, b:255, a:255}
             ]
         },
-
-        // ── 3) PASTEL / SUAU (baixa saturació, bo per fons clars de mapa) ──
         pastel: {
             label: 'Pastel suau',
             stops: [
@@ -124,8 +112,6 @@
                 {v:75,  r:235, g:225, b:245, a:255}
             ]
         },
-
-        // ── 4) ALT CONTRAST (bandes marcades, bo per llegir valors extrems ràpid) ──
         altcontrast: {
             label: 'Alt contrast',
             stops: [
@@ -146,7 +132,7 @@
     };
 
     const PALETTE_STORAGE_KEY = 'radar_palette_seleccionada';
-    let paletaActual = 'classica'; // per defecte: la principal
+    let paletaActual = 'classica';
 
     function getStops() {
         return (PALETTES[paletaActual] || PALETTES.classica).stops;
@@ -192,7 +178,7 @@
     map.getPane('paneGeojson').style.pointerEvents = 'none';
 
     // ═══════════════════════════════════════════════════════════════════
-    //  CAPA CANVAS — interpolació robusta (sense talls / "trossos romputs")
+    //  CAPA CANVAS
     // ═══════════════════════════════════════════════════════════════════
     const RadarLayer = L.Layer.extend({
         initialize: function() {
@@ -221,11 +207,10 @@
             this._render();
         },
         repaint: function() {
-            // Repinta amb la mateixa frame (per canvi de paleta, sense recarregar dades)
             this._dirty = true;
             this._render();
         },
- _drawOffscreen: function() {
+        _drawOffscreen: function() {
             if (!this._frame || !this._frame.points || !this._frame.points.length) return;
             const pts = this._frame.points;
             const b = this._frame.bounds;
@@ -254,7 +239,6 @@
             }
             this._dirty = false;
         },
-
         _render: function() {
             if (!this._frame || !this._map) return;
             if (this._dirty) this._drawOffscreen();
@@ -284,9 +268,6 @@
     radarLayer.addTo(map);
 
     // ═══ GEOJSON DE COMARQUES ═══
-    // Nota: aquests fitxers (comarques.geojson, etc.) es continuen
-    // servint des del mateix origen que la web (Cloudflare Pages),
-    // ja que no canvien cada 5 min com les dades del radar.
     let capaComarques = null;
 
     async function carregarComarques() {
@@ -310,13 +291,13 @@
                     try {
                         const geojson = JSON.parse(text);
                         processarGeoJSON(geojson);
-                        console.log('[GeoJSON] ✅ Carregat:', ruta);
+                        console.log('[GeoJSON] Carregat:', ruta);
                         return;
                     } catch(e) {}
                 }
             } catch(e) {}
         }
-        console.log('[GeoJSON] ℹ️  Sense comarques');
+        console.log('[GeoJSON] Sense comarques');
     }
 
     function processarGeoJSON(geojson) {
@@ -324,21 +305,11 @@
         capaComarques = L.geoJSON(geojson, {
             pane: 'paneGeojson',
             style: function() {
-                return {
-                    color: '#ffffff',
-                    weight: 1,
-                    opacity: 0.7,
-                    fill: false,
-                    interactive: false
-                };
+                return { color: '#ffffff', weight: 1, opacity: 0.7, fill: false, interactive: false };
             },
             onEachFeature: function(feature, layer) {
                 if (feature.properties && feature.properties.nom) {
-                    layer.bindTooltip(feature.properties.nom, {
-                        permanent: false,
-                        direction: 'center',
-                        opacity: 0.9
-                    });
+                    layer.bindTooltip(feature.properties.nom, { permanent: false, direction: 'center', opacity: 0.9 });
                 }
             }
         });
@@ -364,27 +335,44 @@
         }
     }
 
-    async function carregarDades(silenciós) {
+    function setStatus(text, offline) {
+        const st = document.getElementById('statusText');
+        const dot = document.getElementById('statusDot');
+        if (st) st.textContent = text;
+        if (dot) dot.classList.toggle('offline', !!offline);
+    }
+
+    async function carregarDades(silencios) {
         const ld = document.getElementById('loading');
-        // En els refrescos automàtics (silenciós=true) no tapem el mapa
-        // amb l'overlay de càrrega, només la primera vegada.
-        if (ld && !silenciós) ld.classList.remove('hidden');
+        if (ld && !silencios) ld.classList.remove('hidden');
 
         try {
-            // Cache-busting: sense això el navegador (o la CDN davant
-            // del bucket R2) pot servir una còpia en caché de fa uns
-            // minuts, en comptes de les dades acabades de pujar.
+            // Cache-busting: evita servir una copia en cache del CDN
+            // en comptes de les dades acabades de pujar.
             const mr = await fetch(BASE_PATH+'/radar_metadata.js?t='+Date.now(), {cache:'no-store'});
-            if (!mr.ok) { if (ld) ld.classList.add('hidden'); return; }
+            if (!mr.ok) {
+                if (ld) ld.classList.add('hidden');
+                setStatus('Error carregant dades', true);
+                return;
+            }
             const metaText = await mr.text();
-            eval(metaText);
 
-            if (!window.radarMetadata || !window.radarMetadata.frames) {
+            // Parsegem sense eval(): extraiem el JSON directament,
+            // evitant que un frame fallit deixi window.radarMetadata
+            // en un estat inconsistent.
+            const metaMatch = metaText.match(/window\.radarMetadata\s*=\s*(\{[\s\S]*\});?\s*$/);
+            if (!metaMatch) {
+                if (ld) ld.classList.add('hidden');
+                return;
+            }
+            const metadata = JSON.parse(metaMatch[1]);
+
+            if (!metadata || !metadata.frames || !metadata.frames.length) {
                 if (ld) ld.classList.add('hidden');
                 return;
             }
 
-            const framesInfo = window.radarMetadata.frames;
+            const framesInfo = metadata.frames;
             const framesNous = [];
 
             for (let i=0; i<framesInfo.length; i++) {
@@ -393,27 +381,29 @@
                     const r = await fetch(url+'?t='+Date.now(), {cache:'no-store'});
                     if (!r.ok) continue;
                     const txt = await r.text();
-                    window.radarFrame = null;
-                    eval(txt);
-                    if (window.radarFrame && window.radarFrame.points && window.radarFrame.points.length) {
+                    const frameMatch = txt.match(/window\.radarFrame\s*=\s*(\{[\s\S]*\});?\s*$/);
+                    if (!frameMatch) continue;
+                    const frame = JSON.parse(frameMatch[1]);
+                    if (frame && frame.points) {
                         framesNous.push({
-                            timestamp: window.radarFrame.timestamp,
-                            bounds: window.radarFrame.bounds,
-                            points: window.radarFrame.points
+                            timestamp: frame.timestamp,
+                            bounds: frame.bounds,
+                            points: frame.points
                         });
                     }
                 } catch(e) {}
             }
 
             if (ld) ld.classList.add('hidden');
-            if (!framesNous.length) return;
+            if (!framesNous.length) {
+                setStatus('Sense dades noves', true);
+                return;
+            }
 
-            // Si l'usuari estava mirant el frame "actual" (l'últim),
-            // el mantenim actualitzat a l'últim nou en refrescar.
             const estavaAlDarrer = (currentFrame === radarFrames.length - 1) || radarFrames.length === 0;
 
             radarFrames = framesNous;
-            console.log('[Radar] ✅ Frames:', radarFrames.length, silenciós ? '(auto-refresc)' : '(càrrega inicial)');
+            console.log('[Radar] Frames:', radarFrames.length, silencios ? '(auto-refresc)' : '(carrega inicial)');
 
             if (estavaAlDarrer) {
                 currentFrame = radarFrames.length - 1;
@@ -423,8 +413,10 @@
 
             radarLayer.setFrame(radarFrames[currentFrame]);
             updateUI();
+            setStatus('En directe', false);
         } catch(e) {
             if (ld) ld.classList.add('hidden');
+            setStatus('Error carregant dades', true);
         }
     }
 
@@ -452,7 +444,7 @@
         if (animPlaying || radarFrames.length<2) return;
         animPlaying = true;
         const btn = document.getElementById('btnPlay');
-        if (btn) { btn.textContent = '⏸ Pausa'; btn.classList.add('active'); }
+        if (btn) { btn.textContent = 'Pausa'; btn.classList.add('active'); }
         animTimer = setInterval(() => {
             currentFrame = currentFrame<radarFrames.length-1 ? currentFrame+1 : 0;
             radarLayer.setFrame(radarFrames[currentFrame]);
@@ -462,20 +454,17 @@
     function stopAnim() {
         animPlaying = false;
         const btn = document.getElementById('btnPlay');
-        if (btn) { btn.textContent = '▶ Reproduir'; btn.classList.remove('active'); }
+        if (btn) { btn.textContent = 'Reproduir'; btn.classList.remove('active'); }
         if (animTimer) { clearInterval(animTimer); animTimer = null; }
     }
     function toggleAnim() { animPlaying ? stopAnim() : startAnim(); }
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  SELECTOR DE PALETA (UI)
-    // ═══════════════════════════════════════════════════════════════════
+    // ═══ SELECTOR DE PALETA ═══
     function aplicarPaleta(clau) {
         if (!PALETTES[clau]) return;
         paletaActual = clau;
         try { localStorage.setItem(PALETTE_STORAGE_KEY, clau); } catch(e) {}
         radarLayer.repaint();
-        // Actualitza estat visual dels botons/select si existeixen
         const sel = document.getElementById('paletteSelect');
         if (sel && sel.value !== clau) sel.value = clau;
     }
@@ -498,7 +487,6 @@
             wrap.appendChild(opt);
         });
 
-        // Restaura preferència guardada si existeix
         let inicial = 'classica';
         try {
             const guardat = localStorage.getItem(PALETTE_STORAGE_KEY);
@@ -518,13 +506,13 @@
         document.getElementById('btnPrev')?.addEventListener('click', () => { stopAnim(); framePrev(); });
         document.getElementById('btnNext')?.addEventListener('click', () => { stopAnim(); frameNext(); });
         document.getElementById('btnLatest')?.addEventListener('click', () => { stopAnim(); frameLatest(); });
-        document.getElementById('btnRefresh')?.addEventListener('click', () => location.reload());
+        document.getElementById('btnRefresh')?.addEventListener('click', () => carregarDades(false));
 
         const bb = document.getElementById('bottombar');
         if (bb && !document.getElementById('btnPlay')) {
             const playBtn = document.createElement('button');
             playBtn.id = 'btnPlay';
-            playBtn.textContent = '▶ Reproduir';
+            playBtn.textContent = 'Reproduir';
             playBtn.className = 'primary';
             playBtn.title = 'Reproduir/Pausar (espai)';
             playBtn.addEventListener('click', toggleAnim);
@@ -570,21 +558,19 @@
     });
 
     // ═══ INICI ═══
-    console.log('[Radar] 🚀 Iniciant');
+    // IMPORTANT: no carreguem dades pel nostre compte. Esperem que
+    // l'autenticacio (auth.js) confirmi que l'usuari esta autoritzat
+    // abans de tocar el DOM del loading overlay, per no xocar-hi.
+    let jaIniciat = false;
 
     function iniciar() {
+        if (jaIniciat) return;
+        jaIniciat = true;
         initButtons();
         carregarComarques().then(() => carregarDades(false)).catch(() => carregarDades(false));
-
-        // Auto-refresc: torna a demanar les dades cada REFRESH_MS sense
-        // recarregar la pàgina ni mostrar l'overlay de càrrega.
         setInterval(() => carregarDades(true), REFRESH_MS);
     }
 
-    if (document.readyState==='loading') {
-        document.addEventListener('DOMContentLoaded', iniciar);
-    } else {
-        iniciar();
-    }
+    document.addEventListener('auth:autoritzat', iniciar);
 
 })();

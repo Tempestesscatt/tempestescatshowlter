@@ -40,11 +40,33 @@
         .topbar-brand svg { width:20px; height:20px; color:var(--accent); }
         .topbar-brand h1 { font-size:15px; font-weight:600; color:var(--text-primary); }
         .topbar-brand h1 span { color:var(--text-secondary); font-weight:400; }
+        .topbar-right { display:flex; align-items:center; gap:12px; }
         .topbar-badge {
             font-size:11px; font-weight:500; color:var(--text-secondary);
             background:var(--bg-tertiary); border:1px solid var(--border);
             padding:4px 12px; border-radius:20px;
         }
+
+        /* ═══ PASTILLA D'USUARI / LOGIN A LA TOPBAR ═══ */
+        .user-pill {
+            display:none; align-items:center; gap:8px; cursor:pointer;
+            background:var(--bg-tertiary); border:1px solid var(--border);
+            padding:4px 12px 4px 4px; border-radius:20px;
+        }
+        .user-pill:hover { border-color:var(--accent); }
+        .user-avatar {
+            width:24px; height:24px; border-radius:50%; background:var(--accent);
+            color:#0d1117; display:flex; align-items:center; justify-content:center;
+            font-size:12px; font-weight:700; overflow:hidden; flex-shrink:0;
+        }
+        .user-name { font-size:12px; color:var(--text-secondary); }
+        .btn-login {
+            display:inline-flex; align-items:center; gap:8px;
+            background:var(--accent); color:#0d1117; border:none;
+            padding:7px 16px; border-radius:8px; font-size:13px; font-weight:600;
+            font-family:inherit; cursor:pointer;
+        }
+        .btn-login:hover { opacity:0.9; }
 
         .status-bar {
             position:fixed; top:66px; left:24px; z-index:999;
@@ -125,6 +147,7 @@
             min-width:80px; text-align:center; font-variant-numeric:tabular-nums;
         }
 
+        /* ═══ OVERLAY DE CARREGA DEL RADAR ═══ */
         .loading-overlay {
             position:fixed; inset:0; z-index:2000; background:var(--bg-primary);
             display:flex; align-items:center; justify-content:center;
@@ -136,9 +159,7 @@
             border:1px solid var(--border); border-radius:var(--radius-lg);
             box-shadow:var(--shadow);
         }
-        .loading-spinner {
-            width:36px; height:36px; margin:0 auto 24px; position:relative;
-        }
+        .loading-spinner { width:36px; height:36px; margin:0 auto 24px; position:relative; }
         .loading-spinner::before {
             content:''; position:absolute; inset:0;
             border:2.5px solid var(--border); border-top-color:var(--accent);
@@ -148,13 +169,41 @@
         .loading-title { font-size:16px; font-weight:600; color:var(--text-primary); margin-bottom:6px; }
         .loading-subtitle { font-size:13px; color:var(--text-muted); }
         .loading-source { margin-top:20px; font-size:11px; color:var(--text-muted); }
-        .loading-error { display:none; text-align:center; }
-        .loading-error svg { width:32px; height:32px; color:var(--danger); margin-bottom:12px; }
-        .loading-error p { color:var(--text-secondary); font-size:14px; margin-bottom:16px; }
-        .loading-error button {
-            padding:8px 20px; background:var(--bg-tertiary); color:var(--text-secondary);
-            border:1px solid var(--border); border-radius:var(--radius-sm);
-            font-size:13px; font-family:inherit; cursor:pointer;
+
+        /* ═══ OVERLAY D'AUTENTICACIÓ ═══ */
+        .auth-overlay {
+            position:fixed; inset:0; z-index:3000; background:var(--bg-primary);
+            display:flex; align-items:center; justify-content:center;
+            transition:opacity 0.3s;
+        }
+        .auth-overlay.hidden { opacity:0; pointer-events:none; }
+        .auth-card {
+            text-align:center; padding:48px 44px; background:var(--bg-secondary);
+            border:1px solid var(--border); border-radius:var(--radius-lg);
+            box-shadow:var(--shadow); max-width:380px; width:90%;
+        }
+        .auth-icon {
+            width:48px; height:48px; margin:0 auto 20px; color:var(--accent);
+        }
+        .auth-title { font-size:18px; font-weight:600; color:var(--text-primary); margin-bottom:8px; }
+        .auth-subtitle { font-size:13px; color:var(--text-muted); margin-bottom:28px; line-height:1.6; }
+        .btn-google {
+            display:inline-flex; align-items:center; gap:10px; justify-content:center;
+            width:100%; background:#ffffff; color:#1f1f1f; border:none;
+            padding:12px 20px; border-radius:8px; font-size:14px; font-weight:600;
+            font-family:inherit; cursor:pointer;
+        }
+        .btn-google:hover { opacity:0.92; }
+        .btn-google:disabled { opacity:0.6; cursor:default; }
+        .btn-google svg { width:18px; height:18px; }
+        .auth-error {
+            display:none; margin-top:18px; padding:12px 16px;
+            background:rgba(248,81,73,0.1); border:1px solid rgba(248,81,73,0.3);
+            border-radius:var(--radius-sm); font-size:12.5px; line-height:1.6; text-align:left;
+        }
+        .auth-contact {
+            margin-top:22px; padding-top:18px; border-top:1px solid var(--border);
+            font-size:12px; color:var(--text-muted); line-height:1.6;
         }
 
         .leaflet-control-zoom { border:1px solid var(--border)!important; border-radius:var(--radius-sm)!important; }
@@ -173,13 +222,18 @@
         </div>
         <div class="topbar-right">
             <div class="topbar-badge">CIRRUS · dBZ</div>
+            <div class="user-pill" id="userPill">
+                <div class="user-avatar" id="userAvatar"></div>
+                <span class="user-name" id="userName"></span>
+            </div>
+            <button class="btn-login" id="btnLogin" style="display:none;">Iniciar sessió</button>
         </div>
     </header>
 
     <div class="status-bar" id="statusBar">
         <span class="status-dot" id="statusDot"></span>
         <span id="statusText">Carregant dades...</span>
-        <span style="color:var(--text-muted);font-size:11px;margin-left:4px;padding-left:8px;border-left:1px solid var(--border);">auto cada 10 min</span>
+        <span style="color:var(--text-muted);font-size:11px;margin-left:4px;padding-left:8px;border-left:1px solid var(--border);">auto cada 5 min</span>
         <button class="btn-refresh" id="btnRefresh" title="Actualitzar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
@@ -223,15 +277,136 @@
             <div class="loading-title">Carregant dades del radar</div>
             <div class="loading-subtitle">Obtenint imatges de reflectivitat</div>
             <div class="loading-source">Font: EUMETNET · Météo-France</div>
-            <div class="loading-error" id="loadingError">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                <p id="errorMessage">No s'han pogut carregar les dades</p>
-                <button onclick="location.reload()">Reintentar</button>
-            </div>
+        </div>
+    </div>
+
+    <div class="auth-overlay" id="authOverlay">
+        <div class="auth-card">
+            <svg class="auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <div class="auth-title">Accés restringit</div>
+            <div class="auth-subtitle">Aquest radar és d'ús privat. Inicia sessió amb el teu compte de Google per continuar.</div>
+            <button class="btn-google" id="btnGoogleLogin">
+                <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 16.1 3 9.3 7.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-1.9 14-5.1l-6.5-5.4C29.6 36.4 26.9 37 24 37c-5.3 0-9.7-3.3-11.3-7.9l-6.6 5.1C9.2 40.6 16 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.5 5.4C41.6 35.6 45 30.2 45 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                Iniciar sessió amb Google
+            </button>
+            <div class="auth-error" id="authError"></div>
+            <div class="auth-contact">Si vols accedir a aquest radar, contacta amb mi per demanar accés.</div>
         </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
+            authDomain: "tempestescat.firebaseapp.com",
+            projectId: "tempestescat",
+            storageBucket: "tempestescat.firebasestorage.app",
+            messagingSenderId: "683240351775",
+            appId: "1:683240351775:web:bc65d73249537b9cc28d2a"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        // Whitelist manual d'UIDs autoritzats. Per donar accés a algú
+        // nou, afegeix el seu UID de Google aquí.
+        const UIDS_AUTORITZATS = [
+            '86Ljz4YlGag8w6BxJpziaxD3cX92',
+            'VWM3W2Gi66UEHkJFPa0R0OQj27C3',
+            'xdkTCZMnsOS29WxJ3DqMccN8iYW2',
+            'xESlMcddSgWNW8g5zoK6YDkFklW2'
+        ];
+
+        const authOverlay = document.getElementById('authOverlay');
+        const btnGoogleLogin = document.getElementById('btnGoogleLogin');
+        const authError = document.getElementById('authError');
+        const userPill = document.getElementById('userPill');
+        const userAvatar = document.getElementById('userAvatar');
+        const userName = document.getElementById('userName');
+        const btnLogin = document.getElementById('btnLogin');
+        const loading = document.getElementById('loading');
+
+        function esUsuariAutoritzat(uid) {
+            return uid && UIDS_AUTORITZATS.includes(uid);
+        }
+
+        function actualitzarUI(user) {
+            if (user && esUsuariAutoritzat(user.uid)) {
+                authOverlay.classList.add('hidden');
+                userPill.style.display = 'flex';
+                btnLogin.style.display = 'none';
+                authError.style.display = 'none';
+
+                const nom = user.displayName || (user.email ? user.email.split('@')[0] : 'Usuari');
+                userName.textContent = nom;
+
+                if (user.photoURL) {
+                    userAvatar.innerHTML = '<img src="' + user.photoURL + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+                } else {
+                    userAvatar.innerHTML = '';
+                    userAvatar.textContent = nom.charAt(0).toUpperCase();
+                }
+
+                document.dispatchEvent(new CustomEvent('auth:autoritzat', { detail: user }));
+
+            } else if (user && !esUsuariAutoritzat(user.uid)) {
+                authOverlay.classList.remove('hidden');
+                authError.style.display = 'block';
+                authError.innerHTML = 'Accés denegat. Aquest compte no té accés al radar.<br><br>Si vols accedir-hi, contacta amb mi per demanar-ho.';
+                userPill.style.display = 'none';
+                btnLogin.style.display = 'none';
+                loading.classList.add('hidden');
+                signOut(auth).catch(function() {});
+
+            } else {
+                authOverlay.classList.remove('hidden');
+                authError.style.display = 'none';
+                userPill.style.display = 'none';
+                btnLogin.style.display = 'inline-flex';
+                loading.classList.add('hidden');
+            }
+        }
+
+        btnGoogleLogin.addEventListener('click', async function() {
+            try {
+                authError.style.display = 'none';
+                btnGoogleLogin.disabled = true;
+
+                const provider = new GoogleAuthProvider();
+                provider.setCustomParameters({ prompt: 'select_account' });
+
+                await signInWithPopup(auth, provider);
+
+            } catch (e) {
+                if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+                    authError.style.display = 'block';
+                    authError.innerHTML = 'Error de connexió. Torna-ho a provar.';
+                }
+            } finally {
+                btnGoogleLogin.disabled = false;
+            }
+        });
+
+        btnLogin.addEventListener('click', function() {
+            btnGoogleLogin.click();
+        });
+
+        userPill.addEventListener('click', async function() {
+            if (confirm('Vols tancar la sessió?')) {
+                await signOut(auth);
+                location.reload();
+            }
+        });
+
+        onAuthStateChanged(auth, function(user) {
+            actualitzarUI(user);
+        });
+    </script>
+
     <script src="radar.js"></script>
 
 </body>
