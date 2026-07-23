@@ -305,7 +305,7 @@
         capaComarques = L.geoJSON(geojson, {
             pane: 'paneGeojson',
             style: function() {
-                return { color: '#ffffff', weight: 1, opacity: 0.7, fill: false, interactive: false };
+                return { color: '#000000', weight: 1, opacity: 0.7, fill: false, interactive: false };
             },
             onEachFeature: function(feature, layer) {
                 if (feature.properties && feature.properties.nom) {

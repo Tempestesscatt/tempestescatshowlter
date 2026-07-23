@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from pyproj import CRS, Transformer
 from pathlib import Path
@@ -32,7 +33,19 @@ CONFIG = {
     }
 }
 
-MAX_FRAMES = 5
+# FIX: antes era 5 (< frames_desitjats), lo que dejaba casi ningun margen
+# para absorber un solo instante fallido (p.ex. el mas recent, encara no
+# publicat pel radar) sense deixar un forat definitiu. Ara hi ha marge
+# de sobres per continuar cap enrere si algun instant falla.
+MAX_FRAMES = 14
+
+# FIX: reintents amb espera nomes per l'instant MES RECENT de cada
+# execucio, que es el que sol fallar per retard de publicacio de l'API
+# (el dat encara no existeix quan es demana "ara" en punt). Reintentar
+# instants mes antics no te sentit: si no existien fa uns segons,
+# tampoc existiran ara.
+REINTENTOS_INSTANTE_MAS_RECIENTE = 3
+ESPERA_ENTRE_REINTENTOS_SEG = 5
 
 # Patro del nom de fitxer d'un frame: radar_frame_DD_MM_YYYY_HHMMz.js
 FRAME_FILENAME_RE = re.compile(
@@ -119,11 +132,39 @@ def frames_existents(carpeta):
     return existents
 
 
-def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_existents, max_intents=10):
+def descarregar_instant(url, headers, es_el_mes_recent):
+    """
+    Fa la peticio HTTP per un instant concret. Si es l'instant mes
+    recent d'aquesta execucio, reintenta amb espera abans de donar-lo
+    per fallit, ja que sol ser el que encara no ha publicat el radar.
+    Retorna (content, status_code) - content es None si falla.
+    """
+    intents = REINTENTOS_INSTANTE_MAS_RECIENTE if es_el_mes_recent else 1
+    ultim_status = None
+    for intent in range(1, intents + 1):
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            ultim_status = resp.status_code
+            if resp.status_code == 200 and resp.content:
+                return resp.content, resp.status_code
+        except Exception as e:
+            print(f"      intent {intent}: error {e}")
+        if intent < intents:
+            time.sleep(ESPERA_ENTRE_REINTENTOS_SEG)
+    return None, ultim_status
+
+
+def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_existents, max_intents=MAX_FRAMES):
     """
     Cerca els darrers instants disponibles. Si un instant concret ja
     existeix en disc, se salta la descarrega pero es segueix comptant
     per completar frames_desitjats amb instants mes antics si cal.
+
+    FIX respecte a la versio anterior: max_intents ara te marge de
+    sobres per sobre de frames_desitjats, de manera que un unic
+    instant fallit (p.ex. el mes recent, encara no publicat) no deixi
+    un forat permanent - el bucle segueix cap enrere fins completar
+    la quota real de frames, en lloc de rendir-se massa aviat.
     """
     now = datetime.now(timezone.utc)
     candidate = round_down_interval(now, interval_min)
@@ -131,6 +172,7 @@ def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_exi
     frames = []
     ja_tenim = 0
     for i in range(max_intents):
+        es_el_mes_recent = (i == 0)
         if candidate in ja_existents:
             print(f"    ja existeix {candidate.strftime('%Y-%m-%dT%H%M%SZ')}, s'omet descarrega")
             ja_tenim += 1
@@ -138,19 +180,18 @@ def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_exi
             if (len(frames) + ja_tenim) >= frames_desitjats:
                 break
             continue
+
         ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
         url = base_url.format(date=ts)
-        try:
-            resp = requests.get(url, headers=headers, timeout=15)
-            if resp.status_code == 200 and resp.content:
-                frames.append((candidate, resp.content))
-                print(f"    OK {ts} ({format_mida(len(resp.content))})")
-                if (len(frames) + ja_tenim) >= frames_desitjats:
-                    break
-            else:
-                print(f"    HTTP {resp.status_code} {ts}")
-        except Exception as e:
-            print(f"    Error {ts}: {e}")
+        content, status = descarregar_instant(url, headers, es_el_mes_recent)
+        if content is not None:
+            frames.append((candidate, content))
+            print(f"    OK {ts} ({format_mida(len(content))})")
+            if (len(frames) + ja_tenim) >= frames_desitjats:
+                break
+        else:
+            print(f"    HTTP {status} {ts} (descartat, es continua cap enrere)")
+
         candidate -= timedelta(minutes=interval_min)
     return frames
 

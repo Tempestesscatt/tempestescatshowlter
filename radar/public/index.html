@@ -1,413 +1,820 @@
 <!DOCTYPE html>
 <html lang="ca">
 <head>
-    <meta charset="utf-8">
-    <title>Radar Meteorològic — NE Península Ibèrica</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        :root {
-            --bg-primary: #0d1117;
-            --bg-secondary: #161b22;
-            --bg-tertiary: #21262d;
-            --border: #30363d;
-            --text-primary: #e6edf3;
-            --text-secondary: #8b949e;
-            --text-muted: #6e7681;
-            --accent: #58a6ff;
-            --danger: #f85149;
-            --warning: #ffa726;
-            --radius-sm: 6px;
-            --radius-md: 10px;
-            --radius-lg: 14px;
-            --shadow: 0 8px 24px rgba(0,0,0,0.4);
-        }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body {
-            background: var(--bg-primary); color: var(--text-primary);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 14px; line-height: 1.5; overflow: hidden; height: 100vh;
-        }
-        #map { width:100%; height:100vh; z-index:1; background:var(--bg-primary); }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Radar Meteorològic — NE Península Ibèrica</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --border: #30363d;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --accent: #58a6ff;
+      --danger: #f85149;
+      --warning: #ffa726;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
 
-        .topbar {
-            position:fixed; top:0; left:0; right:0; z-index:1000; height:56px;
-            background: rgba(13,17,23,0.88); backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px); border-bottom:1px solid var(--border);
-            display:flex; align-items:center; justify-content:space-between; padding:0 24px;
-        }
-        .topbar-brand { display:flex; align-items:center; gap:10px; }
-        .topbar-brand svg { width:20px; height:20px; color:var(--accent); }
-        .topbar-brand h1 { font-size:15px; font-weight:600; color:var(--text-primary); }
-        .topbar-brand h1 span { color:var(--text-secondary); font-weight:400; }
-        .topbar-right { display:flex; align-items:center; gap:12px; }
-        .topbar-badge {
-            font-size:11px; font-weight:500; color:var(--text-secondary);
-            background:var(--bg-tertiary); border:1px solid var(--border);
-            padding:4px 12px; border-radius:20px;
-        }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
 
-        /* ═══ PASTILLA D'USUARI / LOGIN A LA TOPBAR ═══ */
-        .user-pill {
-            display:none; align-items:center; gap:8px; cursor:pointer;
-            background:var(--bg-tertiary); border:1px solid var(--border);
-            padding:4px 12px 4px 4px; border-radius:20px;
-        }
-        .user-pill:hover { border-color:var(--accent); }
-        .user-avatar {
-            width:24px; height:24px; border-radius:50%; background:var(--accent);
-            color:#0d1117; display:flex; align-items:center; justify-content:center;
-            font-size:12px; font-weight:700; overflow:hidden; flex-shrink:0;
-        }
-        .user-name { font-size:12px; color:var(--text-secondary); }
-        .btn-login {
-            display:inline-flex; align-items:center; gap:8px;
-            background:var(--accent); color:#0d1117; border:none;
-            padding:7px 16px; border-radius:8px; font-size:13px; font-weight:600;
-            font-family:inherit; cursor:pointer;
-        }
-        .btn-login:hover { opacity:0.9; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      overflow: hidden;
+      height: 100vh;
+      width: 100%;
+      position: fixed;
+      touch-action: pan-x pan-y pinch-zoom;
+    }
 
-        .status-bar {
-            position:fixed; top:66px; left:24px; z-index:999;
-            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
-            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
-            border-radius:var(--radius-md); padding:8px 14px; display:flex;
-            align-items:center; gap:8px; box-shadow:var(--shadow); font-size:12px;
-            color:var(--text-secondary);
-        }
-        .status-dot {
-            width:7px; height:7px; border-radius:50%; background:#3fb950;
-            animation: statusBlink 2s infinite;
-        }
-        .status-dot.offline { background:var(--danger); }
-        @keyframes statusBlink { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        .btn-refresh {
-            width:26px; height:26px; background:transparent; border:none;
-            color:var(--text-secondary); cursor:pointer; border-radius:50%;
-            display:inline-flex; align-items:center; justify-content:center;
-        }
-        .btn-refresh:hover { background:var(--bg-tertiary); color:var(--accent); }
-        .btn-refresh svg { width:14px; height:14px; }
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: var(--bg-primary);
+    }
 
-        .clock {
-            position:fixed; top:76px; right:24px; z-index:999;
-            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
-            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
-            border-radius:var(--radius-md); padding:14px 20px;
-            box-shadow:var(--shadow); text-align:center; min-width:100px;
-        }
-        .clock-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-muted); margin-bottom:4px; }
-        .clock-time { font-size:28px; font-weight:700; color:var(--text-primary); }
-        .clock-date { font-size:11px; color:var(--text-muted); margin-top:4px; }
+    /* ----- TOP BAR ----- */
+    .topbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      height: 52px;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      gap: 12px;
+    }
 
-        .legend {
-            position:fixed; bottom:140px; right:24px; z-index:999;
-            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
-            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
-            border-radius:var(--radius-md); padding:14px; box-shadow:var(--shadow);
-        }
-        .legend-header { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-muted); text-align:center; margin-bottom:10px; }
-        .legend-body { display:flex; gap:10px; }
-        .legend-gradient { width:14px; height:140px; border-radius:4px; }
-        .legend-gradient.dbz {
-            background: linear-gradient(to bottom,
-                #00ecec 0%, #01a0f6 12%, #0000f6 25%,
-                #00f000 38%, #01c800 44%, #009000 50%,
-                #ffff00 56%, #ff9000 62%, #ff0000 69%,
-                #c00000 75%, #780000 81%, #ff00ff 88%,
-                #a020f0 94%, #ffffff 100%
-            );
-        }
-        .legend-labels {
-            display:flex; flex-direction:column; justify-content:space-between;
-            height:140px; font-size:10px; color:var(--text-secondary);
-        }
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
 
-        .control-bar {
-            position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:1000;
-            background:rgba(13,17,23,0.88); backdrop-filter:blur(20px);
-            -webkit-backdrop-filter:blur(20px); border:1px solid var(--border);
-            border-radius:var(--radius-lg); padding:6px 8px; display:flex;
-            align-items:center; gap:2px; box-shadow:var(--shadow);
-        }
-        .control-bar button {
-            height:36px; padding:0 16px; background:transparent; border:1px solid transparent;
-            color:var(--text-secondary); font-size:13px; font-weight:500; font-family:inherit;
-            border-radius:var(--radius-sm); cursor:pointer; display:inline-flex;
-            align-items:center; gap:6px; white-space:nowrap;
-        }
-        .control-bar button:hover { background:var(--bg-tertiary); color:var(--text-primary); }
-        .control-bar button.accent { color:var(--accent); }
-        .control-bar button.primary { color:var(--accent); font-weight:600; }
-        .control-bar button.primary.active { color:var(--warning); }
-        .control-bar .separator { width:1px; height:20px; background:var(--border); margin:0 6px; }
-        .control-bar .frame-counter {
-            font-size:12px; color:var(--text-muted); padding:0 12px;
-            min-width:80px; text-align:center; font-variant-numeric:tabular-nums;
-        }
+    .topbar-brand svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
 
-        /* ═══ OVERLAY DE CARREGA DEL RADAR ═══ */
-        .loading-overlay {
-            position:fixed; inset:0; z-index:2000; background:var(--bg-primary);
-            display:flex; align-items:center; justify-content:center;
-            transition:opacity 0.4s;
-        }
-        .loading-overlay.hidden { opacity:0; pointer-events:none; }
-        .loading-card {
-            text-align:center; padding:48px 56px; background:var(--bg-secondary);
-            border:1px solid var(--border); border-radius:var(--radius-lg);
-            box-shadow:var(--shadow);
-        }
-        .loading-spinner { width:36px; height:36px; margin:0 auto 24px; position:relative; }
-        .loading-spinner::before {
-            content:''; position:absolute; inset:0;
-            border:2.5px solid var(--border); border-top-color:var(--accent);
-            border-radius:50%; animation:spin 0.7s linear infinite;
-        }
-        @keyframes spin { to { transform:rotate(360deg); } }
-        .loading-title { font-size:16px; font-weight:600; color:var(--text-primary); margin-bottom:6px; }
-        .loading-subtitle { font-size:13px; color:var(--text-muted); }
-        .loading-source { margin-top:20px; font-size:11px; color:var(--text-muted); }
+    .topbar-brand h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      letter-spacing: -0.3px;
+    }
 
-        /* ═══ OVERLAY D'AUTENTICACIÓ ═══ */
-        .auth-overlay {
-            position:fixed; inset:0; z-index:3000; background:var(--bg-primary);
-            display:flex; align-items:center; justify-content:center;
-            transition:opacity 0.3s;
-        }
-        .auth-overlay.hidden { opacity:0; pointer-events:none; }
-        .auth-card {
-            text-align:center; padding:48px 44px; background:var(--bg-secondary);
-            border:1px solid var(--border); border-radius:var(--radius-lg);
-            box-shadow:var(--shadow); max-width:380px; width:90%;
-        }
-        .auth-icon {
-            width:48px; height:48px; margin:0 auto 20px; color:var(--accent);
-        }
-        .auth-title { font-size:18px; font-weight:600; color:var(--text-primary); margin-bottom:8px; }
-        .auth-subtitle { font-size:13px; color:var(--text-muted); margin-bottom:28px; line-height:1.6; }
-        .btn-google {
-            display:inline-flex; align-items:center; gap:10px; justify-content:center;
-            width:100%; background:#ffffff; color:#1f1f1f; border:none;
-            padding:12px 20px; border-radius:8px; font-size:14px; font-weight:600;
-            font-family:inherit; cursor:pointer;
-        }
-        .btn-google:hover { opacity:0.92; }
-        .btn-google:disabled { opacity:0.6; cursor:default; }
-        .btn-google svg { width:18px; height:18px; }
-        .auth-error {
-            display:none; margin-top:18px; padding:12px 16px;
-            background:rgba(248,81,73,0.1); border:1px solid rgba(248,81,73,0.3);
-            border-radius:var(--radius-sm); font-size:12.5px; line-height:1.6; text-align:left;
-        }
-        .auth-contact {
-            margin-top:22px; padding-top:18px; border-top:1px solid var(--border);
-            font-size:12px; color:var(--text-muted); line-height:1.6;
-        }
+    .topbar-brand h1 span {
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
 
-        .leaflet-control-zoom { border:1px solid var(--border)!important; border-radius:var(--radius-sm)!important; }
-        .leaflet-control-zoom a { background:rgba(13,17,23,0.88)!important; color:var(--text-secondary)!important; }
-        .leaflet-control-attribution { background:rgba(13,17,23,0.8)!important; color:var(--text-muted)!important; font-size:10px!important; }
-    </style>
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      display: none;
+    }
+
+    .user-pill {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      padding: 4px 14px 4px 4px;
+      border-radius: 24px;
+      transition: border-color 0.2s;
+    }
+
+    .user-pill:hover {
+      border-color: var(--accent);
+    }
+
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #0d1117;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .user-name {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .btn-login {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent);
+      color: #0d1117;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+    }
+
+    .btn-login:active {
+      opacity: 0.8;
+    }
+
+    /* ----- STATUS BAR (mobile friendly) ----- */
+    .status-bar {
+      position: fixed;
+      top: 62px;
+      left: 12px;
+      right: auto;
+      z-index: 999;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      color: var(--text-secondary);
+      max-width: calc(100% - 24px);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #3fb950;
+      animation: statusBlink 2s infinite;
+    }
+
+    .status-dot.offline {
+      background: var(--danger);
+    }
+
+    @keyframes statusBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .btn-refresh {
+      width: 30px;
+      height: 30px;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: auto;
+    }
+
+    .btn-refresh:active {
+      background: var(--bg-tertiary);
+      color: var(--accent);
+    }
+
+    .btn-refresh svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* ----- CLOCK (mobile adjusted) ----- */
+    .clock {
+      position: fixed;
+      top: 68px;
+      right: 12px;
+      z-index: 999;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      box-shadow: var(--shadow);
+      text-align: center;
+      min-width: 90px;
+    }
+
+    .clock-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .clock-time {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.2;
+    }
+
+    .clock-date {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* ----- LEGEND (responsive) ----- */
+    .legend {
+      position: fixed;
+      bottom: 140px;
+      right: 12px;
+      z-index: 999;
+      background: rgba(13, 17, 23, 0.9);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .legend-header {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .legend-body {
+      display: flex;
+      gap: 8px;
+    }
+
+    .legend-gradient {
+      width: 12px;
+      height: 120px;
+      border-radius: 4px;
+    }
+
+    .legend-gradient.dbz {
+      background: linear-gradient(to bottom,
+        #00ecec 0%, #01a0f6 12%, #0000f6 25%,
+        #00f000 38%, #01c800 44%, #009000 50%,
+        #ffff00 56%, #ff9000 62%, #ff0000 69%,
+        #c00000 75%, #780000 81%, #ff00ff 88%,
+        #a020f0 94%, #ffffff 100%
+      );
+    }
+
+    .legend-labels {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 120px;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+
+    /* ----- BOTTOM CONTROL BAR (mobile optimized) ----- */
+    .control-bar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(13, 17, 23, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: var(--shadow);
+      width: auto;
+      max-width: 95vw;
+    }
+
+    .control-bar button {
+      height: 40px;
+      padding: 0 14px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 500;
+      font-family: inherit;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .control-bar button:active {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .control-bar button.accent {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .control-bar .separator {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .frame-counter {
+      font-size: 12px;
+      color: var(--text-muted);
+      padding: 0 10px;
+      min-width: 70px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ----- LOADING OVERLAY ----- */
+    .loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: var(--bg-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.4s;
+    }
+
+    .loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loading-card {
+      text-align: center;
+      padding: 32px 28px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      max-width: 300px;
+      width: 85%;
+    }
+
+    .loading-spinner {
+      width: 36px;
+      height: 36px;
+      margin: 0 auto 20px;
+      position: relative;
+    }
+
+    .loading-spinner::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 2.5px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .loading-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .loading-source {
+      margin-top: 18px;
+      font-size: 11px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+
+    /* ----- AUTH OVERLAY ----- */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 3000;
+      background: var(--bg-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.3s;
+      padding: 20px;
+    }
+
+    .auth-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .auth-card {
+      text-align: center;
+      padding: 40px 24px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      max-width: 360px;
+      width: 100%;
+    }
+
+    .auth-icon {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 18px;
+      color: var(--accent);
+    }
+
+    .auth-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+
+    .auth-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+
+    .btn-google {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      justify-content: center;
+      width: 100%;
+      background: #ffffff;
+      color: #1f1f1f;
+      border: none;
+      padding: 14px 20px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-google:active {
+      opacity: 0.9;
+    }
+
+    .btn-google:disabled {
+      opacity: 0.65;
+      cursor: default;
+    }
+
+    .btn-google svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .auth-error {
+      display: none;
+      margin-top: 18px;
+      padding: 12px 14px;
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      line-height: 1.5;
+      text-align: left;
+      color: #f85149;
+    }
+
+    .auth-contact {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Leaflet overrides */
+    .leaflet-control-zoom {
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius-sm) !important;
+    }
+
+    .leaflet-control-zoom a {
+      background: rgba(13, 17, 23, 0.9) !important;
+      color: var(--text-secondary) !important;
+    }
+
+    .leaflet-control-attribution {
+      background: rgba(13, 17, 23, 0.8) !important;
+      color: var(--text-muted) !important;
+      font-size: 9px !important;
+    }
+
+    /* Media queries for smaller mobiles */
+    @media (max-width: 480px) {
+      .topbar-brand h1 {
+        font-size: 14px;
+      }
+      .control-bar button {
+        padding: 0 10px;
+        font-size: 12px;
+      }
+      .clock {
+        padding: 8px 12px;
+      }
+      .clock-time {
+        font-size: 22px;
+      }
+      .legend {
+        bottom: 130px;
+        right: 6px;
+        padding: 8px;
+      }
+      .legend-gradient {
+        height: 100px;
+      }
+      .legend-labels {
+        height: 100px;
+      }
+    }
+  </style>
 </head>
 <body>
+  <div id="map"></div>
 
-    <div id="map"></div>
-
-    <header class="topbar">
-        <div class="topbar-brand">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <h1>Radar Meteorològic <span>· NE Ibèric</span></h1>
-        </div>
-        <div class="topbar-right">
-            <div class="topbar-badge">CIRRUS · dBZ</div>
-            <div class="user-pill" id="userPill">
-                <div class="user-avatar" id="userAvatar"></div>
-                <span class="user-name" id="userName"></span>
-            </div>
-            <button class="btn-login" id="btnLogin" style="display:none;">Iniciar sessió</button>
-        </div>
-    </header>
-
-    <div class="status-bar" id="statusBar">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Carregant dades...</span>
-        <span style="color:var(--text-muted);font-size:11px;margin-left:4px;padding-left:8px;border-left:1px solid var(--border);">auto cada 5 min</span>
-        <button class="btn-refresh" id="btnRefresh" title="Actualitzar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        </button>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <h1>Tempestes.cat<span>· Radar metereológic</span></h1>
     </div>
-
-    <div class="clock">
-        <div class="clock-label">Hora Madrid</div>
-        <div class="clock-time" id="timeDisplay">--:--</div>
-        <div class="clock-date" id="dateDisplay"></div>
+    <div class="topbar-right">
+      <div class="topbar-badge">CIRRUS · dBZ</div>
+      <div class="user-pill" id="userPill">
+        <div class="user-avatar" id="userAvatar"></div>
+        <span class="user-name" id="userName"></span>
+      </div>
+      <button class="btn-login" id="btnLogin" style="display:none;">Iniciar sessió</button>
     </div>
+  </header>
 
-    <div class="legend">
-        <div class="legend-header">Reflectivitat (dBZ)</div>
-        <div class="legend-body">
-            <div class="legend-gradient dbz"></div>
-            <div class="legend-labels">
-                <span>75</span><span>65</span><span>55</span><span>45</span>
-                <span>35</span><span>25</span><span>15</span><span>5</span><span>-5</span>
-            </div>
-        </div>
+  <div class="status-bar" id="statusBar">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Carregant dades...</span>
+    <button class="btn-refresh" id="btnRefresh" title="Actualitzar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 4 23 10 17 10"/>
+        <polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="clock">
+    <div class="clock-label">Hora Madrid</div>
+    <div class="clock-time" id="timeDisplay">--:--</div>
+    <div class="clock-date" id="dateDisplay"></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-header">Reflectivitat (dBZ)</div>
+    <div class="legend-body">
+      <div class="legend-gradient dbz"></div>
+      <div class="legend-labels">
+        <span>75</span><span>65</span><span>55</span><span>45</span>
+        <span>35</span><span>25</span><span>15</span><span>5</span><span>-5</span>
+      </div>
     </div>
+  </div>
 
-    <nav class="control-bar" id="bottombar">
-        <button id="btnPrev">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-            Anterior
-        </button>
-        <div class="separator"></div>
-        <span class="frame-counter" id="frameIndicator">— / —</span>
-        <div class="separator"></div>
-        <button id="btnNext">
-            Següent
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-        <button id="btnLatest" class="accent">Actual</button>
-    </nav>
+  <nav class="control-bar" id="bottombar">
+    <button id="btnPrev" aria-label="Anterior">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      <span class="btn-text">Anterior</span>
+    </button>
+    <div class="separator"></div>
+    <span class="frame-counter" id="frameIndicator">— / —</span>
+    <div class="separator"></div>
+    <button id="btnNext" aria-label="Següent">
+      <span class="btn-text">Següent</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    </button>
+    <button id="btnLatest" class="accent">Actual</button>
+  </nav>
 
-    <div class="loading-overlay" id="loading">
-        <div class="loading-card">
-            <div class="loading-spinner"></div>
-            <div class="loading-title">Carregant dades del radar</div>
-            <div class="loading-subtitle">Obtenint imatges de reflectivitat</div>
-            <div class="loading-source">Font: EUMETNET · Météo-France</div>
-        </div>
+  <div class="loading-overlay" id="loading">
+    <div class="loading-card">
+      <div class="loading-spinner"></div>
+      <div class="loading-title">Carregant dades del radar</div>
+      <div class="loading-subtitle">Obtenint imatges de reflectivitat</div>
+      <div class="loading-source">Font: EUMETNET · Météo-France</div>
     </div>
+  </div>
 
-    <div class="auth-overlay" id="authOverlay">
-        <div class="auth-card">
-            <svg class="auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <div class="auth-title">Accés restringit</div>
-            <div class="auth-subtitle">Aquest radar és d'ús privat. Inicia sessió amb el teu compte de Google per continuar.</div>
-            <button class="btn-google" id="btnGoogleLogin">
-                <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 16.1 3 9.3 7.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-1.9 14-5.1l-6.5-5.4C29.6 36.4 26.9 37 24 37c-5.3 0-9.7-3.3-11.3-7.9l-6.6 5.1C9.2 40.6 16 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.5 5.4C41.6 35.6 45 30.2 45 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
-                Iniciar sessió amb Google
-            </button>
-            <div class="auth-error" id="authError"></div>
-            <div class="auth-contact">Si vols accedir a aquest radar, contacta amb mi per demanar accés.</div>
-        </div>
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-card">
+      <svg class="auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="11" width="18" height="10" rx="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      <div class="auth-title">Accés restringit</div>
+      <div class="auth-subtitle">Aquest radar és d'ús privat. Inicia sessió amb el teu compte de Google per continuar.</div>
+      <button class="btn-google" id="btnGoogleLogin">
+        <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.6 3 24 3 16.1 3 9.3 7.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 45c5.5 0 10.4-1.9 14-5.1l-6.5-5.4C29.6 36.4 26.9 37 24 37c-5.3 0-9.7-3.3-11.3-7.9l-6.6 5.1C9.2 40.6 16 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4 5.5l6.5 5.4C41.6 35.6 45 30.2 45 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+        Iniciar sessió amb Google
+      </button>
+      <div class="auth-error" id="authError"></div>
+      <div class="auth-contact">Si vols accedir a aquest radar, contacta amb mi per demanar accés.</div>
     </div>
+  </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
-            authDomain: "tempestescat.firebaseapp.com",
-            projectId: "tempestescat",
-            storageBucket: "tempestescat.firebasestorage.app",
-            messagingSenderId: "683240351775",
-            appId: "1:683240351775:web:bc65d73249537b9cc28d2a"
-        };
+    const firebaseConfig = {
+      apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
+      authDomain: "tempestescat.firebaseapp.com",
+      projectId: "tempestescat",
+      storageBucket: "tempestescat.firebasestorage.app",
+      messagingSenderId: "683240351775",
+      appId: "1:683240351775:web:bc65d73249537b9cc28d2a"
+    };
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
 
-        // Whitelist manual d'UIDs autoritzats. Per donar accés a algú
-        // nou, afegeix el seu UID de Google aquí.
-        const UIDS_AUTORITZATS = [
-            '86Ljz4YlGag8w6BxJpziaxD3cX92',
-            'VWM3W2Gi66UEHkJFPa0R0OQj27C3',
-            'xdkTCZMnsOS29WxJ3DqMccN8iYW2',
-            'xESlMcddSgWNW8g5zoK6YDkFklW2'
-        ];
+    const UIDS_AUTORITZATS = [
+      '86Ljz4YlGag8w6BxJpziaxD3cX92',
+      'JWZJkYclk5TZup6II3TuId9ovBM2',
+      'xESlMcddSgWNW8g5zoK6YDkFklW2',
+      'VWM3W2Gi66UEHkJFPa0R0OQj27C3',
+      'xdkTCZMnsOS29WxJ3DqMccN8iYW2'
+    ];
 
-        const authOverlay = document.getElementById('authOverlay');
-        const btnGoogleLogin = document.getElementById('btnGoogleLogin');
-        const authError = document.getElementById('authError');
-        const userPill = document.getElementById('userPill');
-        const userAvatar = document.getElementById('userAvatar');
-        const userName = document.getElementById('userName');
-        const btnLogin = document.getElementById('btnLogin');
-        const loading = document.getElementById('loading');
+    const authOverlay = document.getElementById('authOverlay');
+    const btnGoogleLogin = document.getElementById('btnGoogleLogin');
+    const authError = document.getElementById('authError');
+    const userPill = document.getElementById('userPill');
+    const userAvatar = document.getElementById('userAvatar');
+    const userName = document.getElementById('userName');
+    const btnLogin = document.getElementById('btnLogin');
+    const loading = document.getElementById('loading');
 
-        function esUsuariAutoritzat(uid) {
-            return uid && UIDS_AUTORITZATS.includes(uid);
+    function esUsuariAutoritzat(uid) {
+      return uid && UIDS_AUTORITZATS.includes(uid);
+    }
+
+    function actualitzarUI(user) {
+      if (user && esUsuariAutoritzat(user.uid)) {
+        authOverlay.classList.add('hidden');
+        userPill.style.display = 'flex';
+        btnLogin.style.display = 'none';
+        authError.style.display = 'none';
+
+        const nom = user.displayName || (user.email ? user.email.split('@')[0] : 'Usuari');
+        userName.textContent = nom;
+
+        if (user.photoURL) {
+          userAvatar.innerHTML = '<img src="' + user.photoURL + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
+        } else {
+          userAvatar.innerHTML = '';
+          userAvatar.textContent = nom.charAt(0).toUpperCase();
         }
 
-        function actualitzarUI(user) {
-            if (user && esUsuariAutoritzat(user.uid)) {
-                authOverlay.classList.add('hidden');
-                userPill.style.display = 'flex';
-                btnLogin.style.display = 'none';
-                authError.style.display = 'none';
+        document.dispatchEvent(new CustomEvent('auth:autoritzat', { detail: user }));
+      } else if (user && !esUsuariAutoritzat(user.uid)) {
+        authOverlay.classList.remove('hidden');
+        authError.style.display = 'block';
+        authError.innerHTML = 'Accés denegat. Aquest compte no té accés al radar.<br><br>Si vols accedir-hi, contacta amb mi per demanar-ho.';
+        userPill.style.display = 'none';
+        btnLogin.style.display = 'none';
+        loading.classList.add('hidden');
+        signOut(auth).catch(() => {});
+      } else {
+        authOverlay.classList.remove('hidden');
+        authError.style.display = 'none';
+        userPill.style.display = 'none';
+        btnLogin.style.display = 'inline-flex';
+        loading.classList.add('hidden');
+      }
+    }
 
-                const nom = user.displayName || (user.email ? user.email.split('@')[0] : 'Usuari');
-                userName.textContent = nom;
-
-                if (user.photoURL) {
-                    userAvatar.innerHTML = '<img src="' + user.photoURL + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">';
-                } else {
-                    userAvatar.innerHTML = '';
-                    userAvatar.textContent = nom.charAt(0).toUpperCase();
-                }
-
-                document.dispatchEvent(new CustomEvent('auth:autoritzat', { detail: user }));
-
-            } else if (user && !esUsuariAutoritzat(user.uid)) {
-                authOverlay.classList.remove('hidden');
-                authError.style.display = 'block';
-                authError.innerHTML = 'Accés denegat. Aquest compte no té accés al radar.<br><br>Si vols accedir-hi, contacta amb mi per demanar-ho.';
-                userPill.style.display = 'none';
-                btnLogin.style.display = 'none';
-                loading.classList.add('hidden');
-                signOut(auth).catch(function() {});
-
-            } else {
-                authOverlay.classList.remove('hidden');
-                authError.style.display = 'none';
-                userPill.style.display = 'none';
-                btnLogin.style.display = 'inline-flex';
-                loading.classList.add('hidden');
-            }
+    btnGoogleLogin.addEventListener('click', async () => {
+      try {
+        authError.style.display = 'none';
+        btnGoogleLogin.disabled = true;
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+          authError.style.display = 'block';
+          authError.innerHTML = 'Error de connexió. Torna-ho a provar.';
         }
+      } finally {
+        btnGoogleLogin.disabled = false;
+      }
+    });
 
-        btnGoogleLogin.addEventListener('click', async function() {
-            try {
-                authError.style.display = 'none';
-                btnGoogleLogin.disabled = true;
+    btnLogin.addEventListener('click', () => {
+      btnGoogleLogin.click();
+    });
 
-                const provider = new GoogleAuthProvider();
-                provider.setCustomParameters({ prompt: 'select_account' });
+    userPill.addEventListener('click', async () => {
+      if (confirm('Vols tancar la sessió?')) {
+        await signOut(auth);
+        location.reload();
+      }
+    });
 
-                await signInWithPopup(auth, provider);
+    onAuthStateChanged(auth, (user) => {
+      actualitzarUI(user);
+    });
+  </script>
 
-            } catch (e) {
-                if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
-                    authError.style.display = 'block';
-                    authError.innerHTML = 'Error de connexió. Torna-ho a provar.';
-                }
-            } finally {
-                btnGoogleLogin.disabled = false;
-            }
-        });
-
-        btnLogin.addEventListener('click', function() {
-            btnGoogleLogin.click();
-        });
-
-        userPill.addEventListener('click', async function() {
-            if (confirm('Vols tancar la sessió?')) {
-                await signOut(auth);
-                location.reload();
-            }
-        });
-
-        onAuthStateChanged(auth, function(user) {
-            actualitzarUI(user);
-        });
-    </script>
-
-    <script src="radar.js"></script>
-
+  <script src="radar.js"></script>
 </body>
 </html>
