@@ -252,13 +252,15 @@ def generate_web_files(frames_nous, output_dir, interval_min, product_label, avu
     """
     for dt_frame, data in frames_nous:
         nom = frame_filename(dt_frame)
-        js = (
-            "window.radarFrame = {\n"
-            f"    timestamp: \"{data['timestamp']}\",\n"
-            f"    bounds: {json.dumps(data['bounds'])},\n"
-            f"    points: {json.dumps(data['points'], separators=(',', ':'))}\n"
-            "};"
-        )
+        # IMPORTANT: cal generar JSON valid (claus entre cometes), no
+        # un literal JS informal, perque el frontend fa JSON.parse()
+        # directament sobre aquest objecte (sense eval()).
+        frame_obj = {
+            "timestamp": data["timestamp"],
+            "bounds": data["bounds"],
+            "points": data["points"],
+        }
+        js = "window.radarFrame = " + json.dumps(frame_obj, separators=(',', ':')) + ";"
         with open(output_dir / nom, 'w', encoding='utf-8') as f:
             f.write(js)
 
