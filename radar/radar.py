@@ -20,7 +20,7 @@ BASE_URL_CIRRUS = "https://partner-api.meteofrance.fr/partner/radar/opera/1.0/re
 
 OUTPUT_DIR_CIRRUS = Path("public/radar")
 
-REGIO = {"lat_min": 55.0, "lat_max": 71.5, "lon_min": 4.0, "lon_max": 31.5}
+REGIO = {"lat_min": 38.5, "lat_max": 45.0, "lon_min": -2.0, "lon_max": 5.0}
 
 CONFIG = {
     "cirrus": {
