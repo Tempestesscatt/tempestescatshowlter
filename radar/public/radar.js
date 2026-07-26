@@ -199,7 +199,8 @@
         initialize: function() {
             this._canvas = null;
             this._frame = null;
-            this._offscreen = null;
+            this._offscreen = null;   // rejilla nitida (rects tocant-se)
+            this._smooth = null;      // versio difuminada, la que es dibuixa realment
             this._dirty = true;
             this._opacity = 0.85;
         },
@@ -281,12 +282,35 @@
                 ctx.fillStyle = 'rgba('+c.r+','+c.g+','+c.b+','+(c.a/255)+')';
                 ctx.fillRect(Math.floor(x), Math.floor(y), pSize, pSize);
             }
+
+            // ═══ SUAVITZAT (blur proporcional a la mida de cel·la) ═══
+            // La rejilla de "this._offscreen" es nitida (quadrats tocant-se,
+            // sense forats). Aixo es correcte pero visualment sembla massa
+            // "pixelat" quan es fa zoom, perque es veu la resolucio real
+            // del radar (p.ex. 2km/cel·la). Per un aspecte mes natural (a
+            // l'estil Windy/RainViewer) difuminem aquesta rejilla nítida
+            // cap a un segon canvas ("this._smooth"), que es el que
+            // realment s'acaba dibuixant al mapa. El radi de blur escala
+            // amb pSize: com mes gran es cada cel·la en pantalla, mes
+            // difuminat cal per esborrar les vores dures entre cel·les.
+            if (!this._smooth || this._smooth.width !== W || this._smooth.height !== H) {
+                this._smooth = document.createElement('canvas');
+                this._smooth.width = W;
+                this._smooth.height = H;
+            }
+            const sctx = this._smooth.getContext('2d');
+            sctx.clearRect(0, 0, W, H);
+            const blurPx = Math.max(1.5, pSize * 0.55);
+            sctx.filter = 'blur(' + blurPx + 'px)';
+            sctx.drawImage(this._offscreen, 0, 0);
+            sctx.filter = 'none';
+
             this._dirty = false;
         },
         _render: function() {
             if (!this._frame || !this._map) return;
             if (this._dirty) this._drawOffscreen();
-            if (!this._offscreen) return;
+            if (!this._smooth) return;
             const size = this._map.getSize();
             const c = this._canvas;
             c.width = size.x;
@@ -294,6 +318,7 @@
             const ctx = c.getContext('2d');
             ctx.clearRect(0, 0, size.x, size.y);
             ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             L.DomUtil.setPosition(c, this._map.containerPointToLayerPoint([0,0]));
             const b = this._frame.bounds;
             const tl = this._map.latLngToContainerPoint([b.north, b.west]);
@@ -302,7 +327,7 @@
             const h = br.y - tl.y;
             if (w>0 && h>0) {
                 ctx.globalAlpha = this._opacity;
-                ctx.drawImage(this._offscreen, tl.x, tl.y, w, h);
+                ctx.drawImage(this._smooth, tl.x, tl.y, w, h);
                 ctx.globalAlpha = 1.0;
             }
         }
