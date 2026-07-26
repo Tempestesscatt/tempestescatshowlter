@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 //  radar.js — VISOR RADAR METEOROLÒGIC (NE ESPANYA)
 //  CIRRUS (dBZ) · Hora Madrid · Escala americana · Multi-paleta
+//  + Ubicació en viu (seguiment) + Alerta de dBZ fort a prop
 // ═══════════════════════════════════════════════════════════════════════
 
 (function() {
@@ -12,6 +13,17 @@
     const BASE_PATH = 'https://radar-data.tempestes.cat/radar';
     const VALOR_KEY = 'dbz';
     const REFRESH_MS = 5 * 60 * 1000; // 5 min
+
+    // ═══ CONFIG ALERTA DE PROXIMITAT ═══
+    const ALERT_DBZ_THRESHOLD = 50;   // dBZ a partir del qual avisem
+    const ALERT_RADIUS_KM = 5;        // radi de vigilància al voltant de l'usuari
+    const ALERT_RECHECK_MS = 15000;   // cada quant es reavalua l'alerta
+    const ALERT_COOLDOWN_MS = 60000;  // temps mínim entre avisos sonors repetits
+
+    // Resolucio de rejilla per defecte (metres), nomes com a fallback
+    // si algun frame no porta "resolution_m" (p.ex. dades antigues
+    // generades abans d'aquest fix).
+    const FALLBACK_RESOLUTION_M = 2000;
 
     console.log('[Radar] Iniciant...');
 
@@ -177,6 +189,9 @@
     map.getPane('paneGeojson').style.zIndex = 500;
     map.getPane('paneGeojson').style.pointerEvents = 'none';
 
+    map.createPane('paneUser');
+    map.getPane('paneUser').style.zIndex = 650;
+
     // ═══════════════════════════════════════════════════════════════════
     //  CAPA CANVAS
     // ═══════════════════════════════════════════════════════════════════
@@ -210,6 +225,9 @@
             this._dirty = true;
             this._render();
         },
+        getFrame: function() {
+            return this._frame;
+        },
         _drawOffscreen: function() {
             if (!this._frame || !this._frame.points || !this._frame.points.length) return;
             const pts = this._frame.points;
@@ -225,8 +243,34 @@
             }
             const ctx = this._offscreen.getContext('2d');
             ctx.clearRect(0, 0, W, H);
-            const zoom = this._map ? this._map.getZoom() : 8;
-            const pSize = zoom <= 7 ? 6 : zoom <= 9 ? 5 : zoom <= 11 ? 4 : 3;
+
+            // ═══ MIDA DE PUNT BASADA EN LA RESOLUCIO REAL DE DADES ═══
+            // Abans es feia servir una mida fixa segons el zoom del mapa
+            // (6/5/4/3 px), que no tenia relacio amb la densitat real de
+            // punts dins d'aquest canvas offscreen de 1024px. Si l'area
+            // geografica era gran respecte al nombre de punts, quedaven
+            // forats visibles entre quadradets (el problema reportat).
+            //
+            // Ara calculem quants graus (lat/lon) ocupa una cel·la nativa
+            // del radar (resolution_m, ve del HDF5 via xscale/yscale) i
+            // la convertim a píxels d'aquest canvas concret. Aixi els
+            // quadrats es toquen exactament sense forats artificials,
+            // independentment del zoom. Els unics "forats" que hi haura
+            // son punts reals sense dada (nodata/undetect -> NaN), que
+            // es correcte que es vegin buits.
+            const resolutionM = this._frame.resolution_m || FALLBACK_RESOLUTION_M;
+            const centerLatRad = ((b.north + b.south) / 2) * Math.PI / 180;
+            const metersPerDegLon = 111320 * Math.cos(centerLatRad);
+            const metersPerDegLat = 111320;
+            const pxPerDegLon = W / lonR;
+            const pxPerDegLat = H / latR;
+            const pxSizeX = (resolutionM / metersPerDegLon) * pxPerDegLon;
+            const pxSizeY = (resolutionM / metersPerDegLat) * pxPerDegLat;
+            // +1 px de marge per compensar l'arrodoniment de Math.floor
+            // en x,y, que sense aquest marge deixaria una escletxa d'1px
+            // entre cel·les veïnes.
+            const pSize = Math.max(1, Math.ceil(Math.max(pxSizeX, pxSizeY)) + 1);
+
             for (let i=0; i<pts.length; i++) {
                 const p = pts[i];
                 const x = (p.lon - b.west) / lonR * W;
@@ -388,7 +432,8 @@
                         framesNous.push({
                             timestamp: frame.timestamp,
                             bounds: frame.bounds,
-                            points: frame.points
+                            points: frame.points,
+                            resolution_m: frame.resolution_m || FALLBACK_RESOLUTION_M
                         });
                     }
                 } catch(e) {}
@@ -414,6 +459,7 @@
             radarLayer.setFrame(radarFrames[currentFrame]);
             updateUI();
             setStatus('En directe', false);
+            avaluarAlertaProximitat();
         } catch(e) {
             if (ld) ld.classList.add('hidden');
             setStatus('Error carregant dades', true);
@@ -502,6 +548,256 @@
         bb.appendChild(wrap);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  UBICACIÓ EN VIU + SEGUIMENT + ALERTA DE PROXIMITAT
+    // ═══════════════════════════════════════════════════════════════════
+    let watchId = null;
+    let seguimentActiu = false;   // si el mapa s'ha de recentrar sol quan et mous
+    let userMarker = null;
+    let userAccuracyCircle = null;
+    let alertRadiusCircle = null;
+    let posicioActual = null;     // {lat, lon}
+    let ultimAvisTs = 0;
+    let alertaActiva = false;
+
+    function distanciaKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2-lat1) * Math.PI/180;
+        const dLon = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(dLat/2)**2 +
+                  Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function crearIconaUsuari() {
+        return L.divIcon({
+            className: 'user-location-icon',
+            html: '<div class="ul-pulse"></div><div class="ul-dot"></div>',
+            iconSize: [22,22],
+            iconAnchor: [11,11]
+        });
+    }
+
+    function injectarEstilsUsuari() {
+        if (document.getElementById('user-location-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'user-location-styles';
+        style.textContent = `
+            .user-location-icon { position: relative; }
+            .ul-dot {
+                position:absolute; left:50%; top:50%; width:14px; height:14px;
+                margin:-7px 0 0 -7px; background:#1a73e8; border:2px solid #fff;
+                border-radius:50%; box-shadow:0 0 4px rgba(0,0,0,0.5); z-index:2;
+            }
+            .ul-pulse {
+                position:absolute; left:50%; top:50%; width:22px; height:22px;
+                margin:-11px 0 0 -11px; background:rgba(26,115,232,0.35);
+                border-radius:50%; animation: ul-pulse-anim 1.8s ease-out infinite;
+            }
+            @keyframes ul-pulse-anim {
+                0% { transform: scale(0.4); opacity: 1; }
+                100% { transform: scale(2.2); opacity: 0; }
+            }
+            #alertaProximitat {
+                position:absolute; top:14px; left:50%; transform:translateX(-50%);
+                z-index:1000; background:rgba(200,0,0,0.95); color:#fff;
+                padding:10px 18px; border-radius:10px; font-family:sans-serif;
+                font-size:14px; font-weight:600; box-shadow:0 2px 10px rgba(0,0,0,0.4);
+                display:none; align-items:center; gap:8px; animation: ul-blink 1s infinite;
+            }
+            @keyframes ul-blink {
+                0%,100% { box-shadow:0 2px 10px rgba(0,0,0,0.4); }
+                50% { box-shadow:0 2px 22px rgba(255,0,0,0.9); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function crearBannerAlerta() {
+        if (document.getElementById('alertaProximitat')) return;
+        const el = document.createElement('div');
+        el.id = 'alertaProximitat';
+        el.innerHTML = '⚠️ <span id="alertaProximitatText">Zona forta a prop</span>';
+        const mapEl = document.getElementById('map');
+        (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
+        (mapEl || document.body).appendChild(el);
+    }
+
+    function mostrarBannerAlerta(dbzMax, distKm) {
+        const el = document.getElementById('alertaProximitat');
+        const txt = document.getElementById('alertaProximitatText');
+        if (!el || !txt) return;
+        txt.textContent = 'Zona forta a ' + distKm.toFixed(1) + ' km · ' + dbzMax.toFixed(0) + ' dBZ (llindar ' + ALERT_DBZ_THRESHOLD + ')';
+        el.style.display = 'flex';
+    }
+    function amagarBannerAlerta() {
+        const el = document.getElementById('alertaProximitat');
+        if (el) el.style.display = 'none';
+    }
+
+    function reproduirSoAlerta() {
+        try {
+            const ACtx = window.AudioContext || window.webkitAudioContext;
+            if (!ACtx) return;
+            const ctx = new ACtx();
+            [0, 0.25].forEach(function(delay) {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.value = 880;
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime + delay);
+                gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + delay + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + 0.18);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(ctx.currentTime + delay);
+                osc.stop(ctx.currentTime + delay + 0.2);
+            });
+        } catch(e) {}
+    }
+
+    // Comprova el frame de radar actual i busca el punt de dBZ més alt
+    // dins del radi definit al voltant de la posició de l'usuari.
+    function avaluarAlertaProximitat() {
+        if (!posicioActual || !radarFrames.length || !radarFrames[currentFrame]) return;
+        const frame = radarFrames[currentFrame];
+        let dbzMax = -Infinity;
+        let distDelMax = null;
+
+        for (let i=0; i<frame.points.length; i++) {
+            const p = frame.points[i];
+            const v = p[VALOR_KEY];
+            if (v === undefined || v === null || isNaN(v)) continue;
+            // Filtre ràpid abans del càlcul de distància real (bounding box en graus,
+            // aprox 1° lat ≈ 111km)
+            const dLatDeg = Math.abs(p.lat - posicioActual.lat);
+            if (dLatDeg > (ALERT_RADIUS_KM/111) * 1.5) continue;
+            const d = distanciaKm(posicioActual.lat, posicioActual.lon, p.lat, p.lon);
+            if (d <= ALERT_RADIUS_KM && v > dbzMax) {
+                dbzMax = v;
+                distDelMax = d;
+            }
+        }
+
+        if (dbzMax >= ALERT_DBZ_THRESHOLD) {
+            alertaActiva = true;
+            mostrarBannerAlerta(dbzMax, distDelMax);
+            const ara = Date.now();
+            if (ara - ultimAvisTs > ALERT_COOLDOWN_MS) {
+                reproduirSoAlerta();
+                ultimAvisTs = ara;
+            }
+        } else {
+            alertaActiva = false;
+            amagarBannerAlerta();
+        }
+    }
+
+    function actualitzarMarcadorUsuari(lat, lon, accuracy) {
+        posicioActual = { lat: lat, lon: lon };
+        const ll = [lat, lon];
+
+        if (!userMarker) {
+            injectarEstilsUsuari();
+            userMarker = L.marker(ll, { icon: crearIconaUsuari(), pane: 'paneUser', zIndexOffset: 1000 }).addTo(map);
+        } else {
+            userMarker.setLatLng(ll);
+        }
+
+        if (accuracy) {
+            if (!userAccuracyCircle) {
+                userAccuracyCircle = L.circle(ll, {
+                    radius: accuracy, pane: 'paneUser',
+                    color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.08, interactive: false
+                }).addTo(map);
+            } else {
+                userAccuracyCircle.setLatLng(ll);
+                userAccuracyCircle.setRadius(accuracy);
+            }
+        }
+
+        if (!alertRadiusCircle) {
+            alertRadiusCircle = L.circle(ll, {
+                radius: ALERT_RADIUS_KM * 1000, pane: 'paneUser',
+                color: '#ff3b30', weight: 1, dashArray: '4,6',
+                fillColor: '#ff3b30', fillOpacity: 0.03, interactive: false
+            }).addTo(map);
+        } else {
+            alertRadiusCircle.setLatLng(ll);
+        }
+
+        if (seguimentActiu) {
+            map.panTo(ll, { animate: true });
+        }
+
+        avaluarAlertaProximitat();
+    }
+
+    function onPosicioError(err) {
+        console.log('[Ubicació] Error:', err.message);
+        setStatus('Sense accés a la ubicació', true);
+        const btn = document.getElementById('btnSeguirme');
+        if (btn) { btn.classList.remove('active'); btn.textContent = 'Seguir-me'; }
+        seguimentActiu = false;
+    }
+
+    function iniciarSeguimentUbicacio() {
+        if (!('geolocation' in navigator)) {
+            console.log('[Ubicació] Geolocalització no disponible en aquest navegador');
+            return;
+        }
+        if (watchId !== null) return; // ja en marxa
+        watchId = navigator.geolocation.watchPosition(
+            function(pos) {
+                actualitzarMarcadorUsuari(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+            },
+            onPosicioError,
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+        );
+    }
+
+    function aturarSeguimentUbicacio() {
+        if (watchId !== null) {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+        }
+    }
+
+    function toggleSeguiment() {
+        const btn = document.getElementById('btnSeguirme');
+        if (!seguimentActiu) {
+            seguimentActiu = true;
+            if (btn) { btn.classList.add('active'); btn.textContent = 'Seguint-te…'; }
+            iniciarSeguimentUbicacio();
+            if (posicioActual) {
+                map.setView([posicioActual.lat, posicioActual.lon], Math.max(map.getZoom(), 10), { animate: true });
+            }
+        } else {
+            seguimentActiu = false;
+            if (btn) { btn.classList.remove('active'); btn.textContent = 'Seguir-me'; }
+            // Deixem el watchPosition actiu igualment perquè seguim vigilant
+            // l'alerta de proximitat encara que no recentrem el mapa.
+        }
+    }
+
+    function initSeguimentUI() {
+        const bb = document.getElementById('bottombar');
+        if (!bb || document.getElementById('btnSeguirme')) return;
+        crearBannerAlerta();
+
+        const btn = document.createElement('button');
+        btn.id = 'btnSeguirme';
+        btn.textContent = 'Seguir-me';
+        btn.title = 'Mostra la teva ubicació en viu i centra el mapa mentre et mous';
+        btn.className = 'primary';
+        btn.addEventListener('click', toggleSeguiment);
+        bb.appendChild(btn);
+
+        // Comencem a vigilar la posició des del principi (sense recentrar)
+        // perquè l'alerta de proximitat funcioni encara que l'usuari no
+        // hagi activat el seguiment de mapa.
+        iniciarSeguimentUbicacio();
+    }
+
     function initButtons() {
         document.getElementById('btnPrev')?.addEventListener('click', () => { stopAnim(); framePrev(); });
         document.getElementById('btnNext')?.addEventListener('click', () => { stopAnim(); frameNext(); });
@@ -520,6 +816,7 @@
         }
 
         initPaletteSelector();
+        initSeguimentUI();
     }
 
     document.addEventListener('keydown', function(e) {
@@ -528,6 +825,10 @@
         if (e.key==='ArrowRight') { e.preventDefault(); stopAnim(); frameNext(); }
         if (e.key===' ') { e.preventDefault(); toggleAnim(); }
     });
+
+    // Revaluem l'alerta periòdicament (per si el frame no ha canviat
+    // però l'usuari s'ha mogut de zona)
+    setInterval(avaluarAlertaProximitat, ALERT_RECHECK_MS);
 
     // ═══ POPUP ═══
     let popupActual = null;
@@ -572,5 +873,9 @@
     }
 
     document.addEventListener('auth:autoritzat', iniciar);
+
+    window.addEventListener('beforeunload', function() {
+        aturarSeguimentUbicacio();
+    });
 
 })();

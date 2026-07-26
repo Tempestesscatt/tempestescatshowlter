@@ -52,6 +52,11 @@ FRAME_FILENAME_RE = re.compile(
     r"^radar_frame_(\d{2})_(\d{2})_(\d{4})_(\d{2})(\d{2})Z\.js$"
 )
 
+# Resolucio de rejilla per defecte (metres), nomes s'usa com a fallback
+# al frontend si el HDF5 no porta xscale/yscale (no hauria de passar
+# amb el format ODIM_H5 habitual de MeteoFrance/OPERA).
+FALLBACK_RESOLUTION_M = 2000.0
+
 # ---------------------------------------------------------------------------
 # FUNCIONS
 # ---------------------------------------------------------------------------
@@ -219,6 +224,18 @@ def process_frame(h5data, regio, clau_valor):
             offset = float(dw.get("offset", 0.0))
             nodata = dw.get("nodata", None)
             undetect = dw.get("undetect", None)
+
+            # Resolucio nativa de la rejilla (en metres). El format
+            # ODIM_H5 (OPERA/MeteoFrance) sol incloure xscale/yscale al
+            # grup "where". Es propaga al frontend perque pugui dibuixar
+            # cada punt amb la mida de cel·la exacta i evitar forats
+            # visuals quan es fa zoom (abans es feia servir una mida
+            # fixa segons el nivell de zoom, que no s'ajustava a la
+            # densitat real de punts).
+            xscale = float(where.get("xscale", 0.0) or 0.0)
+            yscale = float(where.get("yscale", xscale) or xscale)
+            resolution_m = xscale if xscale > 0 else FALLBACK_RESOLUTION_M
+
             valor = raw.astype(float) * gain + offset
             if nodata is not None:
                 valor = np.where(raw == nodata, np.nan, valor)
@@ -280,6 +297,7 @@ def process_frame(h5data, regio, clau_valor):
                 "bounds": {"north": float(max_lat), "south": float(min_lat), "east": float(max_lon), "west": float(min_lon)},
                 "points": points,
                 "timestamp": ts,
+                "resolution_m": resolution_m,
             }
     finally:
         os.unlink(tmp_path)
@@ -300,6 +318,7 @@ def generate_web_files(frames_nous, output_dir, interval_min, product_label, avu
             "timestamp": data["timestamp"],
             "bounds": data["bounds"],
             "points": data["points"],
+            "resolution_m": data.get("resolution_m", FALLBACK_RESOLUTION_M),
         }
         js = "window.radarFrame = " + json.dumps(frame_obj, separators=(',', ':')) + ";"
         with open(output_dir / nom, 'w', encoding='utf-8') as f:
