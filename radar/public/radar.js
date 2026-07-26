@@ -283,16 +283,12 @@
                 ctx.fillRect(Math.floor(x), Math.floor(y), pSize, pSize);
             }
 
-            // ═══ SUAVITZAT (blur proporcional a la mida de cel·la) ═══
-            // La rejilla de "this._offscreen" es nitida (quadrats tocant-se,
-            // sense forats). Aixo es correcte pero visualment sembla massa
-            // "pixelat" quan es fa zoom, perque es veu la resolucio real
-            // del radar (p.ex. 2km/cel·la). Per un aspecte mes natural (a
-            // l'estil Windy/RainViewer) difuminem aquesta rejilla nítida
-            // cap a un segon canvas ("this._smooth"), que es el que
-            // realment s'acaba dibuixant al mapa. El radi de blur escala
-            // amb pSize: com mes gran es cada cel·la en pantalla, mes
-            // difuminat cal per esborrar les vores dures entre cel·les.
+            // ═══ ANTIALIASING MÍNIM (estil americà NEXRAD/RadarScope) ═══
+            // L'estil americà de reflectivitat es precisament el contrari
+            // d'una taca difuminada: blocs nítids amb transicions dures
+            // de color entre cel·les. Nomes apliquem un blur minim per
+            // treure el "dentat" (aliasing) de les vores dels quadrats,
+            // sense arribar a barrejar els colors entre cel·les veïnes.
             if (!this._smooth || this._smooth.width !== W || this._smooth.height !== H) {
                 this._smooth = document.createElement('canvas');
                 this._smooth.width = W;
@@ -300,7 +296,7 @@
             }
             const sctx = this._smooth.getContext('2d');
             sctx.clearRect(0, 0, W, H);
-            const blurPx = Math.max(1.5, pSize * 0.55);
+            const blurPx = Math.max(0.4, pSize * 0.12);
             sctx.filter = 'blur(' + blurPx + 'px)';
             sctx.drawImage(this._offscreen, 0, 0);
             sctx.filter = 'none';
