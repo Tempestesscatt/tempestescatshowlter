@@ -283,12 +283,15 @@
                 ctx.fillRect(Math.floor(x), Math.floor(y), pSize, pSize);
             }
 
-            // ═══ ANTIALIASING MÍNIM (estil americà NEXRAD/RadarScope) ═══
-            // L'estil americà de reflectivitat es precisament el contrari
-            // d'una taca difuminada: blocs nítids amb transicions dures
-            // de color entre cel·les. Nomes apliquem un blur minim per
-            // treure el "dentat" (aliasing) de les vores dels quadrats,
-            // sense arribar a barrejar els colors entre cel·les veïnes.
+            // ═══ BARREJA DE COLOR (punt mig entre blocs durs i boira) ═══
+            // Ni quadrats 100% durs (es veuen "de pixel") ni un blur fort
+            // que esvaeix el color a les vores (es veu "boirós"). Aqui
+            // difuminem una mica mes que un simple antialiasing, pero
+            // despres compensem la perdua de saturacio/contrast que tot
+            // blur provoca als límits entre colors (perque barreja alfa
+            // amb zones transparents veïnes). Aixo dona una transicio
+            // suau entre cel·les mantenint els colors vius, similar als
+            // composats de reflectivitat que es veuen a RadarScope/NWS.
             if (!this._smooth || this._smooth.width !== W || this._smooth.height !== H) {
                 this._smooth = document.createElement('canvas');
                 this._smooth.width = W;
@@ -296,8 +299,8 @@
             }
             const sctx = this._smooth.getContext('2d');
             sctx.clearRect(0, 0, W, H);
-            const blurPx = Math.max(0.4, pSize * 0.12);
-            sctx.filter = 'blur(' + blurPx + 'px)';
+            const blurPx = Math.max(0.8, pSize * 0.32);
+            sctx.filter = 'blur(' + blurPx + 'px) saturate(1.25) contrast(1.08)';
             sctx.drawImage(this._offscreen, 0, 0);
             sctx.filter = 'none';
 
