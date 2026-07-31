@@ -1,11 +1,8 @@
 name: Actualitza dades radar
-
 on:
   workflow_dispatch: {}
-
 permissions:
   contents: read
-
 jobs:
   actualitzar-dades:
     runs-on: ubuntu-latest
@@ -13,30 +10,24 @@ jobs:
     concurrency:
       group: radar-update
       cancel-in-progress: true
-
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
-
       - name: Crear carpetes de dades
         run: |
           mkdir -p radar/public/radar
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Instal·lar dependències del sistema (HDF5)
         run: |
           sudo apt-get update
           sudo apt-get install -y libhdf5-dev
-
       - name: Instal·lar dependències de Python
         run: |
           python -m pip install --upgrade pip
           pip install requests h5py numpy pyproj
-
       - name: Executar radar.py (CIRRUS / dBZ)
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
@@ -44,19 +35,57 @@ jobs:
         run: |
           cd radar
           python -u radar.py
-
       - name: Mostrar contingut generat
         run: |
           echo "--- public/radar ---"
           ls -la radar/public/radar/ 2>/dev/null || echo "buit"
-
       - name: Pujar dades a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set +e  # no abortar tot el step si una comanda falla; ho gestionem nosaltres
+
+          failed_files=()
+
+          upload_with_retry() {
+            local file="$1"
+            local key="$2"
+            local max_attempts=5
+            local attempt=1
+            local delay=3
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              echo "Pujant $key (intent $attempt/$max_attempts)..."
+              if npx wrangler r2 object put "$key" \
+                  --file="$file" --remote --content-type="application/javascript"; then
+                echo "OK: $key"
+                return 0
+              fi
+
+              echo "Fallada intent $attempt per $key. Reintentant en ${delay}s..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))  # backoff exponencial: 3s, 6s, 12s, 24s
+            done
+
+            echo "ERROR DEFINITIU: no s'ha pogut pujar $key després de $max_attempts intents"
+            return 1
+          }
+
           for f in radar/public/radar/*.js; do
             [ -e "$f" ] || continue
-            npx wrangler r2 object put "tempestes-radar-data/radar/$(basename "$f")" \
-              --file="$f" --remote --content-type="application/javascript"
+            key="tempestes-radar-data/radar/$(basename "$f")"
+            if ! upload_with_retry "$f" "$key"; then
+              failed_files+=("$key")
+            fi
           done
+
+          if [ "${#failed_files[@]}" -gt 0 ]; then
+            echo ""
+            echo "Fitxers que NO s'han pogut pujar (${#failed_files[@]}):"
+            printf ' - %s\n' "${failed_files[@]}"
+            exit 1
+          fi
+
+          echo "Totes les pujades han tingut èxit."
