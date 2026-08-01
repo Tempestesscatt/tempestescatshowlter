@@ -165,28 +165,40 @@
                 {v:75,  r:255, g:255, b:255, a:255}
             ]
         },
-        // Paleta per Nimbus (mm acumulats). Els talls estan pensats
-        // per acumulacions de pluja, no per dBZ, ja que l'escala i el
-        // rang de valors son molt diferents.
+        // Paleta oficial per Nimbus (mm acumulats), fixada pel client.
+        // Es l'UNICA opcio disponible quan el producte actiu es Nimbus.
         pluja: {
             label: 'Pluja (mm)',
             stops: [
                 {v:0,   r:0,   g:0,   b:0,   a:0},
-                {v:0.2, r:120, g:190, b:230, a:90},
-                {v:1,   r:70,  g:150, b:230, a:150},
-                {v:2,   r:30,  g:110, b:220, a:190},
-                {v:4,   r:20,  g:200, b:120, a:210},
-                {v:8,   r:230, g:220, b:60,  a:220},
-                {v:15,  r:250, g:150, b:30,  a:235},
-                {v:25,  r:230, g:40,  b:40,  a:245},
-                {v:40,  r:160, g:20,  b:120, a:250},
-                {v:60,  r:255, g:255, b:255, a:255}
+                {v:0.1, r:200, g:230, b:255, a:120},
+                {v:0.5, r:100, g:200, b:255, a:160},
+                {v:1,   r:0,   g:150, b:255, a:190},
+                {v:2,   r:0,   g:100, b:200, a:210},
+                {v:5,   r:0,   g:200, b:0,   a:220},
+                {v:10,  r:100, g:255, b:0,   a:225},
+                {v:20,  r:255, g:255, b:0,   a:230},
+                {v:30,  r:255, g:200, b:0,   a:235},
+                {v:50,  r:255, g:100, b:0,   a:240},
+                {v:75,  r:255, g:0,   b:0,   a:245},
+                {v:100, r:200, g:0,   b:200, a:255}
             ]
         }
     };
 
-    const PALETTE_STORAGE_KEY = 'radar_palette_seleccionada';
+    const PALETTE_STORAGE_KEY = 'radar_palette_seleccionada'; // clau antiga (migracio)
+    function paletteStorageKeyPer(producte) {
+        return 'radar_palette_seleccionada_' + producte;
+    }
     let paletaActual = 'classica';
+
+    // Quines paletes es poden triar per cada producte. Cirrus te
+    // diverses opcions d'estil; Nimbus nomes te la paleta oficial de
+    // pluja fixada pel client (una sola opcio, no editable).
+    const PALETTES_PER_PRODUCTE = {
+        cirrus: ['classica', 'windy', 'pastel', 'altcontrast'],
+        nimbus: ['pluja'],
+    };
 
     // Selecciona automaticament una paleta coherent amb el producte
     // actiu (a menys que l'usuari ja n'hagi triat una manualment per
@@ -555,10 +567,31 @@
     function aplicarPaleta(clau) {
         if (!PALETTES[clau]) return;
         paletaActual = clau;
-        try { localStorage.setItem(PALETTE_STORAGE_KEY, clau); } catch(e) {}
+        try { localStorage.setItem(paletteStorageKeyPer(producteActual), clau); } catch(e) {}
         radarLayer.repaint();
         const sel = document.getElementById('paletteSelect');
         if (sel && sel.value !== clau) sel.value = clau;
+    }
+
+    function refrescarOpcionsPaleta() {
+        const sel = document.getElementById('paletteSelect');
+        if (!sel) return;
+        const claus = PALETTES_PER_PRODUCTE[producteActual] || Object.keys(PALETTES);
+
+        sel.innerHTML = '';
+        claus.forEach(function(clau) {
+            const opt = document.createElement('option');
+            opt.value = clau;
+            opt.textContent = PALETTES[clau].label;
+            sel.appendChild(opt);
+        });
+
+        // Amb una unica opcio (cas de Nimbus) no te sentit un selector
+        // interactiu: es deshabilita perque quedi clar que es fixa.
+        sel.disabled = (claus.length <= 1);
+        sel.title = sel.disabled
+            ? 'Paleta fixa per aquest producte'
+            : 'Estil de colors del radar';
     }
 
     function initPaletteSelector() {
@@ -567,31 +600,26 @@
 
         const wrap = document.createElement('select');
         wrap.id = 'paletteSelect';
-        wrap.title = 'Estil de colors del radar';
         wrap.style.cssText = 'margin-left:8px;padding:6px 10px;border-radius:8px;'+
             'background:rgba(13,17,23,0.9);color:#c9d1d9;border:1px solid rgba(255,255,255,0.15);'+
             'font-family:sans-serif;font-size:13px;cursor:pointer;';
-
-        Object.keys(PALETTES).forEach(function(clau) {
-            const opt = document.createElement('option');
-            opt.value = clau;
-            opt.textContent = PALETTES[clau].label;
-            wrap.appendChild(opt);
-        });
-
-        let inicial = paletaPerDefecte(producteActual);
-        try {
-            const guardat = localStorage.getItem(PALETTE_STORAGE_KEY);
-            if (guardat && PALETTES[guardat]) inicial = guardat;
-        } catch(e) {}
-        wrap.value = inicial;
-        paletaActual = inicial;
 
         wrap.addEventListener('change', function() {
             aplicarPaleta(wrap.value);
         });
 
         bb.appendChild(wrap);
+        refrescarOpcionsPaleta();
+
+        let inicial = paletaPerDefecte(producteActual);
+        try {
+            const guardat = localStorage.getItem(paletteStorageKeyPer(producteActual));
+            if (guardat && PALETTES[guardat] && (PALETTES_PER_PRODUCTE[producteActual] || []).includes(guardat)) {
+                inicial = guardat;
+            }
+        } catch(e) {}
+        wrap.value = inicial;
+        paletaActual = inicial;
     }
 
     // ═══ SELECTOR DE PRODUCTE (CIRRUS / NIMBUS) ═══
@@ -607,17 +635,19 @@
         stopAnim();
         radarFrames = [];
         currentFrame = 0;
+        vistaAcumulada = false;
         radarLayer.setFrame(null);
         updateUI();
+        actualitzarBotoAcumulat();
 
-        // Si l'usuari no ha triat mai una paleta manualment per aquest
-        // producte, li apliquem la paleta per defecte corresponent
-        // (classica per Cirrus, pluja per Nimbus).
+        // Cada producte recorda la seva propia paleta preferida (clau
+        // per producte). Si l'usuari mai ha triat una per aquest
+        // producte concret, s'aplica la paleta per defecte.
+        refrescarOpcionsPaleta();
         let paletaGuardada = null;
-        try { paletaGuardada = localStorage.getItem(PALETTE_STORAGE_KEY); } catch(e) {}
-        if (!paletaGuardada) {
-            aplicarPaleta(paletaPerDefecte(clau));
-        }
+        try { paletaGuardada = localStorage.getItem(paletteStorageKeyPer(clau)); } catch(e) {}
+        const opcionsValides = PALETTES_PER_PRODUCTE[clau] || [];
+        aplicarPaleta((paletaGuardada && opcionsValides.includes(paletaGuardada)) ? paletaGuardada : paletaPerDefecte(clau));
 
         const sel = document.getElementById('productSelect');
         if (sel && sel.value !== clau) sel.value = clau;
@@ -915,6 +945,85 @@
         iniciarSeguimentUbicacio();
     }
 
+    // ═══ VISTA: EN DIRECTE vs ACUMULAT DIARI (nomes Nimbus) ═══
+    // L'acumulat diari es un fitxer apart generat pel backend
+    // (radar_daily_nimbus.js), NO forma part de la llista de frames
+    // navegables: es un unic "mapa" que sempre mostra el total del
+    // dia fins al moment.
+    let vistaAcumulada = false;
+    let frameAcumulatDiari = null; // { bounds, points, resolution_m, ... }
+
+    async function carregarAcumulatDiari() {
+        if (producteActual !== 'nimbus') return;
+        try {
+            const url = BASE_PATH + '/radar_daily_nimbus.js?t=' + Date.now();
+            const r = await fetch(url, {cache:'no-store'});
+            if (!r.ok) { frameAcumulatDiari = null; return; }
+            const txt = await r.text();
+            const m = txt.match(/window\.radarDaily\s*=\s*(\{[\s\S]*\});?\s*$/);
+            if (!m) { frameAcumulatDiari = null; return; }
+            const obj = JSON.parse(m[1]);
+            frameAcumulatDiari = {
+                timestamp: obj.updated,
+                bounds: obj.bounds,
+                points: obj.points,
+                resolution_m: obj.resolution_m || FALLBACK_RESOLUTION_M,
+                hores_comptades: obj.hores_comptades || 0
+            };
+        } catch(e) {
+            frameAcumulatDiari = null;
+        }
+    }
+
+    function actualitzarBotoAcumulat() {
+        const btn = document.getElementById('btnAcumulatDiari');
+        if (!btn) return;
+        // Nomes te sentit amb Nimbus: s'amaga per Cirrus.
+        btn.style.display = (producteActual === 'nimbus') ? '' : 'none';
+        btn.textContent = vistaAcumulada ? 'En directe' : 'Acumulat diari';
+        btn.classList.toggle('active', vistaAcumulada);
+    }
+
+    async function toggleVistaAcumulada() {
+        if (producteActual !== 'nimbus') return;
+        vistaAcumulada = !vistaAcumulada;
+        actualitzarBotoAcumulat();
+
+        if (vistaAcumulada) {
+            stopAnim();
+            await carregarAcumulatDiari();
+            if (frameAcumulatDiari) {
+                radarLayer.setFrame(frameAcumulatDiari);
+                setStatus('Acumulat diari · '+(frameAcumulatDiari.hores_comptades)+'h comptades', false);
+                const td = document.getElementById('timeDisplay');
+                const dd = document.getElementById('dateDisplay');
+                if (td) td.textContent = 'Acumulat';
+                if (dd) dd.textContent = dataMadrid(frameAcumulatDiari.timestamp);
+            } else {
+                setStatus('Encara no hi ha acumulat diari', true);
+            }
+        } else {
+            // Tornem a la vista en directe amb el frame que tocava.
+            if (radarFrames[currentFrame]) {
+                radarLayer.setFrame(radarFrames[currentFrame]);
+                updateUI();
+                setStatus('En directe', false);
+            }
+        }
+    }
+
+    function initBotoAcumulatDiari() {
+        const bb = document.getElementById('bottombar');
+        if (!bb || document.getElementById('btnAcumulatDiari')) return;
+        const btn = document.createElement('button');
+        btn.id = 'btnAcumulatDiari';
+        btn.className = 'primary';
+        btn.title = 'Mostra la pluja total acumulada avui (nomes Nimbus)';
+        btn.addEventListener('click', toggleVistaAcumulada);
+        bb.appendChild(btn);
+        actualitzarBotoAcumulat();
+    }
+
     function initButtons() {
         document.getElementById('btnPrev')?.addEventListener('click', () => { stopAnim(); framePrev(); });
         document.getElementById('btnNext')?.addEventListener('click', () => { stopAnim(); frameNext(); });
@@ -934,6 +1043,7 @@
 
         initProductSelector();
         initPaletteSelector();
+        initBotoAcumulatDiari();
         initSeguimentUI();
     }
 
