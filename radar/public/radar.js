@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 //  radar.js — VISOR RADAR METEOROLÒGIC (NE ESPANYA)
-//  CIRRUS (dBZ) + NIMBUS (dBZ) · Hora Madrid · Escala americana · Multi-paleta
+//  CIRRUS (dBZ) / NIMBUS (mm) · Hora Madrid · Escala americana · Multi-paleta
 //  + Ubicació en viu (seguiment) + Alerta de dBZ fort a prop
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -11,26 +11,34 @@
     // origen que la web. Actualitzat pel workflow de GitHub Actions
     // cada 10 min sense necessitat de re-deploy de la web.
     const BASE_PATH = 'https://radar-data.tempestes.cat/radar';
-    const VALOR_KEY = 'dbz';
     const REFRESH_MS = 5 * 60 * 1000; // 5 min
 
-    // Productes disponibles: Cirrus i Nimbus
-    const PRODUCTES = {
+    // ═══ PRODUCTES DISPONIBLES ═══
+    // Cada producte te el seu propi fitxer de metadata (generat pel
+    // script de Python amb el "filename_prefix" corresponent) i la
+    // seva propia clau de valor dins de cada punt.
+    const PRODUCTS = {
         cirrus: {
             label: 'CIRRUS (dBZ)',
             metadataFile: 'radar_metadata.js',
-            filenamePrefix: ''  // els frames de cirrus no tenen prefix
+            valorKey: 'dbz',
+            unitat: 'dBZ',
+            nomCamp: 'Reflectivitat'
         },
         nimbus: {
-            label: 'NIMBUS (dBZ)',
+            label: 'NIMBUS (mm)',
             metadataFile: 'radar_metadata_nimbus.js',
-            filenamePrefix: 'nimbus_'  // els frames de nimbus tenen prefix "nimbus_"
+            valorKey: 'rain_mm',
+            unitat: 'mm',
+            nomCamp: 'Precipitació acumulada'
         }
     };
-    const PRODUCTE_STORAGE_KEY = 'radar_producte_seleccionat';
-    let producteActual = 'cirrus';  // per defecte
+    const PRODUCT_STORAGE_KEY = 'radar_producte_seleccionat';
+    let producteActual = 'cirrus';
+    let VALOR_KEY = PRODUCTS[producteActual].valorKey;
 
     // ═══ CONFIG ALERTA DE PROXIMITAT ═══
+    // Nomes te sentit amb Cirrus (dBZ). Amb Nimbus es desactiva.
     const ALERT_DBZ_THRESHOLD = 50;   // dBZ a partir del qual avisem
     const ALERT_RADIUS_KM = 5;        // radi de vigilància al voltant de l'usuari
     const ALERT_RECHECK_MS = 15000;   // cada quant es reavalua l'alerta
@@ -115,7 +123,7 @@
                 {v:28,  r:120, g:220, b:70,  a:220},
                 {v:34,  r:230, g:220, b:60,  a:225},
                 {v:40,  r:250, g:170, b:40,  a:235},
-                {v:46,  r:245, g:100, b:40,  a:235},
+                {v:46,  r:245, g:100, b:40,  a:240},
                 {v:52,  r:230, g:50,  b:40,  a:245},
                 {v:58,  r:180, g:30,  b:90,  a:250},
                 {v:64,  r:150, g:30,  b:170, a:255},
@@ -156,11 +164,36 @@
                 {v:65,  r:110, g:0,   b:180, a:255},
                 {v:75,  r:255, g:255, b:255, a:255}
             ]
+        },
+        // Paleta per Nimbus (mm acumulats). Els talls estan pensats
+        // per acumulacions de pluja, no per dBZ, ja que l'escala i el
+        // rang de valors son molt diferents.
+        pluja: {
+            label: 'Pluja (mm)',
+            stops: [
+                {v:0,   r:0,   g:0,   b:0,   a:0},
+                {v:0.2, r:120, g:190, b:230, a:90},
+                {v:1,   r:70,  g:150, b:230, a:150},
+                {v:2,   r:30,  g:110, b:220, a:190},
+                {v:4,   r:20,  g:200, b:120, a:210},
+                {v:8,   r:230, g:220, b:60,  a:220},
+                {v:15,  r:250, g:150, b:30,  a:235},
+                {v:25,  r:230, g:40,  b:40,  a:245},
+                {v:40,  r:160, g:20,  b:120, a:250},
+                {v:60,  r:255, g:255, b:255, a:255}
+            ]
         }
     };
 
     const PALETTE_STORAGE_KEY = 'radar_palette_seleccionada';
     let paletaActual = 'classica';
+
+    // Selecciona automaticament una paleta coherent amb el producte
+    // actiu (a menys que l'usuari ja n'hagi triat una manualment per
+    // aquest producte concret).
+    function paletaPerDefecte(producte) {
+        return producte === 'nimbus' ? 'pluja' : 'classica';
+    }
 
     function getStops() {
         return (PALETTES[paletaActual] || PALETTES.classica).stops;
@@ -215,8 +248,7 @@
         initialize: function() {
             this._canvas = null;
             this._frame = null;
-            this._offscreen = null;   // rejilla nitida (rects tocant-se)
-            this._smooth = null;      // versio difuminada, la que es dibuixa realment
+            this._offscreen = null;
             this._dirty = true;
             this._opacity = 0.85;
         },
@@ -261,6 +293,7 @@
             const ctx = this._offscreen.getContext('2d');
             ctx.clearRect(0, 0, W, H);
 
+            // ═══ MIDA DE PUNT BASADA EN LA RESOLUCIO REAL DE DADES ═══
             const resolutionM = this._frame.resolution_m || FALLBACK_RESOLUTION_M;
             const centerLatRad = ((b.north + b.south) / 2) * Math.PI / 180;
             const metersPerDegLon = 111320 * Math.cos(centerLatRad);
@@ -281,25 +314,12 @@
                 ctx.fillStyle = 'rgba('+c.r+','+c.g+','+c.b+','+(c.a/255)+')';
                 ctx.fillRect(Math.floor(x), Math.floor(y), pSize, pSize);
             }
-
-            if (!this._smooth || this._smooth.width !== W || this._smooth.height !== H) {
-                this._smooth = document.createElement('canvas');
-                this._smooth.width = W;
-                this._smooth.height = H;
-            }
-            const sctx = this._smooth.getContext('2d');
-            sctx.clearRect(0, 0, W, H);
-            const blurPx = Math.max(0.8, pSize * 0.32);
-            sctx.filter = 'blur(' + blurPx + 'px) saturate(1.25) contrast(1.08)';
-            sctx.drawImage(this._offscreen, 0, 0);
-            sctx.filter = 'none';
-
             this._dirty = false;
         },
         _render: function() {
             if (!this._frame || !this._map) return;
             if (this._dirty) this._drawOffscreen();
-            if (!this._smooth) return;
+            if (!this._offscreen) return;
             const size = this._map.getSize();
             const c = this._canvas;
             c.width = size.x;
@@ -307,7 +327,6 @@
             const ctx = c.getContext('2d');
             ctx.clearRect(0, 0, size.x, size.y);
             ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
             L.DomUtil.setPosition(c, this._map.containerPointToLayerPoint([0,0]));
             const b = this._frame.bounds;
             const tl = this._map.latLngToContainerPoint([b.north, b.west]);
@@ -316,7 +335,7 @@
             const h = br.y - tl.y;
             if (w>0 && h>0) {
                 ctx.globalAlpha = this._opacity;
-                ctx.drawImage(this._smooth, tl.x, tl.y, w, h);
+                ctx.drawImage(this._offscreen, tl.x, tl.y, w, h);
                 ctx.globalAlpha = 1.0;
             }
         }
@@ -404,28 +423,35 @@
         const ld = document.getElementById('loading');
         if (ld && !silencios) ld.classList.remove('hidden');
 
+        // Es guarda quin producte estava actiu quan s'ha iniciat la
+        // peticio: si l'usuari canvia de producte mentre la peticio
+        // esta en curs, descartem el resultat per no barrejar dades.
+        const producteDeLaPeticio = producteActual;
+        const metadataFile = PRODUCTS[producteDeLaPeticio].metadataFile;
+
         try {
-            const prod = PRODUCTES[producteActual];
             // Cache-busting: evita servir una copia en cache del CDN
-            const mr = await fetch(BASE_PATH+'/'+prod.metadataFile+'?t='+Date.now(), {cache:'no-store'});
+            // en comptes de les dades acabades de pujar.
+            const mr = await fetch(BASE_PATH+'/'+metadataFile+'?t='+Date.now(), {cache:'no-store'});
             if (!mr.ok) {
                 if (ld) ld.classList.add('hidden');
-                setStatus('Error carregant dades ('+prod.label+')', true);
+                setStatus('Error carregant dades', true);
                 return;
             }
             const metaText = await mr.text();
 
+            // Parsegem sense eval(): extraiem el JSON directament,
+            // evitant que un frame fallit deixi window.radarMetadata
+            // en un estat inconsistent.
             const metaMatch = metaText.match(/window\.radarMetadata\s*=\s*(\{[\s\S]*\});?\s*$/);
             if (!metaMatch) {
                 if (ld) ld.classList.add('hidden');
-                setStatus('Format de metadata invàlid', true);
                 return;
             }
             const metadata = JSON.parse(metaMatch[1]);
 
             if (!metadata || !metadata.frames || !metadata.frames.length) {
                 if (ld) ld.classList.add('hidden');
-                setStatus('Sense dades ('+prod.label+')', true);
                 return;
             }
 
@@ -452,16 +478,23 @@
                 } catch(e) {}
             }
 
+            // Si mentrestant l'usuari ha canviat de producte, aquesta
+            // resposta ja no es valida: la descartem sense tocar l'UI.
+            if (producteDeLaPeticio !== producteActual) {
+                if (ld) ld.classList.add('hidden');
+                return;
+            }
+
             if (ld) ld.classList.add('hidden');
             if (!framesNous.length) {
-                setStatus('Sense frames vàlids ('+prod.label+')', true);
+                setStatus('Sense dades noves', true);
                 return;
             }
 
             const estavaAlDarrer = (currentFrame === radarFrames.length - 1) || radarFrames.length === 0;
 
             radarFrames = framesNous;
-            console.log('[Radar] Frames ('+prod.label+'):', radarFrames.length, silencios ? '(auto-refresc)' : '(carrega inicial)');
+            console.log('[Radar]', producteActual, 'frames:', radarFrames.length, silencios ? '(auto-refresc)' : '(carrega inicial)');
 
             if (estavaAlDarrer) {
                 currentFrame = radarFrames.length - 1;
@@ -471,7 +504,7 @@
 
             radarLayer.setFrame(radarFrames[currentFrame]);
             updateUI();
-            setStatus(prod.label+' · En directe', false);
+            setStatus('En directe', false);
             avaluarAlertaProximitat();
         } catch(e) {
             if (ld) ld.classList.add('hidden');
@@ -518,55 +551,6 @@
     }
     function toggleAnim() { animPlaying ? stopAnim() : startAnim(); }
 
-    // ═══ SELECTOR DE PRODUCTE ═══
-    function aplicarProducte(clau) {
-        if (!PRODUCTES[clau]) return;
-        producteActual = clau;
-        try { localStorage.setItem(PRODUCTE_STORAGE_KEY, clau); } catch(e) {}
-        // Resetegem l'estat actual i recarreguem les dades del nou producte
-        radarFrames = [];
-        currentFrame = 0;
-        radarLayer.setFrame(null);
-        updateUI();
-        setStatus('Carregant '+PRODUCTES[clau].label+'...', false);
-        carregarDades(false);
-        const sel = document.getElementById('productSelect');
-        if (sel && sel.value !== clau) sel.value = clau;
-    }
-
-    function initProductSelector() {
-        const bb = document.getElementById('bottombar');
-        if (!bb || document.getElementById('productSelect')) return;
-
-        const wrap = document.createElement('select');
-        wrap.id = 'productSelect';
-        wrap.title = 'Producte de radar';
-        wrap.style.cssText = 'margin-left:8px;padding:6px 10px;border-radius:8px;'+
-            'background:rgba(13,17,23,0.9);color:#c9d1d9;border:1px solid rgba(255,255,255,0.15);'+
-            'font-family:sans-serif;font-size:13px;cursor:pointer;';
-
-        Object.keys(PRODUCTES).forEach(function(clau) {
-            const opt = document.createElement('option');
-            opt.value = clau;
-            opt.textContent = PRODUCTES[clau].label;
-            wrap.appendChild(opt);
-        });
-
-        let inicial = 'cirrus';
-        try {
-            const guardat = localStorage.getItem(PRODUCTE_STORAGE_KEY);
-            if (guardat && PRODUCTES[guardat]) inicial = guardat;
-        } catch(e) {}
-        wrap.value = inicial;
-        producteActual = inicial;
-
-        wrap.addEventListener('change', function() {
-            aplicarProducte(wrap.value);
-        });
-
-        bb.appendChild(wrap);
-    }
-
     // ═══ SELECTOR DE PALETA ═══
     function aplicarPaleta(clau) {
         if (!PALETTES[clau]) return;
@@ -595,7 +579,7 @@
             wrap.appendChild(opt);
         });
 
-        let inicial = 'classica';
+        let inicial = paletaPerDefecte(producteActual);
         try {
             const guardat = localStorage.getItem(PALETTE_STORAGE_KEY);
             if (guardat && PALETTES[guardat]) inicial = guardat;
@@ -610,15 +594,84 @@
         bb.appendChild(wrap);
     }
 
+    // ═══ SELECTOR DE PRODUCTE (CIRRUS / NIMBUS) ═══
+    function canviarProducte(clau) {
+        if (!PRODUCTS[clau] || clau === producteActual) return;
+
+        producteActual = clau;
+        VALOR_KEY = PRODUCTS[clau].valorKey;
+        try { localStorage.setItem(PRODUCT_STORAGE_KEY, clau); } catch(e) {}
+
+        // Neteja l'estat de l'animacio i dels frames de l'anterior
+        // producte: no te sentit animar barrejant dBZ amb mm.
+        stopAnim();
+        radarFrames = [];
+        currentFrame = 0;
+        radarLayer.setFrame(null);
+        updateUI();
+
+        // Si l'usuari no ha triat mai una paleta manualment per aquest
+        // producte, li apliquem la paleta per defecte corresponent
+        // (classica per Cirrus, pluja per Nimbus).
+        let paletaGuardada = null;
+        try { paletaGuardada = localStorage.getItem(PALETTE_STORAGE_KEY); } catch(e) {}
+        if (!paletaGuardada) {
+            aplicarPaleta(paletaPerDefecte(clau));
+        }
+
+        const sel = document.getElementById('productSelect');
+        if (sel && sel.value !== clau) sel.value = clau;
+
+        // L'alerta de proximitat nomes te sentit amb dBZ (Cirrus).
+        if (clau !== 'cirrus') amagarBannerAlerta();
+
+        carregarDades(false);
+    }
+
+    function initProductSelector() {
+        const bb = document.getElementById('bottombar');
+        if (!bb || document.getElementById('productSelect')) return;
+
+        const wrap = document.createElement('select');
+        wrap.id = 'productSelect';
+        wrap.title = 'Producte de radar (Cirrus reflectivitat / Nimbus pluja acumulada)';
+        wrap.style.cssText = 'margin-left:8px;padding:6px 10px;border-radius:8px;'+
+            'background:rgba(13,17,23,0.9);color:#c9d1d9;border:1px solid rgba(255,255,255,0.15);'+
+            'font-family:sans-serif;font-size:13px;cursor:pointer;';
+
+        Object.keys(PRODUCTS).forEach(function(clau) {
+            const opt = document.createElement('option');
+            opt.value = clau;
+            opt.textContent = PRODUCTS[clau].label;
+            wrap.appendChild(opt);
+        });
+
+        let inicial = 'cirrus';
+        try {
+            const guardat = localStorage.getItem(PRODUCT_STORAGE_KEY);
+            if (guardat && PRODUCTS[guardat]) inicial = guardat;
+        } catch(e) {}
+        wrap.value = inicial;
+        producteActual = inicial;
+        VALOR_KEY = PRODUCTS[inicial].valorKey;
+
+        wrap.addEventListener('change', function() {
+            canviarProducte(wrap.value);
+        });
+
+        // El posem com a primer control de la barra, abans de la resta.
+        bb.insertBefore(wrap, bb.firstChild);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  UBICACIÓ EN VIU + SEGUIMENT + ALERTA DE PROXIMITAT
     // ═══════════════════════════════════════════════════════════════════
     let watchId = null;
-    let seguimentActiu = false;
+    let seguimentActiu = false;   // si el mapa s'ha de recentrar sol quan et mous
     let userMarker = null;
     let userAccuracyCircle = null;
     let alertRadiusCircle = null;
-    let posicioActual = null;
+    let posicioActual = null;     // {lat, lon}
     let ultimAvisTs = 0;
     let alertaActiva = false;
 
@@ -717,7 +770,11 @@
         } catch(e) {}
     }
 
+    // Comprova el frame de radar actual i busca el punt de dBZ més alt
+    // dins del radi definit al voltant de la posició de l'usuari.
+    // Nomes te sentit amb el producte Cirrus (dBZ).
     function avaluarAlertaProximitat() {
+        if (producteActual !== 'cirrus') return;
         if (!posicioActual || !radarFrames.length || !radarFrames[currentFrame]) return;
         const frame = radarFrames[currentFrame];
         let dbzMax = -Infinity;
@@ -727,6 +784,8 @@
             const p = frame.points[i];
             const v = p[VALOR_KEY];
             if (v === undefined || v === null || isNaN(v)) continue;
+            // Filtre ràpid abans del càlcul de distància real (bounding box en graus,
+            // aprox 1° lat ≈ 111km)
             const dLatDeg = Math.abs(p.lat - posicioActual.lat);
             if (dLatDeg > (ALERT_RADIUS_KM/111) * 1.5) continue;
             const d = distanciaKm(posicioActual.lat, posicioActual.lon, p.lat, p.lon);
@@ -803,7 +862,7 @@
             console.log('[Ubicació] Geolocalització no disponible en aquest navegador');
             return;
         }
-        if (watchId !== null) return;
+        if (watchId !== null) return; // ja en marxa
         watchId = navigator.geolocation.watchPosition(
             function(pos) {
                 actualitzarMarcadorUsuari(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
@@ -832,6 +891,8 @@
         } else {
             seguimentActiu = false;
             if (btn) { btn.classList.remove('active'); btn.textContent = 'Seguir-me'; }
+            // Deixem el watchPosition actiu igualment perquè seguim vigilant
+            // l'alerta de proximitat encara que no recentrem el mapa.
         }
     }
 
@@ -848,6 +909,9 @@
         btn.addEventListener('click', toggleSeguiment);
         bb.appendChild(btn);
 
+        // Comencem a vigilar la posició des del principi (sense recentrar)
+        // perquè l'alerta de proximitat funcioni encara que l'usuari no
+        // hagi activat el seguiment de mapa.
         iniciarSeguimentUbicacio();
     }
 
@@ -868,8 +932,6 @@
             bb.insertBefore(playBtn, document.getElementById('btnLatest'));
         }
 
-        // Inicialitzem el selector de producte ABANS del de paleta
-        // perquè quedi primer a la barra inferior
         initProductSelector();
         initPaletteSelector();
         initSeguimentUI();
@@ -882,6 +944,8 @@
         if (e.key===' ') { e.preventDefault(); toggleAnim(); }
     });
 
+    // Revaluem l'alerta periòdicament (per si el frame no ha canviat
+    // però l'usuari s'ha mogut de zona)
     setInterval(avaluarAlertaProximitat, ALERT_RECHECK_MS);
 
     // ═══ POPUP ═══
@@ -900,13 +964,13 @@
             const v = mp[VALOR_KEY];
             if (v===undefined) return;
             const c = getColor(v);
-            const prodLabel = PRODUCTES[producteActual].label;
+            const info = PRODUCTS[producteActual];
             popupActual = L.popup({closeButton:true,className:'popup-clic',offset:[0,-8]})
                 .setLatLng(e.latlng)
                 .setContent(
                     '<div style="background:rgba(13,17,23,0.95);color:#c9d1d9;padding:12px 16px;border-radius:10px;font-family:sans-serif;min-width:110px;border:1px solid rgba(255,255,255,0.08);">'+
-                    '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;">'+prodLabel+' · '+horaMadrid(frame.timestamp)+'</div>'+
-                    '<div style="font-size:26px;font-weight:700;color:rgb('+c.r+','+c.g+','+c.b+');">'+v.toFixed(1)+' <span style="font-size:13px;font-weight:500;color:#8b949e;">dBZ</span></div>'+
+                    '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;">'+info.nomCamp+' · '+horaMadrid(frame.timestamp)+'</div>'+
+                    '<div style="font-size:26px;font-weight:700;color:rgb('+c.r+','+c.g+','+c.b+');">'+v.toFixed(1)+' <span style="font-size:13px;font-weight:500;color:#8b949e;">'+info.unitat+'</span></div>'+
                     '<div style="font-size:10px;color:#484f58;margin-top:8px;">'+e.latlng.lat.toFixed(4)+'°N · '+e.latlng.lng.toFixed(4)+'°E</div>'+
                     '</div>'
                 ).openOn(map);
@@ -914,6 +978,9 @@
     });
 
     // ═══ INICI ═══
+    // IMPORTANT: no carreguem dades pel nostre compte. Esperem que
+    // l'autenticacio (auth.js) confirmi que l'usuari esta autoritzat
+    // abans de tocar el DOM del loading overlay, per no xocar-hi.
     let jaIniciat = false;
 
     function iniciar() {
