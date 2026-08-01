@@ -42,6 +42,7 @@ CONFIG = {
         "clau_valor": "rain_mm",
         "label": "NIMBUS (Rainfall accumulation)",
         "filename_prefix": "nimbus",  # evita xocar amb els fitxers de Cirrus
+        "acumulacio_diaria": True,    # nomes Nimbus genera acumulat diari
     },
 }
 
@@ -305,6 +306,108 @@ def process_frame(h5data, regio, clau_valor):
         os.unlink(tmp_path)
 
 
+def _clau_punt(lat, lon):
+    """
+    Clau estable per identificar un punt de la rejilla entre frames.
+    Es fa servir 4 decimals (~11m de precisio) perque la rejilla es
+    fixa (mateixa projeccio radar cada vegada), aixi el mateix punt
+    fisic cau sempre a la mateixa clau encara que hi hagi petitissimes
+    diferencies d'arrodoniment en la conversio de projeccio.
+    """
+    return f"{lat:.4f},{lon:.4f}"
+
+
+def actualitzar_acumulacio_diaria(output_dir, avui_utc, dt_frame, data, filename_prefix):
+    """
+    Manté un acumulat diari de pluja PER PUNT, sumant nomes les
+    lectures que cauen en punt d'hora exacta (minut == 0).
+
+    Per que nomes en punt d'hora? Cada frame Nimbus es una finestra
+    mobil D'1 HORA que es publica cada 15 min. Dos frames consecutius
+    (15 min de diferencia) comparteixen un 75% de la mateixa pluja.
+    Sumar-los tots duplicaria/quadruplicaria la pluja real. Nomes les
+    lectures ":00" de cada hora corresponen a finestres consecutives
+    NO solapades (00:00-01:00, 01:00-02:00, ...), aixi que nomes
+    aquestes es sumen a l'acumulat.
+
+    L'estat es persisteix en un JSON al mateix output_dir (per tant
+    es versiona/sincronitza igual que la resta de fitxers de dades),
+    i es reinicia automaticament quan canvia la data UTC.
+    """
+    state_path = output_dir / f"{filename_prefix}_daily_state.json"
+
+    state = None
+    if state_path.exists():
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            state = None
+
+    if not state or state.get("date") != avui_utc.isoformat():
+        state = {
+            "date": avui_utc.isoformat(),
+            "counted_timestamps": [],
+            "totals": {},
+            "bounds": None,
+            "resolution_m": None,
+        }
+
+    # Bounds/resolucio es refresquen sempre amb el darrer frame rebut,
+    # encara que aquest instant concret no compti per l'acumulat
+    # (aixi el mapa diari es dibuixa amb l'extensio mes recent).
+    state["bounds"] = data["bounds"]
+    state["resolution_m"] = data.get("resolution_m", FALLBACK_RESOLUTION_M)
+
+    ts_key = dt_frame.strftime("%Y-%m-%dT%H%M%SZ")
+    es_hora_en_punt = (dt_frame.minute == 0)
+    ja_comptat = ts_key in state["counted_timestamps"]
+
+    if es_hora_en_punt and not ja_comptat:
+        for p in data["points"]:
+            key = _clau_punt(p["lat"], p["lon"])
+            state["totals"][key] = state["totals"].get(key, 0.0) + p["rain_mm"]
+        state["counted_timestamps"].append(ts_key)
+        print(f"    + sumat a l'acumulat diari ({ts_key}, hora en punt)")
+    elif not es_hora_en_punt:
+        print(f"    (no es hora en punt, no compta per l'acumulat diari)")
+
+    with open(state_path, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+
+    return state
+
+
+def generate_daily_file(output_dir, state, filename_prefix, product_label):
+    """
+    Regenera el fitxer JS d'acumulat diari a partir de l'estat
+    persistit, en el mateix format {lat, lon, rain_mm, ...} que un
+    frame normal perque el frontend el pugui pintar amb la mateixa
+    capa Canvas sense codi especial.
+    """
+    if not state["bounds"]:
+        return  # encara no hi ha cap dada per avui
+
+    points = []
+    for key, total in state["totals"].items():
+        lat_str, lon_str = key.split(",")
+        points.append({"lat": float(lat_str), "lon": float(lon_str), "rain_mm": round(total, 2)})
+
+    obj = {
+        "date": state["date"],
+        "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "hores_comptades": len(state["counted_timestamps"]),
+        "bounds": state["bounds"],
+        "points": points,
+        "resolution_m": state["resolution_m"],
+        "product": product_label + " - Acumulat diari",
+    }
+    nom = f"radar_daily_{filename_prefix}.js" if filename_prefix else "radar_daily.js"
+    with open(output_dir / nom, "w", encoding="utf-8") as f:
+        f.write("window.radarDaily = " + json.dumps(obj, separators=(',', ':')) + ";")
+    print(f"    Acumulat diari: {len(points):,} punts, {len(state['counted_timestamps'])} hores comptades")
+
+
 def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_utc, filename_prefix=""):
     """
     Desa el frame nou (si n'hi ha) amb el seu nom basat en timestamp
@@ -396,6 +499,11 @@ def procesar_producte(nom_producte, config, api_key, regio):
         except Exception as e:
             print(f"    Error: {e}")
             frame_nou = None
+
+    if config.get("acumulacio_diaria") and frame_nou is not None:
+        dt_frame, data = frame_nou
+        state = actualitzar_acumulacio_diaria(output_dir, avui_utc, dt_frame, data, filename_prefix)
+        generate_daily_file(output_dir, state, filename_prefix, label)
 
     # Encara que aquesta execucio no hagi generat cap frame nou (ja
     # existia o ha fallat), regenerem la metadata amb el que ja hi ha
