@@ -27,29 +27,28 @@ CONFIG = {
         "output_dir": OUTPUT_DIR_CIRRUS,
         "base_url": BASE_URL_CIRRUS,
         "interval": 5,
-        "frames_desitjats": 6,
         "clau_valor": "dbz",
         "label": "CIRRUS (dBZ)",
+        # Prefix del nom de fitxer: "" per Cirrus, "nimbus_" per Nimbus.
+        # Aixi tots dos productes conviuen a la mateixa carpeta sense
+        # xocar noms ni sobreescriures.
+        "filename_prefix": "",
     }
 }
 
-# FIX: antes era 5 (< frames_desitjats), lo que dejaba casi ningun margen
-# para absorber un solo instante fallido (p.ex. el mas recent, encara no
-# publicat pel radar) sense deixar un forat definitiu. Ara hi ha marge
-# de sobres per continuar cap enrere si algun instant falla.
-MAX_FRAMES = 14
-
-# FIX: reintents amb espera nomes per l'instant MES RECENT de cada
-# execucio, que es el que sol fallar per retard de publicacio de l'API
-# (el dat encara no existeix quan es demana "ara" en punt). Reintentar
-# instants mes antics no te sentit: si no existien fa uns segons,
-# tampoc existiran ara.
-REINTENTOS_INSTANTE_MAS_RECIENTE = 3
+# Nomes es demana UN instant: l'actual, arrodonit cap avall a l'interval
+# del producte. No es busca cap frame historic ni es completa cap quota
+# cap enrere; si l'instant actual no esta disponible (encara no publicat
+# pel radar), es reintenta unes quantes vegades amb espera i, si tot i
+# aixi falla, no es genera cap frame nou en aquesta execucio.
+REINTENTOS_INSTANTE_ACTUAL = 3
 ESPERA_ENTRE_REINTENTOS_SEG = 5
 
-# Patro del nom de fitxer d'un frame: radar_frame_DD_MM_YYYY_HHMMz.js
+# Patro del nom de fitxer d'un frame (amb o sense prefix de producte):
+# radar_frame_DD_MM_YYYY_HHMMz.js
+# radar_frame_nimbus_DD_MM_YYYY_HHMMz.js
 FRAME_FILENAME_RE = re.compile(
-    r"^radar_frame_(\d{2})_(\d{2})_(\d{4})_(\d{2})(\d{2})Z\.js$"
+    r"^radar_frame_(?:(?P<prefix>[a-zA-Z0-9]+)_)?(\d{2})_(\d{2})_(\d{4})_(\d{2})(\d{2})Z\.js$"
 )
 
 # Resolucio de rejilla per defecte (metres), nomes s'usa com a fallback
@@ -75,43 +74,57 @@ def format_mida(b):
         return f"{b/(1024*1024):.2f} MB"
 
 
-def frame_filename(dt_utc):
+def frame_filename(dt_utc, prefix=""):
     """Nom de fitxer per un frame, a partir del seu timestamp UTC real."""
+    if prefix:
+        return f"radar_frame_{prefix}_{dt_utc.strftime('%d_%m_%Y_%H%M')}Z.js"
     return f"radar_frame_{dt_utc.strftime('%d_%m_%Y_%H%M')}Z.js"
 
 
 def parse_frame_filename(nom_fitxer):
     """
-    Extreu el datetime UTC codificat al nom del fitxer, o None si el
-    nom no segueix el patro esperat (p. ex. metadata.js, status.js).
+    Extreu (datetime UTC, prefix) codificats al nom del fitxer, o
+    (None, None) si el nom no segueix el patro esperat (p. ex.
+    metadata.js, status.js). prefix es "" per als frames sense prefix
+    (Cirrus) o el text del prefix (p.ex. "nimbus") per als altres.
     """
     m = FRAME_FILENAME_RE.match(nom_fitxer)
     if not m:
-        return None
-    dia, mes, any_, hora, minut = m.groups()
+        return None, None
+    prefix = m.group("prefix") or ""
+    dia, mes, any_, hora, minut = m.group(2), m.group(3), m.group(4), m.group(5), m.group(6)
     try:
-        return datetime(int(any_), int(mes), int(dia), int(hora), int(minut), tzinfo=timezone.utc)
+        dt = datetime(int(any_), int(mes), int(dia), int(hora), int(minut), tzinfo=timezone.utc)
+        return dt, prefix
     except ValueError:
-        return None
+        return None, None
 
 
-def netejar_frames_dia_anterior(carpeta, avui_utc):
+def netejar_frames_dia_anterior(carpeta, avui_utc, filename_prefix=""):
     """
-    Esborra tots els frames (i qualsevol .js residual d'un format
-    antic) la data dels quals sigui diferent del dia d'avui (UTC).
+    Esborra nomes els frames DEL MATEIX PRODUCTE (mateix prefix) la
+    data dels quals sigui diferent del dia d'avui (UTC). Aixi Cirrus i
+    Nimbus, que comparteixen carpeta, no s'esborren l'un a l'altre.
+
+    La neteja es basa unicament en si la data del frame coincideix amb
+    la data actual UTC: si son al mateix dia, es conserva; si es d'un
+    dia anterior (p.ex. ahir a les 23:55 quan ara ja es un altre dia),
+    s'esborra.
     """
     if not carpeta.exists():
         carpeta.mkdir(parents=True, exist_ok=True)
         return 0
 
     esborrats = 0
-    for f in carpeta.glob("*.js"):
-        if f.name in ("radar_metadata.js", "status.js"):
-            continue
-        dt_frame = parse_frame_filename(f.name)
+    for f in carpeta.glob("radar_frame_*.js"):
+        dt_frame, prefix = parse_frame_filename(f.name)
         if dt_frame is None:
-            f.unlink()
-            esborrats += 1
+            # Nom no reconegut: no el toquem (podria ser d'un altre
+            # producte amb un format encara no contemplat).
+            continue
+        if prefix != filename_prefix:
+            # Frame d'un altre producte (prefix diferent): no es toca
+            # en aquesta crida, cada producte neteja nomes el seu.
             continue
         if dt_frame.date() != avui_utc:
             f.unlink()
@@ -122,31 +135,21 @@ def netejar_frames_dia_anterior(carpeta, avui_utc):
     return esborrats
 
 
-def frames_existents(carpeta):
-    """
-    Retorna el conjunt de datetimes UTC dels frames que ja existeixen
-    en disc per avui, per evitar tornar a descarregar el mateix instant.
-    """
-    existents = set()
-    if not carpeta.exists():
-        return existents
-    for f in carpeta.glob("radar_frame_*.js"):
-        dt_frame = parse_frame_filename(f.name)
-        if dt_frame is not None:
-            existents.add(dt_frame)
-    return existents
+def frame_existeix(carpeta, dt_candidat, filename_prefix=""):
+    """Comprova si ja existeix en disc el frame per aquest instant exacte."""
+    nom = frame_filename(dt_candidat, filename_prefix)
+    return (carpeta / nom).exists()
 
 
-def descarregar_instant(url, headers, es_el_mes_recent):
+def descarregar_instant_actual(url, headers):
     """
-    Fa la peticio HTTP per un instant concret. Si es l'instant mes
-    recent d'aquesta execucio, reintenta amb espera abans de donar-lo
-    per fallit, ja que sol ser el que encara no ha publicat el radar.
-    Retorna (content, status_code) - content es None si falla.
+    Fa la peticio HTTP per l'instant actual (unic instant que es
+    demana). Reintenta amb espera abans de donar-lo per fallit, ja que
+    sol ser el que encara no ha publicat el radar en aquell moment
+    exacte. Retorna (content, status_code) - content es None si falla.
     """
-    intents = REINTENTOS_INSTANTE_MAS_RECIENTE if es_el_mes_recent else 1
     ultim_status = None
-    for intent in range(1, intents + 1):
+    for intent in range(1, REINTENTOS_INSTANTE_ACTUAL + 1):
         try:
             resp = requests.get(url, headers=headers, timeout=15)
             ultim_status = resp.status_code
@@ -154,51 +157,37 @@ def descarregar_instant(url, headers, es_el_mes_recent):
                 return resp.content, resp.status_code
         except Exception as e:
             print(f"      intent {intent}: error {e}")
-        if intent < intents:
+        if intent < REINTENTOS_INSTANTE_ACTUAL:
             time.sleep(ESPERA_ENTRE_REINTENTOS_SEG)
     return None, ultim_status
 
 
-def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_existents, max_intents=MAX_FRAMES):
+def obtenir_frame_actual(base_url, api_key, interval_min, output_dir, filename_prefix=""):
     """
-    Cerca els darrers instants disponibles. Si un instant concret ja
-    existeix en disc, se salta la descarrega pero es segueix comptant
-    per completar frames_desitjats amb instants mes antics si cal.
+    Demana NOMES l'instant actual (arrodonit a l'interval). Si ja
+    existeix en disc, no es torna a descarregar. Si no existeix,
+    es descarrega (amb reintents) i es retorna el seu contingut.
 
-    FIX respecte a la versio anterior: max_intents ara te marge de
-    sobres per sobre de frames_desitjats, de manera que un unic
-    instant fallit (p.ex. el mes recent, encara no publicat) no deixi
-    un forat permanent - el bucle segueix cap enrere fins completar
-    la quota real de frames, en lloc de rendir-se massa aviat.
+    Retorna (dt_candidat, content) si s'ha descarregat un frame nou,
+    o (dt_candidat, None) si ja existia o si ha fallat la descarrega.
     """
     now = datetime.now(timezone.utc)
     candidate = round_down_interval(now, interval_min)
+
+    if frame_existeix(output_dir, candidate, filename_prefix):
+        print(f"    ja existeix {candidate.strftime('%Y-%m-%dT%H%M%SZ')}, s'omet descarrega")
+        return candidate, None
+
+    ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
+    url = base_url.format(date=ts)
     headers = {"accept": "application/x-hdf", "apikey": api_key}
-    frames = []
-    ja_tenim = 0
-    for i in range(max_intents):
-        es_el_mes_recent = (i == 0)
-        if candidate in ja_existents:
-            print(f"    ja existeix {candidate.strftime('%Y-%m-%dT%H%M%SZ')}, s'omet descarrega")
-            ja_tenim += 1
-            candidate -= timedelta(minutes=interval_min)
-            if (len(frames) + ja_tenim) >= frames_desitjats:
-                break
-            continue
-
-        ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
-        url = base_url.format(date=ts)
-        content, status = descarregar_instant(url, headers, es_el_mes_recent)
-        if content is not None:
-            frames.append((candidate, content))
-            print(f"    OK {ts} ({format_mida(len(content))})")
-            if (len(frames) + ja_tenim) >= frames_desitjats:
-                break
-        else:
-            print(f"    HTTP {status} {ts} (descartat, es continua cap enrere)")
-
-        candidate -= timedelta(minutes=interval_min)
-    return frames
+    content, status = descarregar_instant_actual(url, headers)
+    if content is not None:
+        print(f"    OK {ts} ({format_mida(len(content))})")
+        return candidate, content
+    else:
+        print(f"    HTTP {status} {ts} (sense frame nou en aquesta execucio)")
+        return candidate, None
 
 
 def is_point_in_region(lat, lon, regio):
@@ -229,9 +218,7 @@ def process_frame(h5data, regio, clau_valor):
             # ODIM_H5 (OPERA/MeteoFrance) sol incloure xscale/yscale al
             # grup "where". Es propaga al frontend perque pugui dibuixar
             # cada punt amb la mida de cel·la exacta i evitar forats
-            # visuals quan es fa zoom (abans es feia servir una mida
-            # fixa segons el nivell de zoom, que no s'ajustava a la
-            # densitat real de punts).
+            # visuals quan es fa zoom.
             xscale = float(where.get("xscale", 0.0) or 0.0)
             yscale = float(where.get("yscale", xscale) or xscale)
             resolution_m = xscale if xscale > 0 else FALLBACK_RESOLUTION_M
@@ -303,14 +290,15 @@ def process_frame(h5data, regio, clau_valor):
         os.unlink(tmp_path)
 
 
-def generate_web_files(frames_nous, output_dir, interval_min, product_label, avui_utc):
+def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_utc, filename_prefix=""):
     """
-    Desa cada frame nou amb el seu nom basat en timestamp real, i
-    despres regenera radar_metadata.js llegint tots els frames vigents
-    del dia actual, ordenats cronologicament.
+    Desa el frame nou (si n'hi ha) amb el seu nom basat en timestamp
+    real, i despres regenera els fitxers de metadata NOMES amb els
+    frames vigents d'aquest producte (mateix prefix) i d'avui.
     """
-    for dt_frame, data in frames_nous:
-        nom = frame_filename(dt_frame)
+    if frame_nou is not None:
+        dt_frame, data = frame_nou
+        nom = frame_filename(dt_frame, filename_prefix)
         # IMPORTANT: cal generar JSON valid (claus entre cometes), no
         # un literal JS informal, perque el frontend fa JSON.parse()
         # directament sobre aquest objecte (sense eval()).
@@ -326,13 +314,16 @@ def generate_web_files(frames_nous, output_dir, interval_min, product_label, avu
 
     frames_vigents = []
     for f in output_dir.glob("radar_frame_*.js"):
-        dt_frame = parse_frame_filename(f.name)
-        if dt_frame is not None and dt_frame.date() == avui_utc:
+        dt_frame, prefix = parse_frame_filename(f.name)
+        if dt_frame is not None and prefix == filename_prefix and dt_frame.date() == avui_utc:
             frames_vigents.append((dt_frame, f.name))
     frames_vigents.sort(key=lambda x: x[0])
 
     if not frames_vigents:
         return False
+
+    metadata_filename = f"radar_metadata_{filename_prefix}.js" if filename_prefix else "radar_metadata.js"
+    status_filename = f"status_{filename_prefix}.js" if filename_prefix else "status.js"
 
     metadata = {
         "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -346,59 +337,57 @@ def generate_web_files(frames_nous, output_dir, interval_min, product_label, avu
         ],
     }
     metadata["latest_frame"] = frames_vigents[-1][1]
-    with open(output_dir / "radar_metadata.js", 'w', encoding='utf-8') as f:
+    with open(output_dir / metadata_filename, 'w', encoding='utf-8') as f:
         f.write(f"window.radarMetadata = {json.dumps(metadata, indent=2)};")
 
     ara = datetime.now(timezone.utc)
-    with open(output_dir / "status.js", 'w', encoding='utf-8') as f:
+    with open(output_dir / status_filename, 'w', encoding='utf-8') as f:
         f.write(
             "window.radarStatus = {\n"
             f"    executedAtUTC: \"{ara.strftime('%Y-%m-%dT%H:%M:%SZ')}\",\n"
             f"    executedAtEpochMs: {int(ara.timestamp() * 1000)},\n"
-            f"    framesNousAquestaExecucio: {len(frames_nous)},\n"
+            f"    frameNouAquestaExecucio: {1 if frame_nou is not None else 0},\n"
             f"    framesVigentsAvui: {len(frames_vigents)}\n"
             "};"
         )
-    print(f"    {len(frames_nous)} frames nous | {len(frames_vigents)} frames vigents avui")
+    print(f"    {'1 frame nou' if frame_nou is not None else '0 frames nous'} | {len(frames_vigents)} frames vigents avui")
     return True
 
 
 def procesar_producte(config, api_key, regio):
     label = config["label"]
     output_dir = config["output_dir"]
+    filename_prefix = config.get("filename_prefix", "")
     avui_utc = datetime.now(timezone.utc).date()
 
     print(f"\n  {label}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    netejar_frames_dia_anterior(output_dir, avui_utc)
+    # Nomes s'esborren frames d'aquest mateix producte (prefix) que
+    # siguin d'un dia diferent d'avui.
+    netejar_frames_dia_anterior(output_dir, avui_utc, filename_prefix)
 
-    ja_existents = frames_existents(output_dir)
-    frames_candidats = find_latest_frames(
-        config["base_url"], api_key, config["interval"], config["frames_desitjats"],
-        ja_existents, MAX_FRAMES
+    dt_candidat, content = obtenir_frame_actual(
+        config["base_url"], api_key, config["interval"], output_dir, filename_prefix
     )
 
-    if not frames_candidats and not ja_existents:
-        print("    Sense frames")
-        return False
-
-    frames_nous = []
-    for dt, content in frames_candidats:
+    frame_nou = None
+    if content is not None:
         try:
             data = process_frame(content, regio, config["clau_valor"])
-            # Es guarda el frame sempre, encara que no hi hagi cap punt
-            # de pluja dins la regio: un frame buit es una lectura
-            # valida (no plou enlloc en aquell instant).
-            frames_nous.append((dt, data))
+            frame_nou = (dt_candidat, data)
             if data["points"]:
                 print(f"    Processat: {len(data['points']):,} punts")
             else:
                 print("    Buit a la regio (es guarda igualment, 0 punts)")
         except Exception as e:
             print(f"    Error: {e}")
+            frame_nou = None
 
-    return generate_web_files(frames_nous, output_dir, config["interval"], label, avui_utc)
+    # Encara que aquesta execucio no hagi generat cap frame nou (ja
+    # existia o ha fallat), regenerem la metadata amb el que ja hi ha
+    # en disc perque status.js reflecteixi que s'ha executat.
+    return generate_web_files(frame_nou, output_dir, config["interval"], label, avui_utc, filename_prefix)
 
 
 # ---------------------------------------------------------------------------
@@ -407,9 +396,9 @@ def procesar_producte(config, api_key, regio):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  RADAR OPERA - CICLE UNIC")
+    print("  RADAR OPERA - CICLE UNIC (nomes instant actual)")
     print("  CIRRUS (dBZ) -> public/radar/")
-    print("  Frames acumulatius per timestamp real (purga diaria)")
+    print("  Neteja nomes per canvi de dia UTC")
     print("=" * 60)
 
     ok_cirrus = procesar_producte(CONFIG["cirrus"], API_KEY, REGIO)
