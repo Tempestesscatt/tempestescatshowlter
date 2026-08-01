@@ -26,7 +26,7 @@ CONFIG = {
     "cirrus": {
         "output_dir": OUTPUT_DIR_CIRRUS,
         "base_url": BASE_URL_CIRRUS,
-        "interval": 10,
+        "interval": 5,
         "frames_desitjats": 6,
         "clau_valor": "dbz",
         "label": "CIRRUS (dBZ)",
