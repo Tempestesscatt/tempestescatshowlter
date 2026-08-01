@@ -1,286 +1,432 @@
-"""
-explorar_dpradar.py
---------------------
-Exploracion paso a paso de la API DPRadar de Meteo-France
-(https://public-api.meteofrance.fr/public/DPRadar/v1)
-
-Objetivo: descubrir que observaciones ofrece cada radar individual
-(en especial Opoul, id_station=57) - reflectividad, PAG, PAM - y en
-que formato vienen, para saber si alguna nos sirve para detectar
-rotacion (velocidad Doppler / VRADH) sobre Catalunya.
-
-IMPORTANTE SOBRE LA API KEY:
-No pongas la API key directamente en este fichero. Usa una variable
-de entorno para no exponerla por accidente (por ejemplo en git):
-
-    set METEOFRANCE_API_KEY=tu_clave_aqui        (Windows cmd)
-    $env:METEOFRANCE_API_KEY="tu_clave_aqui"     (PowerShell)
-
-y el script la leera sola con os.environ.
-"""
-
 import requests
-import os
+import h5py
+import numpy as np
 import json
-import csv
-import io
+import os
+import re
+import sys
+import tempfile
+import time
+from datetime import datetime, timedelta, timezone
+from pyproj import CRS, Transformer
 from pathlib import Path
 
-BASE = "https://public-api.meteofrance.fr/public/DPRadar/v1"
-
-API_KEY = ""
-if not API_KEY:
-    print("AVISO: no se encontro METEOFRANCE_API_KEY como variable de entorno.")
-    print("       Define la variable de entorno o edita esta linea temporalmente")
-    print("       (pero NO subas el fichero a git si pones la key aqui).")
-
-HEADERS = {"apikey": API_KEY, "accept": "application/json"}
-
-OPOUL_ID = "57"  # confirmado via liste-stations: 57;RADAR OPOUL
-
-
 # ---------------------------------------------------------------------------
-# PASO 1: lista de estaciones (ya lo probamos manualmente, aqui en codigo)
+# CONFIGURACIO
 # ---------------------------------------------------------------------------
 
-def listar_estaciones():
-    """
-    Descarga el CSV de todas las estaciones y lo parsea. Devuelve una
-    lista de dicts. Util para buscar el id_station de cualquier radar
-    por nombre, no solo Opoul.
-    """
-    url = f"{BASE}/liste-stations"
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    print(f"GET {url}")
-    print(f"status: {r.status_code}")
-    r.raise_for_status()
+API_KEY = os.environ.get("METEOFRANCE_API_KEY")
 
-    # El CSV usa ';' como separador (visto en el ejemplo)
-    texto = r.content.decode("utf-8-sig")  # utf-8-sig por si trae BOM
-    reader = csv.DictReader(io.StringIO(texto), delimiter=";")
-    estaciones = list(reader)
-    print(f"Nº de estaciones: {len(estaciones)}")
-    return estaciones
+# Nimbus: l'endpoint porta el "product" dins la URL (a diferencia de
+# Cirrus, que nomes te REFLECTIVITY implicit). Els valors possibles
+# documentats son REFLECTIVITY i RAINFALL_ACCUMULATION; es fa servir
+# REFLECTIVITY per mantenir la mateixa magnitud (dBZ) que amb Cirrus.
+NIMBUS_PRODUCT = "REFLECTIVITY"
+BASE_URL_NIMBUS = (
+    "https://partner-api.meteofrance.fr/partner/radar/opera/1.0/"
+    "realtime/nimbus/composite/" + NIMBUS_PRODUCT + "/{date}?format=HDF5"
+)
 
+OUTPUT_DIR_NIMBUS = Path("public/radar_nimbus")
 
-def buscar_estacion(nombre_parcial, estaciones=None):
-    """Busca estaciones cuyo nombre contenga el texto dado (case-insensitive)."""
-    if estaciones is None:
-        estaciones = listar_estaciones()
-    encontradas = [e for e in estaciones if nombre_parcial.upper() in e.get("Nom station", "").upper()]
-    for e in encontradas:
-        print(f"  {e}")
-    return encontradas
+REGIO = {"lat_min": 38.5, "lat_max": 45.0, "lon_min": -2.0, "lon_max": 5.0}
 
+CONFIG = {
+    "nimbus": {
+        "output_dir": OUTPUT_DIR_NIMBUS,
+        "base_url": BASE_URL_NIMBUS,
+        # Nimbus publica cada 15 minuts (a diferencia dels 5 min de Cirrus)
+        "interval": 15,
+        # Amb pas de 15 min, 6 frames cobreixen 1h30 (abans amb Cirrus
+        # eren 6 frames de 5 min = 30 min). S'ajusta si es vol una
+        # altra finestra temporal.
+        "frames_desitjats": 6,
+        "clau_valor": "dbz",
+        "label": f"NIMBUS ({NIMBUS_PRODUCT})",
+    }
+}
+
+# FIX: antes era 5 (< frames_desitjats), lo que dejaba casi ningun margen
+# para absorber un solo instante fallido (p.ex. el mas recent, encara no
+# publicat pel radar) sense deixar un forat definitiu. Ara hi ha marge
+# de sobres per continuar cap enrere si algun instant falla.
+MAX_FRAMES = 14
+
+# FIX: reintents amb espera nomes per l'instant MES RECENT de cada
+# execucio, que es el que sol fallar per retard de publicacio de l'API
+# (el dat encara no existeix quan es demana "ara" en punt). Reintentar
+# instants mes antics no te sentit: si no existien fa uns segons,
+# tampoc existiran ara.
+REINTENTOS_INSTANTE_MAS_RECIENTE = 3
+ESPERA_ENTRE_REINTENTOS_SEG = 5
+
+# Patro del nom de fitxer d'un frame: radar_frame_DD_MM_YYYY_HHMMz.js
+FRAME_FILENAME_RE = re.compile(
+    r"^radar_frame_(\d{2})_(\d{2})_(\d{4})_(\d{2})(\d{2})Z\.js$"
+)
+
+# Resolucio de rejilla per defecte (metres), nomes s'usa com a fallback
+# al frontend si el HDF5 no porta xscale/yscale (no hauria de passar
+# amb el format ODIM_H5 habitual de MeteoFrance/OPERA). Nimbus sol
+# tenir resolucio 1km, pero es llegeix sempre del fitxer si es possible.
+FALLBACK_RESOLUTION_M = 1000.0
 
 # ---------------------------------------------------------------------------
-# PASO 2: observaciones disponibles para una estacion concreta
+# FUNCIONS
 # ---------------------------------------------------------------------------
 
-def listar_observaciones(id_station=OPOUL_ID):
+def round_down_interval(dt, interval_min):
+    minute = (dt.minute // interval_min) * interval_min
+    return dt.replace(minute=minute, second=0, microsecond=0)
+
+
+def format_mida(b):
+    if b < 1024:
+        return f"{b} B"
+    elif b < 1024 * 1024:
+        return f"{b/1024:.1f} KB"
+    else:
+        return f"{b/(1024*1024):.2f} MB"
+
+
+def frame_filename(dt_utc):
+    """Nom de fitxer per un frame, a partir del seu timestamp UTC real."""
+    return f"radar_frame_{dt_utc.strftime('%d_%m_%Y_%H%M')}Z.js"
+
+
+def parse_frame_filename(nom_fitxer):
     """
-    GET /stations/{id_station}/observations
-    Lista las observaciones (productos) disponibles para esa estacion.
-    Esto es clave: nos dira si Opoul publica algo tipo velocidad
-    Doppler / rotacion, y con que nombre exacto de 'observation'.
+    Extreu el datetime UTC codificat al nom del fitxer, o None si el
+    nom no segueix el patro esperat (p. ex. metadata.js, status.js).
     """
-    url = f"{BASE}/stations/{id_station}/observations"
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    print(f"GET {url}")
-    print(f"status: {r.status_code}")
-    print(f"content-type: {r.headers.get('content-type')}")
-    if r.status_code != 200:
-        print(f"raw: {r.text[:500]}")
+    m = FRAME_FILENAME_RE.match(nom_fitxer)
+    if not m:
         return None
+    dia, mes, any_, hora, minut = m.groups()
     try:
-        data = r.json()
-        print(json.dumps(data, indent=2, ensure_ascii=False))
-        return data
-    except Exception:
-        # puede que tambien sea CSV o texto plano
-        print("(no es JSON, mostrando texto crudo)")
-        print(r.text[:1000])
-        return r.text
-
-
-# ---------------------------------------------------------------------------
-# PASO 3: descripcion de una observacion concreta
-# ---------------------------------------------------------------------------
-
-def describir_observacion(observation, id_station=OPOUL_ID):
-    """
-    GET /stations/{id_station}/observations/{observation}
-    Da detalle de una observacion concreta (formato, resolucion, etc.)
-    antes de descargar el producto real.
-    """
-    url = f"{BASE}/stations/{id_station}/observations/{observation}"
-    r = requests.get(url, headers=HEADERS, timeout=20)
-    print(f"GET {url}")
-    print(f"status: {r.status_code}")
-    print(f"content-type: {r.headers.get('content-type')}")
-    if r.status_code != 200:
-        print(f"raw: {r.text[:500]}")
-        return None
-    try:
-        data = r.json()
-        print(json.dumps(data, indent=2, ensure_ascii=False))
-        return data
-    except Exception:
-        print(r.text[:1000])
-        return r.text
-
-
-# ---------------------------------------------------------------------------
-# PASO 4: descargar el producto real (fichero de datos)
-# ---------------------------------------------------------------------------
-
-def inspeccionar_bufr(ruta_bufr):
-    """
-    Parsea un fichero BUFR (ya descomprimido) usando pybufrkit y
-    muestra su estructura: subsets, descriptores y valores. Sirve
-    para descubrir que variables trae realmente PAG/PAM (reflectividad,
-    velocidad radial, sigma...) y en que orden/formato.
-
-    Requiere: pip install pybufrkit
-    """
-    try:
-        from pybufrkit.decoder import Decoder
-        from pybufrkit.renderer import FlatTextRenderer
-    except ImportError:
-        print("Falta pybufrkit. Instala con: pip install pybufrkit")
+        return datetime(int(any_), int(mes), int(dia), int(hora), int(minut), tzinfo=timezone.utc)
+    except ValueError:
         return None
 
-    decoder = Decoder()
-    with open(ruta_bufr, "rb") as f:
-        contenido = f.read()
 
-    bufr_message = decoder.process(contenido)
-
-    print(f"Nº de subsets: {bufr_message.n_subsets.value}")
-    print(f"Fecha: {bufr_message.year.value}-{bufr_message.month.value}-{bufr_message.day.value} "
-          f"{bufr_message.hour.value}:{bufr_message.minute.value}")
-
-    # Volcado plano de todos los descriptores y valores (puede ser
-    # MUY largo para datos de radar con miles de bins - se trunca).
-    texto = FlatTextRenderer().render(bufr_message)
-    print("\n--- Primeras 100 lineas del volcado BUFR ---")
-    for linea in texto.splitlines()[:100]:
-        print(linea)
-
-    print(f"\n(Volcado completo tiene {len(texto.splitlines())} lineas; "
-          f"guardado completo en {ruta_bufr}.txt)")
-    with open(f"{ruta_bufr}.txt", "w", encoding="utf-8") as f:
-        f.write(texto)
-
-    return bufr_message
-
-
-
+def netejar_frames_dia_anterior(carpeta, avui_utc):
     """
-    GET /stations/{id_station}/observations/{observation}/produit
-    Descarga el fichero real de datos. Segun lo confirmado:
-      - PAG y PAM necesitan el parametro 'tour_antenne' (A-H)
-      - REFLECTIVITE no lo necesita
-      - El content-type es 'application/octet-stream+gzip', asi que
-        hay que descomprimir con gzip antes de ver que hay dentro.
-    Guarda tanto el .gz crudo como el contenido descomprimido (si
-    aplica), para poder inspeccionar ambos.
+    Esborra tots els frames (i qualsevol .js residual d'un format
+    antic) la data dels quals sigui diferent del dia d'avui (UTC).
     """
-    import gzip
+    if not carpeta.exists():
+        carpeta.mkdir(parents=True, exist_ok=True)
+        return 0
 
-    url = f"{BASE}/stations/{id_station}/observations/{observation}/produit"
-    params = {}
-    if tour_antenne:
-        params["tour_antenne"] = tour_antenne
+    esborrats = 0
+    for f in carpeta.glob("*.js"):
+        if f.name in ("radar_metadata.js", "status.js"):
+            continue
+        dt_frame = parse_frame_filename(f.name)
+        if dt_frame is None:
+            f.unlink()
+            esborrats += 1
+            continue
+        if dt_frame.date() != avui_utc:
+            f.unlink()
+            esborrats += 1
 
-    r = requests.get(url, headers=HEADERS, params=params, timeout=30)
-    print(f"GET {r.url}")
-    print(f"status: {r.status_code}")
-    print(f"content-length: {len(r.content)} bytes")
-    print(f"content-type: {r.headers.get('content-type')}")
-    print(f"content-disposition: {r.headers.get('content-disposition')}")
-    print(f"primeros 20 bytes (hex): {r.content[:20].hex()}")
+    if esborrats:
+        print(f"    Esborrats {esborrats} frames d'un dia anterior")
+    return esborrats
 
-    if r.status_code != 200:
-        print(f"raw error: {r.text[:500]}")
-        return r
 
-    if guardar_en:
-        Path(guardar_en).parent.mkdir(parents=True, exist_ok=True)
-        with open(guardar_en, "wb") as f:
-            f.write(r.content)
-        print(f"Guardado (crudo, tal cual llego): {guardar_en}")
+def frames_existents(carpeta):
+    """
+    Retorna el conjunt de datetimes UTC dels frames que ja existeixen
+    en disc per avui, per evitar tornar a descarregar el mateix instant.
+    """
+    existents = set()
+    if not carpeta.exists():
+        return existents
+    for f in carpeta.glob("radar_frame_*.js"):
+        dt_frame = parse_frame_filename(f.name)
+        if dt_frame is not None:
+            existents.add(dt_frame)
+    return existents
 
-    if descomprimir:
+
+def descarregar_instant(url, headers, es_el_mes_recent):
+    """
+    Fa la peticio HTTP per un instant concret. Si es l'instant mes
+    recent d'aquesta execucio, reintenta amb espera abans de donar-lo
+    per fallit, ja que sol ser el que encara no ha publicat el radar.
+    Retorna (content, status_code) - content es None si falla.
+    """
+    intents = REINTENTOS_INSTANTE_MAS_RECIENTE if es_el_mes_recent else 1
+    ultim_status = None
+    for intent in range(1, intents + 1):
         try:
-            contenido = gzip.decompress(r.content)
-            print(f"\nDescomprimido OK: {len(contenido)} bytes")
-            print(f"primeros 20 bytes descomprimidos (hex): {contenido[:20].hex()}")
-            # firma HDF5 = \x89HDF\r\n\x1a\n
-            if contenido[:8] == b"\x89HDF\r\n\x1a\n":
-                print("-> Parece ser un fichero HDF5 valido!")
-            else:
-                print("-> No es HDF5 (firma distinta); primeros bytes como texto:",
-                      repr(contenido[:200]))
-            if guardar_en:
-                ruta_descomprimida = str(guardar_en) + ".decompressed"
-                with open(ruta_descomprimida, "wb") as f:
-                    f.write(contenido)
-                print(f"Guardado (descomprimido): {ruta_descomprimida}")
+            resp = requests.get(url, headers=headers, timeout=15)
+            ultim_status = resp.status_code
+            if resp.status_code == 200 and resp.content:
+                return resp.content, resp.status_code
         except Exception as e:
-            print(f"\nNo se pudo descomprimir con gzip: {e}")
-            print("Puede que el contenido no sea realmente gzip pese al content-type,")
-            print("o que ya venga descomprimido. Primeros 100 bytes crudos:")
-            print(repr(r.content[:100]))
+            print(f"      intent {intent}: error {e}")
+        if intent < intents:
+            time.sleep(ESPERA_ENTRE_REINTENTOS_SEG)
+    return None, ultim_status
 
-    return r
+
+def find_latest_frames(base_url, api_key, interval_min, frames_desitjats, ja_existents, max_intents=MAX_FRAMES):
+    """
+    Cerca els darrers instants disponibles. Si un instant concret ja
+    existeix en disc, se salta la descarrega pero es segueix comptant
+    per completar frames_desitjats amb instants mes antics si cal.
+
+    FIX respecte a la versio anterior: max_intents ara te marge de
+    sobres per sobre de frames_desitjats, de manera que un unic
+    instant fallit (p.ex. el mes recent, encara no publicat) no deixi
+    un forat permanent - el bucle segueix cap enrere fins completar
+    la quota real de frames, en lloc de rendir-se massa aviat.
+    """
+    now = datetime.now(timezone.utc)
+    candidate = round_down_interval(now, interval_min)
+    headers = {"accept": "application/x-hdf", "apikey": api_key}
+    frames = []
+    ja_tenim = 0
+    for i in range(max_intents):
+        es_el_mes_recent = (i == 0)
+        if candidate in ja_existents:
+            print(f"    ja existeix {candidate.strftime('%Y-%m-%dT%H%M%SZ')}, s'omet descarrega")
+            ja_tenim += 1
+            candidate -= timedelta(minutes=interval_min)
+            if (len(frames) + ja_tenim) >= frames_desitjats:
+                break
+            continue
+
+        ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
+        url = base_url.format(date=ts)
+        content, status = descarregar_instant(url, headers, es_el_mes_recent)
+        if content is not None:
+            frames.append((candidate, content))
+            print(f"    OK {ts} ({format_mida(len(content))})")
+            if (len(frames) + ja_tenim) >= frames_desitjats:
+                break
+        else:
+            print(f"    HTTP {status} {ts} (descartat, es continua cap enrere)")
+
+        candidate -= timedelta(minutes=interval_min)
+    return frames
+
+
+def is_point_in_region(lat, lon, regio):
+    return regio["lat_min"] <= lat <= regio["lat_max"] and regio["lon_min"] <= lon <= regio["lon_max"]
+
+
+def process_frame(h5data, regio, clau_valor):
+    """
+    Processa el frame HDF5 a maxima resolucio nativa: es recorre
+    l'array complet punt a punt, sense cap submostreig.
+    """
+    with tempfile.NamedTemporaryFile(suffix='.hdf', delete=False) as tmp:
+        tmp.write(h5data)
+        tmp_path = tmp.name
+    try:
+        with h5py.File(tmp_path, "r") as f:
+            where = f["where"].attrs
+            what = f["what"].attrs
+            data_grp = f["dataset1"]["data1"]
+            raw = data_grp["data"][:]
+            dw = data_grp["what"].attrs
+            gain = float(dw.get("gain", 1.0))
+            offset = float(dw.get("offset", 0.0))
+            nodata = dw.get("nodata", None)
+            undetect = dw.get("undetect", None)
+
+            # Resolucio nativa de la rejilla (en metres). El format
+            # ODIM_H5 (OPERA/MeteoFrance) sol incloure xscale/yscale al
+            # grup "where". Es propaga al frontend perque pugui dibuixar
+            # cada punt amb la mida de cel·la exacta i evitar forats
+            # visuals quan es fa zoom (abans es feia servir una mida
+            # fixa segons el nivell de zoom, que no s'ajustava a la
+            # densitat real de punts).
+            xscale = float(where.get("xscale", 0.0) or 0.0)
+            yscale = float(where.get("yscale", xscale) or xscale)
+            resolution_m = xscale if xscale > 0 else FALLBACK_RESOLUTION_M
+
+            valor = raw.astype(float) * gain + offset
+            if nodata is not None:
+                valor = np.where(raw == nodata, np.nan, valor)
+            if undetect is not None:
+                valor = np.where(raw == undetect, np.nan, valor)
+            projdef = where["projdef"]
+            if isinstance(projdef, bytes):
+                projdef = projdef.decode()
+            proj_crs = CRS.from_proj4(projdef)
+            ll_lon, ll_lat = float(where["LL_lon"]), float(where["LL_lat"])
+            ur_lon, ur_lat = float(where["UR_lon"]), float(where["UR_lat"])
+            fwd = Transformer.from_crs("EPSG:4326", proj_crs, always_xy=True)
+            x0, y0 = fwd.transform(ll_lon, ll_lat)
+            x1, y1 = fwd.transform(ur_lon, ur_lat)
+            ny, nx = valor.shape
+            xs = np.linspace(x0, x1, nx)
+            ys = np.linspace(y1, y0, ny)
+            valor_reduced = valor
+            xx, yy = np.meshgrid(xs, ys)
+            inv = Transformer.from_crs(proj_crs, "EPSG:4326", always_xy=True)
+            lons, lats = inv.transform(xx, yy)
+            points = []
+            min_lat, max_lat = 90, -90
+            min_lon, max_lon = 180, -180
+            for i in range(valor_reduced.shape[0]):
+                for j in range(valor_reduced.shape[1]):
+                    if not np.isnan(valor_reduced[i, j]):
+                        lat, lon = float(lats[i, j]), float(lons[i, j])
+                        if is_point_in_region(lat, lon, regio):
+                            points.append({"lat": lat, "lon": lon, clau_valor: float(valor_reduced[i, j])})
+                            if lat < min_lat:
+                                min_lat = lat
+                            if lat > max_lat:
+                                max_lat = lat
+                            if lon < min_lon:
+                                min_lon = lon
+                            if lon > max_lon:
+                                max_lon = lon
+            if len(points) == 0:
+                min_lat, max_lat = regio["lat_min"], regio["lat_max"]
+                min_lon, max_lon = regio["lon_min"], regio["lon_max"]
+            else:
+                m = 0.1
+                min_lat -= m
+                max_lat += m
+                min_lon -= m
+                max_lon += m
+            date_str = what.get("date", b"")
+            time_str = what.get("time", b"")
+            if isinstance(date_str, bytes):
+                date_str = date_str.decode()
+            if isinstance(time_str, bytes):
+                time_str = time_str.decode()
+            ts = str(date_str) if date_str else ""
+            if len(ts) == 8:
+                ts = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+            ts += f"T{time_str}Z" if time_str else "T00:00:00Z"
+            return {
+                "bounds": {"north": float(max_lat), "south": float(min_lat), "east": float(max_lon), "west": float(min_lon)},
+                "points": points,
+                "timestamp": ts,
+                "resolution_m": resolution_m,
+            }
+    finally:
+        os.unlink(tmp_path)
+
+
+def generate_web_files(frames_nous, output_dir, interval_min, product_label, avui_utc):
+    """
+    Desa cada frame nou amb el seu nom basat en timestamp real, i
+    despres regenera radar_metadata.js llegint tots els frames vigents
+    del dia actual, ordenats cronologicament.
+    """
+    for dt_frame, data in frames_nous:
+        nom = frame_filename(dt_frame)
+        # IMPORTANT: cal generar JSON valid (claus entre cometes), no
+        # un literal JS informal, perque el frontend fa JSON.parse()
+        # directament sobre aquest objecte (sense eval()).
+        frame_obj = {
+            "timestamp": data["timestamp"],
+            "bounds": data["bounds"],
+            "points": data["points"],
+            "resolution_m": data.get("resolution_m", FALLBACK_RESOLUTION_M),
+        }
+        js = "window.radarFrame = " + json.dumps(frame_obj, separators=(',', ':')) + ";"
+        with open(output_dir / nom, 'w', encoding='utf-8') as f:
+            f.write(js)
+
+    frames_vigents = []
+    for f in output_dir.glob("radar_frame_*.js"):
+        dt_frame = parse_frame_filename(f.name)
+        if dt_frame is not None and dt_frame.date() == avui_utc:
+            frames_vigents.append((dt_frame, f.name))
+    frames_vigents.sort(key=lambda x: x[0])
+
+    if not frames_vigents:
+        return False
+
+    metadata = {
+        "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "region": "NE_Espanya",
+        "product": product_label,
+        "resolution": "maxima (sense submostreig)",
+        "interval": f"{interval_min} min",
+        "frames": [
+            {"timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"), "file": nom}
+            for dt, nom in frames_vigents
+        ],
+    }
+    metadata["latest_frame"] = frames_vigents[-1][1]
+    with open(output_dir / "radar_metadata.js", 'w', encoding='utf-8') as f:
+        f.write(f"window.radarMetadata = {json.dumps(metadata, indent=2)};")
+
+    ara = datetime.now(timezone.utc)
+    with open(output_dir / "status.js", 'w', encoding='utf-8') as f:
+        f.write(
+            "window.radarStatus = {\n"
+            f"    executedAtUTC: \"{ara.strftime('%Y-%m-%dT%H:%M:%SZ')}\",\n"
+            f"    executedAtEpochMs: {int(ara.timestamp() * 1000)},\n"
+            f"    framesNousAquestaExecucio: {len(frames_nous)},\n"
+            f"    framesVigentsAvui: {len(frames_vigents)}\n"
+            "};"
+        )
+    print(f"    {len(frames_nous)} frames nous | {len(frames_vigents)} frames vigents avui")
+    return True
+
+
+def procesar_producte(config, api_key, regio):
+    label = config["label"]
+    output_dir = config["output_dir"]
+    avui_utc = datetime.now(timezone.utc).date()
+
+    print(f"\n  {label}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    netejar_frames_dia_anterior(output_dir, avui_utc)
+
+    ja_existents = frames_existents(output_dir)
+    frames_candidats = find_latest_frames(
+        config["base_url"], api_key, config["interval"], config["frames_desitjats"],
+        ja_existents, MAX_FRAMES
+    )
+
+    if not frames_candidats and not ja_existents:
+        print("    Sense frames")
+        return False
+
+    frames_nous = []
+    for dt, content in frames_candidats:
+        try:
+            data = process_frame(content, regio, config["clau_valor"])
+            # Es guarda el frame sempre, encara que no hi hagi cap punt
+            # de pluja dins la regio: un frame buit es una lectura
+            # valida (no plou enlloc en aquell instant).
+            frames_nous.append((dt, data))
+            if data["points"]:
+                print(f"    Processat: {len(data['points']):,} punts")
+            else:
+                print("    Buit a la regio (es guarda igualment, 0 punts)")
+        except Exception as e:
+            print(f"    Error: {e}")
+
+    return generate_web_files(frames_nous, output_dir, config["interval"], label, avui_utc)
 
 
 # ---------------------------------------------------------------------------
-# MAIN - exploracion guiada por argumentos
+# MAIN
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
+    print("=" * 60)
+    print("  RADAR OPERA - CICLE UNIC")
+    print(f"  NIMBUS ({NIMBUS_PRODUCT}) -> public/radar_nimbus/")
+    print("  Frames acumulatius per timestamp real (purga diaria)")
+    print("=" * 60)
 
-    if len(sys.argv) < 2:
-        print("Uso:")
-        print("  python explorar_dpradar.py estaciones")
-        print("  python explorar_dpradar.py buscar <nombre_parcial>")
-        print("  python explorar_dpradar.py observaciones [id_station]")
-        print("  python explorar_dpradar.py describir <observation> [id_station]")
-        print("  python explorar_dpradar.py descargar <observation> [id_station] [tour_antenne] [ruta_salida]")
-        print("  python explorar_dpradar.py bufr <ruta_al_fichero_decompressed>")
-        sys.exit(0)
+    ok_nimbus = procesar_producte(CONFIG["nimbus"], API_KEY, REGIO)
 
-    modo = sys.argv[1]
-
-    if modo == "estaciones":
-        listar_estaciones()
-
-    elif modo == "buscar":
-        nombre = sys.argv[2] if len(sys.argv) > 2 else "OPOUL"
-        buscar_estacion(nombre)
-
-    elif modo == "observaciones":
-        id_st = sys.argv[2] if len(sys.argv) > 2 else OPOUL_ID
-        listar_observaciones(id_station=id_st)
-
-    elif modo == "describir":
-        obs = sys.argv[2]
-        id_st = sys.argv[3] if len(sys.argv) > 3 else OPOUL_ID
-        describir_observacion(obs, id_station=id_st)
-
-    elif modo == "descargar":
-        obs = sys.argv[2]
-        id_st = sys.argv[3] if len(sys.argv) > 3 else OPOUL_ID
-        tour = sys.argv[4] if len(sys.argv) > 4 else ("A" if obs in ("PAG", "PAM") else None)
-        ruta = sys.argv[5] if len(sys.argv) > 5 else f"descargas/{obs}_{id_st}_{tour or 'na'}.bin"
-        descargar_producto(obs, id_station=id_st, tour_antenne=tour, guardar_en=ruta)
-
-    elif modo == "bufr":
-        ruta = sys.argv[2]
-        inspeccionar_bufr(ruta)
-
-    else:
-        print(f"Modo desconocido: {modo}")
+    print(f"\n  NIMBUS: {'OK' if ok_nimbus else 'ERROR'}")
+    sys.exit(0 if ok_nimbus else 1)
