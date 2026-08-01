@@ -16,6 +16,7 @@ jobs:
       - name: Crear carpetes de dades
         run: |
           mkdir -p radar/public/radar
+          mkdir -p radar/public/radar_nimbus
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
@@ -35,26 +36,32 @@ jobs:
         run: |
           cd radar
           python -u radar.py
+      - name: Executar radar_nimbus.py (NIMBUS)
+        env:
+          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cd radar
+          python -u radar_nimbus.py
       - name: Mostrar contingut generat
         run: |
           echo "--- public/radar ---"
           ls -la radar/public/radar/ 2>/dev/null || echo "buit"
+          echo "--- public/radar_nimbus ---"
+          ls -la radar/public/radar_nimbus/ 2>/dev/null || echo "buit"
       - name: Pujar dades a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set +e  # no abortar tot el step si una comanda falla; ho gestionem nosaltres
-
           failed_files=()
-
           upload_with_retry() {
             local file="$1"
             local key="$2"
             local max_attempts=5
             local attempt=1
             local delay=3
-
             while [ "$attempt" -le "$max_attempts" ]; do
               echo "Pujant $key (intent $attempt/$max_attempts)..."
               if npx wrangler r2 object put "$key" \
@@ -62,20 +69,28 @@ jobs:
                 echo "OK: $key"
                 return 0
               fi
-
               echo "Fallada intent $attempt per $key. Reintentant en ${delay}s..."
               sleep "$delay"
               attempt=$((attempt + 1))
               delay=$((delay * 2))  # backoff exponencial: 3s, 6s, 12s, 24s
             done
-
             echo "ERROR DEFINITIU: no s'ha pogut pujar $key després de $max_attempts intents"
             return 1
           }
 
+          # CIRRUS
           for f in radar/public/radar/*.js; do
             [ -e "$f" ] || continue
             key="tempestes-radar-data/radar/$(basename "$f")"
+            if ! upload_with_retry "$f" "$key"; then
+              failed_files+=("$key")
+            fi
+          done
+
+          # NIMBUS
+          for f in radar/public/radar_nimbus/*.js; do
+            [ -e "$f" ] || continue
+            key="tempestes-radar-data/radar_nimbus/$(basename "$f")"
             if ! upload_with_retry "$f" "$key"; then
               failed_files+=("$key")
             fi
@@ -87,5 +102,4 @@ jobs:
             printf ' - %s\n' "${failed_files[@]}"
             exit 1
           fi
-
           echo "Totes les pujades han tingut èxit."
