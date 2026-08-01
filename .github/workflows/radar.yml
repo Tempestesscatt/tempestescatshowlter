@@ -1,6 +1,9 @@
 name: Actualitza dades radar
 on:
   workflow_dispatch: {}
+  # També hauries d'afegir schedule perquè s'executi automàticament
+  schedule:
+    - cron: '*/5 * * * *'  # cada 5 minuts per Cirrus
 permissions:
   contents: read
 jobs:
@@ -13,21 +16,36 @@ jobs:
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
+      
       - name: Crear carpetes de dades
         run: |
           mkdir -p radar/public/radar
+      
+      # ═══ NOU PAS: Descarregar dades existents del R2 ═══
+      - name: Descarregar dades radar existents del R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "Descarregant dades existents del R2..."
+          # Descarrega TOTS els fitxers .js del bucket a la carpeta local
+          npx wrangler r2 object get "tempestes-radar-data/radar/" --local-dir=radar/public/radar/ || echo "Cap dada prèvia (primera execució)"
+      
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      
       - name: Instal·lar dependències del sistema (HDF5)
         run: |
           sudo apt-get update
           sudo apt-get install -y libhdf5-dev
+      
       - name: Instal·lar dependències de Python
         run: |
           python -m pip install --upgrade pip
           pip install requests h5py numpy pyproj
+      
       - name: Executar radar.py (CIRRUS / dBZ)
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
@@ -35,16 +53,21 @@ jobs:
         run: |
           cd radar
           python -u radar.py
+      
       - name: Mostrar contingut generat
         run: |
           echo "--- public/radar ---"
           ls -la radar/public/radar/ 2>/dev/null || echo "buit"
+          echo ""
+          echo "Nombre de frames:"
+          ls radar/public/radar/radar_frame_*.js 2>/dev/null | wc -l
+      
       - name: Pujar dades a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set +e  # no abortar tot el step si una comanda falla; ho gestionem nosaltres
+          set +e
           failed_files=()
           upload_with_retry() {
             local file="$1"
@@ -62,7 +85,7 @@ jobs:
               echo "Fallada intent $attempt per $key. Reintentant en ${delay}s..."
               sleep "$delay"
               attempt=$((attempt + 1))
-              delay=$((delay * 2))  # backoff exponencial: 3s, 6s, 12s, 24s
+              delay=$((delay * 2))
             done
             echo "ERROR DEFINITIU: no s'ha pogut pujar $key després de $max_attempts intents"
             return 1
@@ -80,4 +103,4 @@ jobs:
             printf ' - %s\n' "${failed_files[@]}"
             exit 1
           fi
-          echo "Totes les pujades han tingut èxit." ara donam aixo que executi rad.py tambe es el que conte nimbus
+          echo "Totes les pujades han tingut èxit."
