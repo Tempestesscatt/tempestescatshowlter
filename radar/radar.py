@@ -15,36 +15,45 @@ from pathlib import Path
 # CONFIGURACIO
 # ---------------------------------------------------------------------------
 
+# IMPORTANT: la clau NO ha d'anar mai escrita literalment al codi.
+# Passa-la sempre com a variable d'entorn / secret de GitHub Actions.
 API_KEY = os.environ.get("METEOFRANCE_API_KEY")
-BASE_URL_CIRRUS = "https://partner-api.meteofrance.fr/partner/radar/opera/1.0/realtime/cirrus/composite/REFLECTIVITY/{date}?format=HDF5"
 
-OUTPUT_DIR_CIRRUS = Path("public/radar")
+BASE_URL_CIRRUS = "https://partner-api.meteofrance.fr/partner/radar/opera/1.0/realtime/cirrus/composite/REFLECTIVITY/{date}?format=HDF5"
+BASE_URL_NIMBUS = "https://partner-api.meteofrance.fr/partner/radar/opera/1.0/realtime/nimbus/composite/RAINFALL_ACCUMULATION/{date}?format=HDF5"
+
+OUTPUT_DIR = Path("public/radar")
 
 REGIO = {"lat_min": 38.5, "lat_max": 45.0, "lon_min": -2.0, "lon_max": 5.0}
 
 CONFIG = {
     "cirrus": {
-        "output_dir": OUTPUT_DIR_CIRRUS,
+        "output_dir": OUTPUT_DIR,
         "base_url": BASE_URL_CIRRUS,
-        "interval": 5,
+        "interval": 5,            # Cirrus publica cada 5 min
         "clau_valor": "dbz",
         "label": "CIRRUS (dBZ)",
-        # Prefix del nom de fitxer: "" per Cirrus, "nimbus_" per Nimbus.
-        # Aixi tots dos productes conviuen a la mateixa carpeta sense
-        # xocar noms ni sobreescriures.
-        "filename_prefix": "",
-    }
+        "filename_prefix": "",    # sense prefix, com fins ara
+    },
+    "nimbus": {
+        "output_dir": OUTPUT_DIR,
+        "base_url": BASE_URL_NIMBUS,
+        "interval": 15,           # Nimbus publica cada 15 min (NO 5!)
+        "clau_valor": "rain_mm",
+        "label": "NIMBUS (Rainfall accumulation)",
+        "filename_prefix": "nimbus",  # evita xocar amb els fitxers de Cirrus
+    },
 }
 
-# Nomes es demana UN instant: l'actual, arrodonit cap avall a l'interval
-# del producte. No es busca cap frame historic ni es completa cap quota
-# cap enrere; si l'instant actual no esta disponible (encara no publicat
-# pel radar), es reintenta unes quantes vegades amb espera i, si tot i
-# aixi falla, no es genera cap frame nou en aquesta execucio.
+# Nomes es demana UN instant per producte: l'actual, arrodonit cap
+# avall al seu interval. No es busca cap frame historic ni es
+# completa cap quota cap enrere; els frames s'acumulen sols execucio
+# rere execucio (p.ex. via cron), i la purga diaria neteja tot quan
+# canvia la data UTC.
 REINTENTOS_INSTANTE_ACTUAL = 3
 ESPERA_ENTRE_REINTENTOS_SEG = 5
 
-# Patro del nom de fitxer d'un frame (amb o sense prefix de producte):
+# Patro del nom de fitxer d'un frame, amb o sense prefix de producte:
 # radar_frame_DD_MM_YYYY_HHMMz.js
 # radar_frame_nimbus_DD_MM_YYYY_HHMMz.js
 FRAME_FILENAME_RE = re.compile(
@@ -85,8 +94,8 @@ def parse_frame_filename(nom_fitxer):
     """
     Extreu (datetime UTC, prefix) codificats al nom del fitxer, o
     (None, None) si el nom no segueix el patro esperat (p. ex.
-    metadata.js, status.js). prefix es "" per als frames sense prefix
-    (Cirrus) o el text del prefix (p.ex. "nimbus") per als altres.
+    metadata.js, status.js). prefix es "" per Cirrus (sense prefix) o
+    el text del prefix (p.ex. "nimbus") per als altres productes.
     """
     m = FRAME_FILENAME_RE.match(nom_fitxer)
     if not m:
@@ -105,11 +114,6 @@ def netejar_frames_dia_anterior(carpeta, avui_utc, filename_prefix=""):
     Esborra nomes els frames DEL MATEIX PRODUCTE (mateix prefix) la
     data dels quals sigui diferent del dia d'avui (UTC). Aixi Cirrus i
     Nimbus, que comparteixen carpeta, no s'esborren l'un a l'altre.
-
-    La neteja es basa unicament en si la data del frame coincideix amb
-    la data actual UTC: si son al mateix dia, es conserva; si es d'un
-    dia anterior (p.ex. ahir a les 23:55 quan ara ja es un altre dia),
-    s'esborra.
     """
     if not carpeta.exists():
         carpeta.mkdir(parents=True, exist_ok=True)
@@ -119,12 +123,8 @@ def netejar_frames_dia_anterior(carpeta, avui_utc, filename_prefix=""):
     for f in carpeta.glob("radar_frame_*.js"):
         dt_frame, prefix = parse_frame_filename(f.name)
         if dt_frame is None:
-            # Nom no reconegut: no el toquem (podria ser d'un altre
-            # producte amb un format encara no contemplat).
             continue
         if prefix != filename_prefix:
-            # Frame d'un altre producte (prefix diferent): no es toca
-            # en aquesta crida, cada producte neteja nomes el seu.
             continue
         if dt_frame.date() != avui_utc:
             f.unlink()
@@ -164,30 +164,50 @@ def descarregar_instant_actual(url, headers):
 
 def obtenir_frame_actual(base_url, api_key, interval_min, output_dir, filename_prefix=""):
     """
-    Demana NOMES l'instant actual (arrodonit a l'interval). Si ja
-    existeix en disc, no es torna a descarregar. Si no existeix,
-    es descarrega (amb reintents) i es retorna el seu contingut.
+    Demana l'instant actual (arrodonit a l'interval propi del
+    producte) i, si no esta disponible, prova UN unic pas enrere
+    (un interval) abans de rendir-se.
 
-    Retorna (dt_candidat, content) si s'ha descarregat un frame nou,
-    o (dt_candidat, None) si ja existia o si ha fallat la descarrega.
+    Per que aquest unic pas enrere? Si el retard tipic de publicacio
+    del radar es mes gran que l'interval del producte (molt habitual
+    amb Cirrus, que publica cada 5 min), demanar sempre "l'instant mes
+    nou possible en aquest moment" fa que cada execucio persegueixi un
+    dat que encara no ha sortit, i mai s'arriba a demanar l'instant
+    immediatament anterior, que quasi sempre ja esta publicat. Amb
+    aquest fallback d'un sol pas, es trenca aquest "sempre un pas per
+    darrere". No es continua mes enrere: si tampoc hi es, s'espera a
+    la propera execucio (aixi es manté el comportament de no fer
+    backfill llarg).
+
+    Si el frame trobat (actual o l'anterior) ja existeix en disc, no
+    es torna a descarregar.
+
+    Retorna (dt_candidat, content): content es None si ja existia o si
+    ha fallat la descarrega dels dos instants provats.
     """
     now = datetime.now(timezone.utc)
     candidate = round_down_interval(now, interval_min)
 
-    if frame_existeix(output_dir, candidate, filename_prefix):
-        print(f"    ja existeix {candidate.strftime('%Y-%m-%dT%H%M%SZ')}, s'omet descarrega")
-        return candidate, None
+    for intent in range(2):  # 0 = instant actual, 1 = un pas enrere
+        if frame_existeix(output_dir, candidate, filename_prefix):
+            print(f"    ja existeix {candidate.strftime('%Y-%m-%dT%H%M%SZ')}, s'omet descarrega")
+            return candidate, None
 
-    ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
-    url = base_url.format(date=ts)
-    headers = {"accept": "application/x-hdf", "apikey": api_key}
-    content, status = descarregar_instant_actual(url, headers)
-    if content is not None:
-        print(f"    OK {ts} ({format_mida(len(content))})")
-        return candidate, content
-    else:
-        print(f"    HTTP {status} {ts} (sense frame nou en aquesta execucio)")
-        return candidate, None
+        ts = candidate.strftime("%Y-%m-%dT%H%M%SZ")
+        url = base_url.format(date=ts)
+        headers = {"accept": "application/x-hdf", "apikey": api_key}
+        content, status = descarregar_instant_actual(url, headers)
+        if content is not None:
+            print(f"    OK {ts} ({format_mida(len(content))})")
+            return candidate, content
+
+        if intent == 0:
+            print(f"    HTTP {status} {ts}, provant l'instant anterior")
+            candidate -= timedelta(minutes=interval_min)
+        else:
+            print(f"    HTTP {status} {ts} (sense frame nou en aquesta execucio)")
+
+    return candidate, None
 
 
 def is_point_in_region(lat, lon, regio):
@@ -214,11 +234,6 @@ def process_frame(h5data, regio, clau_valor):
             nodata = dw.get("nodata", None)
             undetect = dw.get("undetect", None)
 
-            # Resolucio nativa de la rejilla (en metres). El format
-            # ODIM_H5 (OPERA/MeteoFrance) sol incloure xscale/yscale al
-            # grup "where". Es propaga al frontend perque pugui dibuixar
-            # cada punt amb la mida de cel·la exacta i evitar forats
-            # visuals quan es fa zoom.
             xscale = float(where.get("xscale", 0.0) or 0.0)
             yscale = float(where.get("yscale", xscale) or xscale)
             resolution_m = xscale if xscale > 0 else FALLBACK_RESOLUTION_M
@@ -294,14 +309,14 @@ def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_
     """
     Desa el frame nou (si n'hi ha) amb el seu nom basat en timestamp
     real, i despres regenera els fitxers de metadata NOMES amb els
-    frames vigents d'aquest producte (mateix prefix) i d'avui.
+    frames vigents d'aquest producte (mateix prefix) i d'avui, perque
+    Cirrus i Nimbus tinguin cadascun la seva propia metadata/status.
+    Els frames de execucions anteriors (encara vigents avui) es
+    mantenen tal qual: aixi es com s'acumulen sols amb el temps.
     """
     if frame_nou is not None:
         dt_frame, data = frame_nou
         nom = frame_filename(dt_frame, filename_prefix)
-        # IMPORTANT: cal generar JSON valid (claus entre cometes), no
-        # un literal JS informal, perque el frontend fa JSON.parse()
-        # directament sobre aquest objecte (sense eval()).
         frame_obj = {
             "timestamp": data["timestamp"],
             "bounds": data["bounds"],
@@ -354,7 +369,7 @@ def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_
     return True
 
 
-def procesar_producte(config, api_key, regio):
+def procesar_producte(nom_producte, config, api_key, regio):
     label = config["label"]
     output_dir = config["output_dir"]
     filename_prefix = config.get("filename_prefix", "")
@@ -363,8 +378,6 @@ def procesar_producte(config, api_key, regio):
     print(f"\n  {label}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    # Nomes s'esborren frames d'aquest mateix producte (prefix) que
-    # siguin d'un dia diferent d'avui.
     netejar_frames_dia_anterior(output_dir, avui_utc, filename_prefix)
 
     dt_candidat, content = obtenir_frame_actual(
@@ -396,12 +409,24 @@ def procesar_producte(config, api_key, regio):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("  RADAR OPERA - CICLE UNIC (nomes instant actual)")
-    print("  CIRRUS (dBZ) -> public/radar/")
-    print("  Neteja nomes per canvi de dia UTC")
+    print("  RADAR OPERA - CICLE UNIC")
+    print("  CIRRUS (dBZ) + NIMBUS (rainfall) -> public/radar/")
+    print("  Frames acumulatius per timestamp real (purga diaria)")
     print("=" * 60)
 
-    ok_cirrus = procesar_producte(CONFIG["cirrus"], API_KEY, REGIO)
+    if not API_KEY:
+        print("\n  ERROR: falta la variable d'entorn METEOFRANCE_API_KEY")
+        sys.exit(1)
+
+    ok_cirrus = procesar_producte("cirrus", CONFIG["cirrus"], API_KEY, REGIO)
+    ok_nimbus = procesar_producte("nimbus", CONFIG["nimbus"], API_KEY, REGIO)
 
     print(f"\n  CIRRUS: {'OK' if ok_cirrus else 'ERROR'}")
-    sys.exit(0 if ok_cirrus else 1)
+    print(f"  NIMBUS: {'OK' if ok_nimbus else 'ERROR'}")
+
+    # Si vols que el job falli nomes quan FALLEN ELS DOS productes
+    # (i no bloquejar Cirrus per un fallo puntual de Nimbus o
+    # viceversa), fes servir la linia de sota en lloc de l'actual:
+    # sys.exit(0 if (ok_cirrus or ok_nimbus) else 1)
+
+    sys.exit(0 if (ok_cirrus and ok_nimbus) else 1)
