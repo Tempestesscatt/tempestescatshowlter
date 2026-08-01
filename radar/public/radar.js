@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════
 //  radar.js — VISOR RADAR METEOROLÒGIC (NE ESPANYA)
-//  CIRRUS (dBZ) · Hora Madrid · Escala americana · Multi-paleta
+//  CIRRUS (dBZ) + NIMBUS (dBZ) · Hora Madrid · Escala americana · Multi-paleta
 //  + Ubicació en viu (seguiment) + Alerta de dBZ fort a prop
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -13,6 +13,22 @@
     const BASE_PATH = 'https://radar-data.tempestes.cat/radar';
     const VALOR_KEY = 'dbz';
     const REFRESH_MS = 5 * 60 * 1000; // 5 min
+
+    // Productes disponibles: Cirrus i Nimbus
+    const PRODUCTES = {
+        cirrus: {
+            label: 'CIRRUS (dBZ)',
+            metadataFile: 'radar_metadata.js',
+            filenamePrefix: ''  // els frames de cirrus no tenen prefix
+        },
+        nimbus: {
+            label: 'NIMBUS (dBZ)',
+            metadataFile: 'radar_metadata_nimbus.js',
+            filenamePrefix: 'nimbus_'  // els frames de nimbus tenen prefix "nimbus_"
+        }
+    };
+    const PRODUCTE_STORAGE_KEY = 'radar_producte_seleccionat';
+    let producteActual = 'cirrus';  // per defecte
 
     // ═══ CONFIG ALERTA DE PROXIMITAT ═══
     const ALERT_DBZ_THRESHOLD = 50;   // dBZ a partir del qual avisem
@@ -99,7 +115,7 @@
                 {v:28,  r:120, g:220, b:70,  a:220},
                 {v:34,  r:230, g:220, b:60,  a:225},
                 {v:40,  r:250, g:170, b:40,  a:235},
-                {v:46,  r:245, g:100, b:40,  a:240},
+                {v:46,  r:245, g:100, b:40,  a:235},
                 {v:52,  r:230, g:50,  b:40,  a:245},
                 {v:58,  r:180, g:30,  b:90,  a:250},
                 {v:64,  r:150, g:30,  b:170, a:255},
@@ -245,20 +261,6 @@
             const ctx = this._offscreen.getContext('2d');
             ctx.clearRect(0, 0, W, H);
 
-            // ═══ MIDA DE PUNT BASADA EN LA RESOLUCIO REAL DE DADES ═══
-            // Abans es feia servir una mida fixa segons el zoom del mapa
-            // (6/5/4/3 px), que no tenia relacio amb la densitat real de
-            // punts dins d'aquest canvas offscreen de 1024px. Si l'area
-            // geografica era gran respecte al nombre de punts, quedaven
-            // forats visibles entre quadradets (el problema reportat).
-            //
-            // Ara calculem quants graus (lat/lon) ocupa una cel·la nativa
-            // del radar (resolution_m, ve del HDF5 via xscale/yscale) i
-            // la convertim a píxels d'aquest canvas concret. Aixi els
-            // quadrats es toquen exactament sense forats artificials,
-            // independentment del zoom. Els unics "forats" que hi haura
-            // son punts reals sense dada (nodata/undetect -> NaN), que
-            // es correcte que es vegin buits.
             const resolutionM = this._frame.resolution_m || FALLBACK_RESOLUTION_M;
             const centerLatRad = ((b.north + b.south) / 2) * Math.PI / 180;
             const metersPerDegLon = 111320 * Math.cos(centerLatRad);
@@ -267,9 +269,6 @@
             const pxPerDegLat = H / latR;
             const pxSizeX = (resolutionM / metersPerDegLon) * pxPerDegLon;
             const pxSizeY = (resolutionM / metersPerDegLat) * pxPerDegLat;
-            // +1 px de marge per compensar l'arrodoniment de Math.floor
-            // en x,y, que sense aquest marge deixaria una escletxa d'1px
-            // entre cel·les veïnes.
             const pSize = Math.max(1, Math.ceil(Math.max(pxSizeX, pxSizeY)) + 1);
 
             for (let i=0; i<pts.length; i++) {
@@ -283,15 +282,6 @@
                 ctx.fillRect(Math.floor(x), Math.floor(y), pSize, pSize);
             }
 
-            // ═══ BARREJA DE COLOR (punt mig entre blocs durs i boira) ═══
-            // Ni quadrats 100% durs (es veuen "de pixel") ni un blur fort
-            // que esvaeix el color a les vores (es veu "boirós"). Aqui
-            // difuminem una mica mes que un simple antialiasing, pero
-            // despres compensem la perdua de saturacio/contrast que tot
-            // blur provoca als límits entre colors (perque barreja alfa
-            // amb zones transparents veïnes). Aixo dona una transicio
-            // suau entre cel·les mantenint els colors vius, similar als
-            // composats de reflectivitat que es veuen a RadarScope/NWS.
             if (!this._smooth || this._smooth.width !== W || this._smooth.height !== H) {
                 this._smooth = document.createElement('canvas');
                 this._smooth.width = W;
@@ -415,28 +405,27 @@
         if (ld && !silencios) ld.classList.remove('hidden');
 
         try {
+            const prod = PRODUCTES[producteActual];
             // Cache-busting: evita servir una copia en cache del CDN
-            // en comptes de les dades acabades de pujar.
-            const mr = await fetch(BASE_PATH+'/radar_metadata.js?t='+Date.now(), {cache:'no-store'});
+            const mr = await fetch(BASE_PATH+'/'+prod.metadataFile+'?t='+Date.now(), {cache:'no-store'});
             if (!mr.ok) {
                 if (ld) ld.classList.add('hidden');
-                setStatus('Error carregant dades', true);
+                setStatus('Error carregant dades ('+prod.label+')', true);
                 return;
             }
             const metaText = await mr.text();
 
-            // Parsegem sense eval(): extraiem el JSON directament,
-            // evitant que un frame fallit deixi window.radarMetadata
-            // en un estat inconsistent.
             const metaMatch = metaText.match(/window\.radarMetadata\s*=\s*(\{[\s\S]*\});?\s*$/);
             if (!metaMatch) {
                 if (ld) ld.classList.add('hidden');
+                setStatus('Format de metadata invàlid', true);
                 return;
             }
             const metadata = JSON.parse(metaMatch[1]);
 
             if (!metadata || !metadata.frames || !metadata.frames.length) {
                 if (ld) ld.classList.add('hidden');
+                setStatus('Sense dades ('+prod.label+')', true);
                 return;
             }
 
@@ -465,14 +454,14 @@
 
             if (ld) ld.classList.add('hidden');
             if (!framesNous.length) {
-                setStatus('Sense dades noves', true);
+                setStatus('Sense frames vàlids ('+prod.label+')', true);
                 return;
             }
 
             const estavaAlDarrer = (currentFrame === radarFrames.length - 1) || radarFrames.length === 0;
 
             radarFrames = framesNous;
-            console.log('[Radar] Frames:', radarFrames.length, silencios ? '(auto-refresc)' : '(carrega inicial)');
+            console.log('[Radar] Frames ('+prod.label+'):', radarFrames.length, silencios ? '(auto-refresc)' : '(carrega inicial)');
 
             if (estavaAlDarrer) {
                 currentFrame = radarFrames.length - 1;
@@ -482,7 +471,7 @@
 
             radarLayer.setFrame(radarFrames[currentFrame]);
             updateUI();
-            setStatus('En directe', false);
+            setStatus(prod.label+' · En directe', false);
             avaluarAlertaProximitat();
         } catch(e) {
             if (ld) ld.classList.add('hidden');
@@ -528,6 +517,55 @@
         if (animTimer) { clearInterval(animTimer); animTimer = null; }
     }
     function toggleAnim() { animPlaying ? stopAnim() : startAnim(); }
+
+    // ═══ SELECTOR DE PRODUCTE ═══
+    function aplicarProducte(clau) {
+        if (!PRODUCTES[clau]) return;
+        producteActual = clau;
+        try { localStorage.setItem(PRODUCTE_STORAGE_KEY, clau); } catch(e) {}
+        // Resetegem l'estat actual i recarreguem les dades del nou producte
+        radarFrames = [];
+        currentFrame = 0;
+        radarLayer.setFrame(null);
+        updateUI();
+        setStatus('Carregant '+PRODUCTES[clau].label+'...', false);
+        carregarDades(false);
+        const sel = document.getElementById('productSelect');
+        if (sel && sel.value !== clau) sel.value = clau;
+    }
+
+    function initProductSelector() {
+        const bb = document.getElementById('bottombar');
+        if (!bb || document.getElementById('productSelect')) return;
+
+        const wrap = document.createElement('select');
+        wrap.id = 'productSelect';
+        wrap.title = 'Producte de radar';
+        wrap.style.cssText = 'margin-left:8px;padding:6px 10px;border-radius:8px;'+
+            'background:rgba(13,17,23,0.9);color:#c9d1d9;border:1px solid rgba(255,255,255,0.15);'+
+            'font-family:sans-serif;font-size:13px;cursor:pointer;';
+
+        Object.keys(PRODUCTES).forEach(function(clau) {
+            const opt = document.createElement('option');
+            opt.value = clau;
+            opt.textContent = PRODUCTES[clau].label;
+            wrap.appendChild(opt);
+        });
+
+        let inicial = 'cirrus';
+        try {
+            const guardat = localStorage.getItem(PRODUCTE_STORAGE_KEY);
+            if (guardat && PRODUCTES[guardat]) inicial = guardat;
+        } catch(e) {}
+        wrap.value = inicial;
+        producteActual = inicial;
+
+        wrap.addEventListener('change', function() {
+            aplicarProducte(wrap.value);
+        });
+
+        bb.appendChild(wrap);
+    }
 
     // ═══ SELECTOR DE PALETA ═══
     function aplicarPaleta(clau) {
@@ -576,11 +614,11 @@
     //  UBICACIÓ EN VIU + SEGUIMENT + ALERTA DE PROXIMITAT
     // ═══════════════════════════════════════════════════════════════════
     let watchId = null;
-    let seguimentActiu = false;   // si el mapa s'ha de recentrar sol quan et mous
+    let seguimentActiu = false;
     let userMarker = null;
     let userAccuracyCircle = null;
     let alertRadiusCircle = null;
-    let posicioActual = null;     // {lat, lon}
+    let posicioActual = null;
     let ultimAvisTs = 0;
     let alertaActiva = false;
 
@@ -679,8 +717,6 @@
         } catch(e) {}
     }
 
-    // Comprova el frame de radar actual i busca el punt de dBZ més alt
-    // dins del radi definit al voltant de la posició de l'usuari.
     function avaluarAlertaProximitat() {
         if (!posicioActual || !radarFrames.length || !radarFrames[currentFrame]) return;
         const frame = radarFrames[currentFrame];
@@ -691,8 +727,6 @@
             const p = frame.points[i];
             const v = p[VALOR_KEY];
             if (v === undefined || v === null || isNaN(v)) continue;
-            // Filtre ràpid abans del càlcul de distància real (bounding box en graus,
-            // aprox 1° lat ≈ 111km)
             const dLatDeg = Math.abs(p.lat - posicioActual.lat);
             if (dLatDeg > (ALERT_RADIUS_KM/111) * 1.5) continue;
             const d = distanciaKm(posicioActual.lat, posicioActual.lon, p.lat, p.lon);
@@ -769,7 +803,7 @@
             console.log('[Ubicació] Geolocalització no disponible en aquest navegador');
             return;
         }
-        if (watchId !== null) return; // ja en marxa
+        if (watchId !== null) return;
         watchId = navigator.geolocation.watchPosition(
             function(pos) {
                 actualitzarMarcadorUsuari(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
@@ -798,8 +832,6 @@
         } else {
             seguimentActiu = false;
             if (btn) { btn.classList.remove('active'); btn.textContent = 'Seguir-me'; }
-            // Deixem el watchPosition actiu igualment perquè seguim vigilant
-            // l'alerta de proximitat encara que no recentrem el mapa.
         }
     }
 
@@ -816,9 +848,6 @@
         btn.addEventListener('click', toggleSeguiment);
         bb.appendChild(btn);
 
-        // Comencem a vigilar la posició des del principi (sense recentrar)
-        // perquè l'alerta de proximitat funcioni encara que l'usuari no
-        // hagi activat el seguiment de mapa.
         iniciarSeguimentUbicacio();
     }
 
@@ -839,6 +868,9 @@
             bb.insertBefore(playBtn, document.getElementById('btnLatest'));
         }
 
+        // Inicialitzem el selector de producte ABANS del de paleta
+        // perquè quedi primer a la barra inferior
+        initProductSelector();
         initPaletteSelector();
         initSeguimentUI();
     }
@@ -850,8 +882,6 @@
         if (e.key===' ') { e.preventDefault(); toggleAnim(); }
     });
 
-    // Revaluem l'alerta periòdicament (per si el frame no ha canviat
-    // però l'usuari s'ha mogut de zona)
     setInterval(avaluarAlertaProximitat, ALERT_RECHECK_MS);
 
     // ═══ POPUP ═══
@@ -870,11 +900,12 @@
             const v = mp[VALOR_KEY];
             if (v===undefined) return;
             const c = getColor(v);
+            const prodLabel = PRODUCTES[producteActual].label;
             popupActual = L.popup({closeButton:true,className:'popup-clic',offset:[0,-8]})
                 .setLatLng(e.latlng)
                 .setContent(
                     '<div style="background:rgba(13,17,23,0.95);color:#c9d1d9;padding:12px 16px;border-radius:10px;font-family:sans-serif;min-width:110px;border:1px solid rgba(255,255,255,0.08);">'+
-                    '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;">Reflectivitat · '+horaMadrid(frame.timestamp)+'</div>'+
+                    '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;">'+prodLabel+' · '+horaMadrid(frame.timestamp)+'</div>'+
                     '<div style="font-size:26px;font-weight:700;color:rgb('+c.r+','+c.g+','+c.b+');">'+v.toFixed(1)+' <span style="font-size:13px;font-weight:500;color:#8b949e;">dBZ</span></div>'+
                     '<div style="font-size:10px;color:#484f58;margin-top:8px;">'+e.latlng.lat.toFixed(4)+'°N · '+e.latlng.lng.toFixed(4)+'°E</div>'+
                     '</div>'
@@ -883,9 +914,6 @@
     });
 
     // ═══ INICI ═══
-    // IMPORTANT: no carreguem dades pel nostre compte. Esperem que
-    // l'autenticacio (auth.js) confirmi que l'usuari esta autoritzat
-    // abans de tocar el DOM del loading overlay, per no xocar-hi.
     let jaIniciat = false;
 
     function iniciar() {
