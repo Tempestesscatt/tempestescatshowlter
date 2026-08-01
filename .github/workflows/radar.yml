@@ -29,20 +29,45 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests h5py numpy pyproj
-      - name: Executar radar.py (CIRRUS / dBZ)
+      - name: Executar CIRRUS i NIMBUS en paral·lel
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           PYTHONUNBUFFERED: "1"
         run: |
           cd radar
-          python -u radar.py
-      - name: Executar radar_nimbus.py (NIMBUS)
-        env:
-          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
-          PYTHONUNBUFFERED: "1"
-        run: |
-          cd radar
-          python -u radar_nimbus.py
+
+          echo "Llançant radar.py (CIRRUS) i radar_nimbus.py (NIMBUS) en paral·lel..."
+
+          python -u radar.py > cirrus.log 2>&1 &
+          pid_cirrus=$!
+
+          python -u radar_nimbus.py > nimbus.log 2>&1 &
+          pid_nimbus=$!
+
+          # S'espera cada procés per separat per poder recollir el seu
+          # codi de sortida individual, encara que ja s'hagin executat
+          # en paral·lel (wait no bloqueja el segon fins que el primer
+          # acaba, nomes serveix per llegir l'exit code de cadascun).
+          wait "$pid_cirrus"
+          exit_cirrus=$?
+
+          wait "$pid_nimbus"
+          exit_nimbus=$?
+
+          echo "--- LOG CIRRUS ---"
+          cat cirrus.log
+          echo "--- LOG NIMBUS ---"
+          cat nimbus.log
+
+          echo ""
+          echo "Codi sortida CIRRUS: $exit_cirrus"
+          echo "Codi sortida NIMBUS: $exit_nimbus"
+
+          # Es guarda l'estat per poder decidir mes tard si cal fallar
+          # el job, sense tallar aqui la pujada a R2 del producte que
+          # si que ha funcionat.
+          echo "exit_cirrus=$exit_cirrus" >> "$GITHUB_ENV"
+          echo "exit_nimbus=$exit_nimbus" >> "$GITHUB_ENV"
       - name: Mostrar contingut generat
         run: |
           echo "--- public/radar ---"
@@ -103,3 +128,18 @@ jobs:
             exit 1
           fi
           echo "Totes les pujades han tingut èxit."
+      - name: Comprovar resultat de CIRRUS i NIMBUS
+        run: |
+          fallat=0
+          if [ "$exit_cirrus" != "0" ]; then
+            echo "CIRRUS ha fallat (exit $exit_cirrus)"
+            fallat=1
+          fi
+          if [ "$exit_nimbus" != "0" ]; then
+            echo "NIMBUS ha fallat (exit $exit_nimbus)"
+            fallat=1
+          fi
+          if [ "$fallat" = "1" ]; then
+            exit 1
+          fi
+          echo "CIRRUS i NIMBUS OK."
