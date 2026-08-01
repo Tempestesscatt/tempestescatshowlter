@@ -16,7 +16,6 @@ jobs:
       - name: Crear carpetes de dades
         run: |
           mkdir -p radar/public/radar
-          mkdir -p radar/public/radar_nimbus
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
@@ -29,51 +28,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests h5py numpy pyproj
-      - name: Executar CIRRUS i NIMBUS en paral·lel
+      - name: Executar radar.py (CIRRUS / dBZ)
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           PYTHONUNBUFFERED: "1"
         run: |
           cd radar
-
-          echo "Llançant radar.py (CIRRUS) i radar_nimbus.py (NIMBUS) en paral·lel..."
-
-          python -u radar.py > cirrus.log 2>&1 &
-          pid_cirrus=$!
-
-          python -u radar_nimbus.py > nimbus.log 2>&1 &
-          pid_nimbus=$!
-
-          # S'espera cada procés per separat per poder recollir el seu
-          # codi de sortida individual, encara que ja s'hagin executat
-          # en paral·lel (wait no bloqueja el segon fins que el primer
-          # acaba, nomes serveix per llegir l'exit code de cadascun).
-          wait "$pid_cirrus"
-          exit_cirrus=$?
-
-          wait "$pid_nimbus"
-          exit_nimbus=$?
-
-          echo "--- LOG CIRRUS ---"
-          cat cirrus.log
-          echo "--- LOG NIMBUS ---"
-          cat nimbus.log
-
-          echo ""
-          echo "Codi sortida CIRRUS: $exit_cirrus"
-          echo "Codi sortida NIMBUS: $exit_nimbus"
-
-          # Es guarda l'estat per poder decidir mes tard si cal fallar
-          # el job, sense tallar aqui la pujada a R2 del producte que
-          # si que ha funcionat.
-          echo "exit_cirrus=$exit_cirrus" >> "$GITHUB_ENV"
-          echo "exit_nimbus=$exit_nimbus" >> "$GITHUB_ENV"
+          python -u radar.py
       - name: Mostrar contingut generat
         run: |
           echo "--- public/radar ---"
           ls -la radar/public/radar/ 2>/dev/null || echo "buit"
-          echo "--- public/radar_nimbus ---"
-          ls -la radar/public/radar_nimbus/ 2>/dev/null || echo "buit"
       - name: Pujar dades a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -102,8 +67,6 @@ jobs:
             echo "ERROR DEFINITIU: no s'ha pogut pujar $key després de $max_attempts intents"
             return 1
           }
-
-          # CIRRUS
           for f in radar/public/radar/*.js; do
             [ -e "$f" ] || continue
             key="tempestes-radar-data/radar/$(basename "$f")"
@@ -111,35 +74,10 @@ jobs:
               failed_files+=("$key")
             fi
           done
-
-          # NIMBUS
-          for f in radar/public/radar_nimbus/*.js; do
-            [ -e "$f" ] || continue
-            key="tempestes-radar-data/radar_nimbus/$(basename "$f")"
-            if ! upload_with_retry "$f" "$key"; then
-              failed_files+=("$key")
-            fi
-          done
-
           if [ "${#failed_files[@]}" -gt 0 ]; then
             echo ""
             echo "Fitxers que NO s'han pogut pujar (${#failed_files[@]}):"
             printf ' - %s\n' "${failed_files[@]}"
             exit 1
           fi
-          echo "Totes les pujades han tingut èxit."
-      - name: Comprovar resultat de CIRRUS i NIMBUS
-        run: |
-          fallat=0
-          if [ "$exit_cirrus" != "0" ]; then
-            echo "CIRRUS ha fallat (exit $exit_cirrus)"
-            fallat=1
-          fi
-          if [ "$exit_nimbus" != "0" ]; then
-            echo "NIMBUS ha fallat (exit $exit_nimbus)"
-            fallat=1
-          fi
-          if [ "$fallat" = "1" ]; then
-            exit 1
-          fi
-          echo "CIRRUS i NIMBUS OK."
+          echo "Totes les pujades han tingut èxit." ara donam aixo que executi rad.py tambe es el que conte nimbus
