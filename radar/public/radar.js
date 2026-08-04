@@ -815,8 +815,6 @@ window.map = map;
             const p = frame.points[i];
             const v = p[VALOR_KEY];
             if (v === undefined || v === null || isNaN(v)) continue;
-            // Filtre ràpid abans del càlcul de distància real (bounding box en graus,
-            // aprox 1° lat ≈ 111km)
             const dLatDeg = Math.abs(p.lat - posicioActual.lat);
             if (dLatDeg > (ALERT_RADIUS_KM/111) * 1.5) continue;
             const d = distanciaKm(posicioActual.lat, posicioActual.lon, p.lat, p.lon);
@@ -922,8 +920,6 @@ window.map = map;
         } else {
             seguimentActiu = false;
             if (btn) { btn.classList.remove('active'); btn.textContent = 'Seguir-me'; }
-            // Deixem el watchPosition actiu igualment perquè seguim vigilant
-            // l'alerta de proximitat encara que no recentrem el mapa.
         }
     }
 
@@ -940,48 +936,45 @@ window.map = map;
         btn.addEventListener('click', toggleSeguiment);
         bb.appendChild(btn);
 
-        // Comencem a vigilar la posició des del principi (sense recentrar)
-        // perquè l'alerta de proximitat funcioni encara que l'usuari no
-        // hagi activat el seguiment de mapa.
         iniciarSeguimentUbicacio();
     }
 
-    // ═══ VISTA: EN DIRECTE vs ACUMULAT DIARI (nomes Nimbus) ═══
-    // L'acumulat diari es un fitxer apart generat pel backend
-    // (radar_daily_nimbus.js), NO forma part de la llista de frames
-    // navegables: es un unic "mapa" que sempre mostra el total del
-    // dia fins al moment.
+    // ═══ VISTA: EN DIRECTE vs ACUMULAT ÚLTIMA HORA (nomes Nimbus) ═══
+    // L'acumulat d'ultima hora es un fitxer apart generat pel backend
+    // (radar_hourly_nimbus.js), NO forma part de la llista de frames
+    // navegables: es un unic "mapa" que sempre mostra el total dels
+    // ultims 60 minuts fins al moment.
     let vistaAcumulada = false;
-    let frameAcumulatDiari = null; // { bounds, points, resolution_m, ... }
+    let frameAcumulatHora = null; // { bounds, points, resolution_m, ... }
 
-    async function carregarAcumulatDiari() {
+    async function carregarAcumulatHora() {
         if (producteActual !== 'nimbus') return;
         try {
-            const url = BASE_PATH + '/radar_daily_nimbus.js?t=' + Date.now();
+            const url = BASE_PATH + '/radar_hourly_nimbus.js?t=' + Date.now();
             const r = await fetch(url, {cache:'no-store'});
-            if (!r.ok) { frameAcumulatDiari = null; return; }
+            if (!r.ok) { frameAcumulatHora = null; return; }
             const txt = await r.text();
-            const m = txt.match(/window\.radarDaily\s*=\s*(\{[\s\S]*\});?\s*$/);
-            if (!m) { frameAcumulatDiari = null; return; }
+            const m = txt.match(/window\.radarHourly\s*=\s*(\{[\s\S]*\});?\s*$/);
+            if (!m) { frameAcumulatHora = null; return; }
             const obj = JSON.parse(m[1]);
-            frameAcumulatDiari = {
+            frameAcumulatHora = {
                 timestamp: obj.updated,
                 bounds: obj.bounds,
                 points: obj.points,
                 resolution_m: obj.resolution_m || FALLBACK_RESOLUTION_M,
-                hores_comptades: obj.hores_comptades || 0
+                minuts_comptats: obj.minuts_comptats || 0
             };
         } catch(e) {
-            frameAcumulatDiari = null;
+            frameAcumulatHora = null;
         }
     }
 
     function actualitzarBotoAcumulat() {
-        const btn = document.getElementById('btnAcumulatDiari');
+        const btn = document.getElementById('btnAcumulatHora');
         if (!btn) return;
         // Nomes te sentit amb Nimbus: s'amaga per Cirrus.
         btn.style.display = (producteActual === 'nimbus') ? '' : 'none';
-        btn.textContent = vistaAcumulada ? 'En directe' : 'Acumulat diari';
+        btn.textContent = vistaAcumulada ? 'En directe' : 'Acumulat última hora';
         btn.classList.toggle('active', vistaAcumulada);
     }
 
@@ -992,19 +985,18 @@ window.map = map;
 
         if (vistaAcumulada) {
             stopAnim();
-            await carregarAcumulatDiari();
-            if (frameAcumulatDiari) {
-                radarLayer.setFrame(frameAcumulatDiari);
-                setStatus('Acumulat diari · '+(frameAcumulatDiari.hores_comptades)+'h comptades', false);
+            await carregarAcumulatHora();
+            if (frameAcumulatHora) {
+                radarLayer.setFrame(frameAcumulatHora);
+                setStatus('Acumulat última hora · '+(frameAcumulatHora.minuts_comptats)+'min comptats', false);
                 const td = document.getElementById('timeDisplay');
                 const dd = document.getElementById('dateDisplay');
-                if (td) td.textContent = 'Acumulat';
-                if (dd) dd.textContent = dataMadrid(frameAcumulatDiari.timestamp);
+                if (td) td.textContent = 'Última hora';
+                if (dd) dd.textContent = dataMadrid(frameAcumulatHora.timestamp);
             } else {
-                setStatus('Encara no hi ha acumulat diari', true);
+                setStatus('Encara no hi ha acumulat de l\'última hora', true);
             }
         } else {
-            // Tornem a la vista en directe amb el frame que tocava.
             if (radarFrames[currentFrame]) {
                 radarLayer.setFrame(radarFrames[currentFrame]);
                 updateUI();
@@ -1013,16 +1005,148 @@ window.map = map;
         }
     }
 
-    function initBotoAcumulatDiari() {
+    function initBotoAcumulatHora() {
         const bb = document.getElementById('bottombar');
-        if (!bb || document.getElementById('btnAcumulatDiari')) return;
+        if (!bb || document.getElementById('btnAcumulatHora')) return;
         const btn = document.createElement('button');
-        btn.id = 'btnAcumulatDiari';
+        btn.id = 'btnAcumulatHora';
         btn.className = 'primary';
-        btn.title = 'Mostra la pluja total acumulada avui (nomes Nimbus)';
+        btn.title = 'Mostra la pluja total acumulada durant l\'última hora (nomes Nimbus)';
         btn.addEventListener('click', toggleVistaAcumulada);
         bb.appendChild(btn);
         actualitzarBotoAcumulat();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  PANELL D'INFORMACIÓ (què és Cirrus/Nimbus i les seves escales)
+    // ═══════════════════════════════════════════════════════════════════
+    function llegendaHtmlDbz() {
+        const punts = [-10, 0, 15, 30, 40, 50, 60, 70];
+        let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">';
+        punts.forEach(function(v) {
+            const c = (function() {
+                const stopsAntics = paletaActual;
+                paletaActual = 'classica';
+                const col = getColor(v);
+                paletaActual = stopsAntics;
+                return col;
+            })();
+            html += '<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#c9d1d9;">' +
+                '<span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:rgba('+c.r+','+c.g+','+c.b+','+(c.a/255)+');border:1px solid rgba(255,255,255,0.15);"></span>' +
+                v + '</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function llegendaHtmlPluja() {
+        const punts = [0.1, 1, 5, 10, 20, 50, 100];
+        let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">';
+        punts.forEach(function(v) {
+            const stopsAntics = paletaActual;
+            paletaActual = 'pluja';
+            const c = getColor(v);
+            paletaActual = stopsAntics;
+            html += '<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#c9d1d9;">' +
+                '<span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:rgba('+c.r+','+c.g+','+c.b+','+(c.a/255)+');border:1px solid rgba(255,255,255,0.15);"></span>' +
+                v + 'mm</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function contingutInfo() {
+        return '' +
+        '<div style="margin-bottom:18px;">' +
+            '<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px;">CIRRUS · Reflectivitat (dBZ)</div>' +
+            '<p style="font-size:13px;color:#c9d1d9;line-height:1.5;margin:0;">' +
+                'Mostra la intensitat de l\'eco de radar en <b>decibels (dBZ)</b>: com mes forta es la senyal ' +
+                'que torna al radar, mes gran o densa es la precipitacio (o pedra) en aquell punt. ' +
+                'Valors baixos (blau/verd) indiquen pluja feble; valors alts (vermell/magenta/lila) indiquen ' +
+                'pluja molt intensa, possible calamarsa o tempesta severa.' +
+            '</p>' +
+            llegendaHtmlDbz() +
+        '</div>' +
+        '<div>' +
+            '<div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px;">NIMBUS · Precipitació (mm)</div>' +
+            '<p style="font-size:13px;color:#c9d1d9;line-height:1.5;margin:0;">' +
+                'Mostra la quantitat de pluja <b>acumulada en mil·limetres (mm)</b> en aquell punt: quants litres ' +
+                'per metre quadrat han caigut. Colors clars (blau) son quantitats petites; colors calids ' +
+                '(groc, taronja, vermell, magenta) indiquen acumulats molt elevats. La vista "Acumulat última hora" ' +
+                'suma tota la pluja caiguda durant els ultims 60 minuts.' +
+            '</p>' +
+            llegendaHtmlPluja() +
+        '</div>';
+    }
+
+    function injectarEstilsInfo() {
+        if (document.getElementById('info-panel-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'info-panel-styles';
+        style.textContent = `
+            #infoOverlay {
+                position:absolute; inset:0; z-index:1200;
+                background:rgba(0,0,0,0.55);
+                display:none; align-items:center; justify-content:center;
+            }
+            #infoPanel {
+                background:rgba(13,17,23,0.98); color:#c9d1d9;
+                border:1px solid rgba(255,255,255,0.12);
+                border-radius:14px; padding:22px 24px;
+                max-width:420px; width:90%; max-height:80vh; overflow-y:auto;
+                font-family:sans-serif; box-shadow:0 8px 30px rgba(0,0,0,0.5);
+            }
+            #infoPanel .info-close {
+                float:right; background:none; border:none; color:#8b949e;
+                font-size:20px; cursor:pointer; line-height:1; padding:0 4px;
+            }
+            #infoPanel .info-close:hover { color:#fff; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function crearPanellInfo() {
+        if (document.getElementById('infoOverlay')) return;
+        injectarEstilsInfo();
+        const overlay = document.createElement('div');
+        overlay.id = 'infoOverlay';
+        overlay.innerHTML =
+            '<div id="infoPanel">' +
+                '<button class="info-close" id="btnTancarInfo" aria-label="Tancar">✕</button>' +
+                '<div style="clear:both;"></div>' +
+                contingutInfo() +
+            '</div>';
+        const mapEl = document.getElementById('map');
+        (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
+        (mapEl || document.body).appendChild(overlay);
+
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) amagarPanellInfo();
+        });
+        document.getElementById('btnTancarInfo').addEventListener('click', amagarPanellInfo);
+    }
+
+    function mostrarPanellInfo() {
+        crearPanellInfo();
+        const overlay = document.getElementById('infoOverlay');
+        if (overlay) overlay.style.display = 'flex';
+    }
+
+    function amagarPanellInfo() {
+        const overlay = document.getElementById('infoOverlay');
+        if (overlay) overlay.style.display = 'none';
+    }
+
+    function initBotoInfo() {
+        const bb = document.getElementById('bottombar');
+        if (!bb || document.getElementById('btnInfo')) return;
+        const btn = document.createElement('button');
+        btn.id = 'btnInfo';
+        btn.className = 'primary';
+        btn.title = 'Que significa cada radar i la seva escala de colors';
+        btn.textContent = 'ℹ️ Info';
+        btn.addEventListener('click', mostrarPanellInfo);
+        bb.appendChild(btn);
     }
 
     function initButtons() {
@@ -1044,8 +1168,9 @@ window.map = map;
 
         initProductSelector();
         initPaletteSelector();
-        initBotoAcumulatDiari();
+        initBotoAcumulatHora();
         initSeguimentUI();
+        initBotoInfo();
     }
 
     document.addEventListener('keydown', function(e) {
@@ -1053,10 +1178,9 @@ window.map = map;
         if (e.key==='ArrowLeft') { e.preventDefault(); stopAnim(); framePrev(); }
         if (e.key==='ArrowRight') { e.preventDefault(); stopAnim(); frameNext(); }
         if (e.key===' ') { e.preventDefault(); toggleAnim(); }
+        if (e.key==='Escape') { amagarPanellInfo(); }
     });
 
-    // Revaluem l'alerta periòdicament (per si el frame no ha canviat
-    // però l'usuari s'ha mogut de zona)
     setInterval(avaluarAlertaProximitat, ALERT_RECHECK_MS);
 
     // ═══ POPUP ═══
@@ -1089,9 +1213,6 @@ window.map = map;
     });
 
     // ═══ INICI ═══
-    // IMPORTANT: no carreguem dades pel nostre compte. Esperem que
-    // l'autenticacio (auth.js) confirmi que l'usuari esta autoritzat
-    // abans de tocar el DOM del loading overlay, per no xocar-hi.
     let jaIniciat = false;
 
     function iniciar() {
