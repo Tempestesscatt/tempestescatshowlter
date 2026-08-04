@@ -260,20 +260,26 @@
     // ═══════════════════════════════════════════════════════════════════
     //  ON / OFF
     // ═══════════════════════════════════════════════════════════════════
-    function activar() {
-        actiu = true;
-        reconnectDelay = RECONNECT_BASE_MS;
-        connectWs();
-        actualitzarBotons();
-    }
+function activar() {
+    actiu = true;
+    reconnectDelay = RECONNECT_BASE_MS;
+    connectWs();
+    actualitzarBotons();
+    // ═══ MOSTRAR ATRIBUCIÓ CC BY-SA 4.0 ═══
+    const attr = document.getElementById('lightningAttr');
+    if (attr) attr.classList.add('visible');
+}
 
-    function desactivar() {
-        actiu = false;
-        disconnectWs();
-        netejarTot();
-        setStatusLlamps('Llamps desactivats');
-        actualitzarBotons();
-    }
+function desactivar() {
+    actiu = false;
+    disconnectWs();
+    netejarTot();
+    setStatusLlamps('Llamps desactivats');
+    actualitzarBotons();
+    // ═══ AMAGAR ATRIBUCIÓ ═══
+    const attr = document.getElementById('lightningAttr');
+    if (attr) attr.classList.remove('visible');
+}
 
     function toggleActiu() {
         desbloquejarAudio();
@@ -329,15 +335,23 @@
         document.head.appendChild(style);
     }
 
-    function crearIndicadorEstat() {
-        if (document.getElementById('lgStatus')) return;
-        const el = document.createElement('div');
-        el.id = 'lgStatus';
-        el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
-        const mapEl = document.getElementById('map');
-        (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
-        (mapEl || document.body).appendChild(el);
-    }
+function crearIndicadorEstat() {
+    if (document.getElementById('lgStatus')) return;
+    const el = document.createElement('div');
+    el.id = 'lgStatus';
+    el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
+    
+    // ═══ ATRIBUCIÓ OBLIGATÒRIA CC BY-SA 4.0 ═══
+    const attr = document.createElement('div');
+    attr.id = 'lgAttribution';
+    attr.style.cssText = 'margin-top:6px;font-size:9px;color:#8b949e;line-height:1.3;';
+    attr.innerHTML = 'Dades: <a href="https://www.blitzortung.org" target="_blank" style="color:#8b949e;">Blitzortung.org</a> i col·laboradors · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" style="color:#8b949e;">CC BY-SA 4.0</a>';
+    el.appendChild(attr);
+    
+    const mapEl = document.getElementById('map');
+    (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
+    (mapEl || document.body).appendChild(el);
+}
 
     function initUI() {
         const bb = document.getElementById('bottombar');
