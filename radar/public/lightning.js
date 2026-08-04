@@ -15,8 +15,8 @@
     const RECONNECT_BASE_MS = 2000;
     const RECONNECT_MAX_MS = 20000;
 
-    // Zona de cobertura (Europa, coherent amb el radar NE Espanya, marge ampli)
-    const BOUNDS = { latMin: 34, latMax: 71, lonMin: -25, lonMax: 45 };
+    // Zona de cobertura: Europa central (ampliada des del NE d'Espanya)
+    const BOUNDS = { latMin: 38.5, latMax: 45.0, lonMin: -2.0, lonMax: 5.0 };
 
     let actiu = false;
     let map = null;
@@ -126,7 +126,7 @@
         const html =
             '<div class="lg-strike-wrap">' +
               '<svg class="lg-strike-svg" width="26" height="26" viewBox="0 0 24 24">' +
-                '<path d="M13 2 L4 14 L11 14 L10 22 L20 9 L13 9 Z" fill="#c8ff00" stroke="#000000" stroke-width="0.6"/>' +
+                '<path d="M13 2 L4 14 L11 14 L10 22 L20 9 L13 9 Z" fill="#f3ecff" stroke="#c9b8ff" stroke-width="0.6"/>' +
               '</svg>' +
             '</div>';
 
@@ -142,8 +142,8 @@
         }).addTo(map);
 
         const ring = L.circle([lat, lon], {
-            radius: 1000, color: '#111111', weight: 2,
-            fillColor: '#ffffff', fillOpacity: 0.12, opacity: 0.7,
+            radius: 1000, color: '#c9b8ff', weight: 2,
+            fillColor: '#c9b8ff', fillOpacity: 0.12, opacity: 0.7,
             interactive: false, pane: 'paneLlamps'
         }).addTo(map);
 
