@@ -1,275 +1,391 @@
 // ═══════════════════════════════════════════════════════════════════════
-//  lightning.js — CAPA DE LLAMPS EN TEMPS REAL (Blitzortung.org)
-//  100% client-side: cada navegador obre el seu propi websocket,
-//  no passa per cap backend ni R2 ni el teu servidor. Cost: zero.
-//
-//  AVIS: el protocol de Blitzortung NO es una API oficial documentada,
-//  es un protocol descobert per la comunitat que el seu propi mapa web
-//  utilitza. Pot canviar sense avis. Aquest modul esta dissenyat per
-//  fallar en silenci (sense trencar el radar) si aixo passa.
+//  lightning.js — LLAMPS EN DIRECTE (Blitzortung)
+//  Cada llamp dura 5 min a pantalla i es va esvaint fins desapareixer.
+//  Pensat per conviure amb radar.js: mateix estil de panes, bottombar, etc.
 // ═══════════════════════════════════════════════════════════════════════
 
 (function() {
     'use strict';
 
     // ═══ CONFIG ═══
-    // Servidors coneguts del clúster de Blitzortung (rotem si un falla).
-    const SERVERS = [
-        'wss://ws1.blitzortung.org:3000',
-        'wss://ws5.blitzortung.org:3000',
-        'wss://ws6.blitzortung.org:3000',
-        'wss://ws7.blitzortung.org:3000'
-    ];
+    const WS_URL = 'wss://ws1.blitzortung.org/';
+    const STRIKE_LIFESPAN_MS = 5 * 60 * 1000;    // cada llamp dura 5 min
+    const RING_MAX_RADIUS_M = 50000;             // ona expansiva fins a 50km
+    const RING_DURATION_MS = 1400;
+    const RECONNECT_BASE_MS = 2000;
+    const RECONNECT_MAX_MS = 20000;
 
-    // Mateixa regio que fas servir per retallar el radar (REGIO al
-    // script Python). Ajusta si cal.
-    const REGIO = { lat_min: 38.5, lat_max: 45.0, lon_min: -2.0, lon_max: 5.0 };
+    // Zona de cobertura (Europa, coherent amb el radar NE Espanya, marge ampli)
+    const BOUNDS = { latMin: 34, latMax: 71, lonMin: -25, lonMax: 45 };
 
-    const VIDA_MAX_MS = 20 * 60 * 1000;      // quant temps es queda un llamp al mapa
-    const RECONNECT_DELAY_MS = 5000;          // espera abans de reintentar servidor
-    const MAX_RECONNECT_DELAY_MS = 60000;     // topall de backoff exponencial
+    let actiu = false;
+    let map = null;
+    let ws = null;
+    let reconnectDelay = RECONNECT_BASE_MS;
+    let reconnectTimer = null;
 
-    console.log('[Lightning] Iniciant...');
+    // Llamps a pantalla: array de { marker, ring, lat, lon, ts, fadeInterval }
+    let strikes = [];
+
+    let soundOn = true;
+    let audioCtx = null;
+
+    console.log('[Llamps] Modul carregat');
 
     // ═══════════════════════════════════════════════════════════════════
-    //  DECODIFICACIO DEL PROTOCOL (LZW-like propi de Blitzortung)
+    //  DECODIFICACIO LZW (format Blitzortung)
     // ═══════════════════════════════════════════════════════════════════
-    function decodeBlitzortung(str) {
-        const d = Array.from(str);
-        if (!d.length) return '';
-        let dict = {};
-        let c = d[0];
-        let f = c;
-        let out = [c];
-        let dictSize = 256;
-        for (let i = 1; i < d.length; i++) {
-            const code = d[i].charCodeAt(0);
-            let entry;
-            if (dictSize > code) {
-                entry = d[i];
-            } else if (dict[code]) {
-                entry = dict[code];
+    function decode(raw) {
+        const dict = {};
+        const data = raw.split('');
+        let currChar = data[0];
+        let oldPhrase = currChar;
+        const out = [currChar];
+        let code = 256;
+        let phrase;
+        for (let i = 1; i < data.length; i++) {
+            const currCode = data[i].charCodeAt(0);
+            if (currCode < 256) {
+                phrase = data[i];
             } else {
-                entry = f + c;
+                phrase = dict[currCode] ? dict[currCode] : (oldPhrase + currChar);
             }
-            out.push(entry);
-            c = entry[0];
-            dict[dictSize] = f + c;
-            dictSize += 1;
-            f = entry;
+            out.push(phrase);
+            currChar = phrase.charAt(0);
+            dict[code] = oldPhrase + currChar;
+            code++;
+            oldPhrase = phrase;
         }
         return out.join('');
     }
 
-    function parseStrike(rawMsg) {
-        let json;
+    // ═══════════════════════════════════════════════════════════════════
+    //  SO DE TRO — dues fases: crack + rumble
+    // ═══════════════════════════════════════════════════════════════════
+    function getAudioCtx() {
+        if (!audioCtx) {
+            const ACtx = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new ACtx();
+        }
+        return audioCtx;
+    }
+
+    function playThunder(volume) {
+        if (!soundOn) return;
         try {
-            const decoded = decodeBlitzortung(rawMsg);
-            json = JSON.parse(decoded);
-        } catch (e) {
-            return null;
-        }
-        if (json == null || typeof json.lat !== 'number' || typeof json.lon !== 'number') {
-            return null;
-        }
-        return {
-            lat: json.lat,
-            lon: json.lon,
-            // 'time' ve en nanosegons des d'epoch al protocol de Blitzortung
-            ts: json.time ? Math.floor(json.time / 1e6) : Date.now(),
-            // 'mds' inclou dades de les estacions que l'han detectat;
-            // fem servir la seva longitud com a proxy grosser de "força"
-            estacions: Array.isArray(json.sig) ? json.sig.length : 0
-        };
+            const ctx = getAudioCtx();
+            if (ctx.state === 'suspended') ctx.resume();
+            const now = ctx.currentTime;
+
+            const bufSize1 = ctx.sampleRate * 0.3;
+            const buf1 = ctx.createBuffer(1, bufSize1, ctx.sampleRate);
+            const d1 = buf1.getChannelData(0);
+            for (let i = 0; i < bufSize1; i++) d1[i] = Math.random() * 2 - 1;
+            const noise1 = ctx.createBufferSource();
+            noise1.buffer = buf1;
+            const bandpass = ctx.createBiquadFilter();
+            bandpass.type = 'bandpass';
+            bandpass.frequency.setValueAtTime(2500, now);
+            bandpass.Q.value = 0.7;
+            const gain1 = ctx.createGain();
+            gain1.gain.setValueAtTime(0.0001, now);
+            gain1.gain.exponentialRampToValueAtTime(volume * 1.3, now + 0.005);
+            gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+            noise1.connect(bandpass); bandpass.connect(gain1); gain1.connect(ctx.destination);
+            noise1.start(now); noise1.stop(now + 0.2);
+
+            const bufSize2 = ctx.sampleRate * 1.8;
+            const buf2 = ctx.createBuffer(1, bufSize2, ctx.sampleRate);
+            const d2 = buf2.getChannelData(0);
+            for (let j = 0; j < bufSize2; j++) d2[j] = Math.random() * 2 - 1;
+            const noise2 = ctx.createBufferSource();
+            noise2.buffer = buf2;
+            const lowpass = ctx.createBiquadFilter();
+            lowpass.type = 'lowpass';
+            lowpass.frequency.setValueAtTime(400, now + 0.1);
+            lowpass.frequency.exponentialRampToValueAtTime(50, now + 1.8);
+            const gain2 = ctx.createGain();
+            gain2.gain.setValueAtTime(0.0001, now + 0.1);
+            gain2.gain.exponentialRampToValueAtTime(volume * 0.8, now + 0.25);
+            gain2.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+            noise2.connect(lowpass); lowpass.connect(gain2); gain2.connect(ctx.destination);
+            noise2.start(now + 0.1); noise2.stop(now + 1.8);
+        } catch (e) {}
     }
 
-    function dinsRegio(lat, lon) {
-        return lat >= REGIO.lat_min && lat <= REGIO.lat_max &&
-               lon >= REGIO.lon_min && lon <= REGIO.lon_max;
+    function desbloquejarAudio() {
+        try { getAudioCtx(); } catch(e) {}
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  CAPA LEAFLET DE LLAMPS
+    //  AFEGIR LLAMP — icona + ona expansiva + fade de 5 min + so
     // ═══════════════════════════════════════════════════════════════════
-    const LightningLayer = L.Layer.extend({
-        initialize: function() {
-            this._canvas = null;
-            this._strikes = []; // { lat, lon, ts, estacions }
-        },
-        onAdd: function(map) {
-            this._map = map;
-            const c = document.createElement('canvas');
-            c.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;';
-            map.getPane('paneLightning').appendChild(c);
-            this._canvas = c;
-            map.on('moveend zoomend', this._render, this);
-            this._render();
-        },
-        onRemove: function(map) {
-            map.getPane('paneLightning').removeChild(this._canvas);
-            map.off('moveend zoomend', this._render, this);
-        },
-        addStrike: function(strike) {
-            this._strikes.push(strike);
-            this._render();
-        },
-        purgarAntics: function() {
-            const ara = Date.now();
-            const abans = this._strikes.length;
-            this._strikes = this._strikes.filter(s => (ara - s.ts) < VIDA_MAX_MS);
-            if (this._strikes.length !== abans) this._render();
-        },
-        comptador: function() {
-            return this._strikes.length;
-        },
-        _colorPerEdat: function(edatMs) {
-            // Groc/blanc = molt recent -> taronja -> vermell fosc = vell
-            const t = Math.min(edatMs / VIDA_MAX_MS, 1);
-            if (t < 0.15) return { r: 255, g: 255, b: 220 };
-            if (t < 0.4)  return { r: 255, g: 210, b: 60  };
-            if (t < 0.7)  return { r: 255, g: 130, b: 30  };
-            return { r: 200, g: 40, b: 30 };
-        },
-        _render: function() {
-            if (!this._map) return;
-            const size = this._map.getSize();
-            const c = this._canvas;
-            c.width = size.x;
-            c.height = size.y;
-            const ctx = c.getContext('2d');
-            ctx.clearRect(0, 0, size.x, size.y);
-            L.DomUtil.setPosition(c, this._map.containerPointToLayerPoint([0, 0]));
+    function afegirLlamp(lat, lon, ts) {
+        playThunder(0.22);
 
-            const ara = Date.now();
-            for (let i = 0; i < this._strikes.length; i++) {
-                const s = this._strikes[i];
-                const edatMs = ara - s.ts;
-                if (edatMs > VIDA_MAX_MS) continue;
-                const p = this._map.latLngToContainerPoint([s.lat, s.lon]);
-                if (p.x < -20 || p.x > size.x + 20 || p.y < -20 || p.y > size.y + 20) continue;
+        const html =
+            '<div class="lg-strike-wrap">' +
+              '<svg class="lg-strike-svg" width="26" height="26" viewBox="0 0 24 24">' +
+                '<path d="M13 2 L4 14 L11 14 L10 22 L20 9 L13 9 Z" fill="#c8ff00" stroke="#000000" stroke-width="0.6"/>' +
+              '</svg>' +
+            '</div>';
 
-                const col = this._colorPerEdat(edatMs);
-                const t = edatMs / VIDA_MAX_MS;
-                const alpha = Math.max(0.15, 1 - t);
-                const radi = edatMs < 3000 ? 9 : 4; // "destell" gran nomes al principi
+        const icon = L.divIcon({
+            className: 'lg-strike-icon',
+            html: html,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+        });
 
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, radi, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(' + col.r + ',' + col.g + ',' + col.b + ',' + alpha + ')';
-                ctx.fill();
+        const marker = L.marker([lat, lon], {
+            icon: icon, interactive: false, opacity: 1, pane: 'paneLlamps'
+        }).addTo(map);
 
-                if (edatMs < 3000) {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, radi + 6, 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(' + col.r + ',' + col.g + ',' + col.b + ',' + (alpha * 0.5) + ')';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                }
+        const ring = L.circle([lat, lon], {
+            radius: 1000, color: '#111111', weight: 2,
+            fillColor: '#ffffff', fillOpacity: 0.12, opacity: 0.7,
+            interactive: false, pane: 'paneLlamps'
+        }).addTo(map);
+
+        const ringStart = Date.now();
+        const ringInterval = setInterval(function() {
+            const t = (Date.now() - ringStart) / RING_DURATION_MS;
+            if (t >= 1) {
+                clearInterval(ringInterval);
+                map.removeLayer(ring);
+                return;
             }
-        }
-    });
+            ring.setRadius(1000 + t * (RING_MAX_RADIUS_M - 1000));
+            ring.setStyle({ opacity: 0.7 * (1 - t), fillOpacity: 0.12 * (1 - t) });
+        }, 40);
 
-    // ═══════════════════════════════════════════════════════════════════
-    //  CONNEXIO WEBSOCKET AMB RECONNEXIO AUTOMATICA
-    // ═══════════════════════════════════════════════════════════════════
-    let ws = null;
-    let serverIdx = 0;
-    let reconnectDelay = RECONNECT_DELAY_MS;
-    let lightningLayer = null;
-    let purgaTimer = null;
-    let connectat = false;
+        const startTime = Date.now();
+        const el = marker.getElement();
+        const svgEl = el ? el.querySelector('.lg-strike-svg') : null;
 
-    function setStatusLlamps(text, actiu) {
-        const el = document.getElementById('lightningStatus');
-        if (el) {
-            el.textContent = text;
-            el.classList.toggle('offline', !actiu);
-        }
+        const entry = { marker: marker, ring: ring, lat: lat, lon: lon, ts: ts, fadeInterval: null };
+
+        entry.fadeInterval = setInterval(function() {
+            const elapsed = Date.now() - startTime;
+            const remaining = 1 - (elapsed / STRIKE_LIFESPAN_MS);
+            if (remaining <= 0) {
+                clearInterval(entry.fadeInterval);
+                map.removeLayer(marker);
+                strikes = strikes.filter(function(s) { return s !== entry; });
+                return;
+            }
+            if (svgEl) svgEl.style.opacity = Math.max(remaining * 0.75, 0.12);
+        }, 1000);
+
+        strikes.push(entry);
     }
 
-    function connectar() {
-        const url = SERVERS[serverIdx % SERVERS.length];
-        console.log('[Lightning] Connectant a', url);
+    function netejarTot() {
+        strikes.forEach(function(s) {
+            if (s.fadeInterval) clearInterval(s.fadeInterval);
+            map.removeLayer(s.marker);
+            if (s.ring) map.removeLayer(s.ring);
+        });
+        strikes = [];
+    }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  WEBSOCKET
+    // ═══════════════════════════════════════════════════════════════════
+    function dinsBounds(lat, lon) {
+        return lat >= BOUNDS.latMin && lat <= BOUNDS.latMax &&
+               lon >= BOUNDS.lonMin && lon <= BOUNDS.lonMax;
+    }
+
+    function setStatusLlamps(text) {
+        const el = document.getElementById('lgStatusText');
+        if (el) el.textContent = text;
+    }
+
+    function connectWs() {
+        if (!actiu) return;
+        setStatusLlamps('Connectant...');
         try {
-            ws = new WebSocket(url);
+            ws = new WebSocket(WS_URL);
         } catch (e) {
-            console.warn('[Lightning] No es pot obrir websocket:', e);
-            programarReconnexio();
+            scheduleReconnect();
             return;
         }
 
         ws.onopen = function() {
-            console.log('[Lightning] Connectat');
-            connectat = true;
-            reconnectDelay = RECONNECT_DELAY_MS; // reset del backoff
-            setStatusLlamps('Llamps en directe', true);
-            // Missatge de subscripcio que espera el servidor de Blitzortung
+            setStatusLlamps('Llamps en directe');
+            reconnectDelay = RECONNECT_BASE_MS;
             ws.send(JSON.stringify({ a: 111 }));
         };
 
-        ws.onmessage = function(ev) {
-            const strike = parseStrike(ev.data);
-            if (!strike) return;
-            if (!dinsRegio(strike.lat, strike.lon)) return;
-            if (lightningLayer) lightningLayer.addStrike(strike);
-        };
-
-        ws.onerror = function(e) {
-            console.warn('[Lightning] Error de websocket:', e);
+        ws.onmessage = function(evt) {
+            if (!actiu) return;
+            try {
+                const decoded = decode(evt.data);
+                const obj = JSON.parse(decoded);
+                if (typeof obj.lat !== 'number' || typeof obj.lon !== 'number') return;
+                if (!dinsBounds(obj.lat, obj.lon)) return;
+                afegirLlamp(obj.lat, obj.lon, obj.time);
+            } catch (err) {}
         };
 
         ws.onclose = function() {
-            connectat = false;
-            setStatusLlamps('Reconnectant...', false);
-            serverIdx += 1; // prova el seguent servidor del clúster
-            programarReconnexio();
+            if (!actiu) return;
+            setStatusLlamps('Reconnectant...');
+            scheduleReconnect();
+        };
+
+        ws.onerror = function() {
+            setStatusLlamps('Error de connexio');
         };
     }
 
-    function programarReconnexio() {
-        setTimeout(connectar, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 1.5, MAX_RECONNECT_DELAY_MS);
+    function scheduleReconnect() {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(function() {
+            if (actiu) connectWs();
+        }, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 1.5, RECONNECT_MAX_MS);
+    }
+
+    function disconnectWs() {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        if (ws) {
+            ws.onclose = null;
+            ws.close();
+            ws = null;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  INICI — s'enganxa al mateix esdeveniment d'autoritzacio que radar.js
+    //  ON / OFF
     // ═══════════════════════════════════════════════════════════════════
-    let jaIniciat = false;
+    function activar() {
+        actiu = true;
+        reconnectDelay = RECONNECT_BASE_MS;
+        connectWs();
+        actualitzarBotons();
+    }
+
+    function desactivar() {
+        actiu = false;
+        disconnectWs();
+        netejarTot();
+        setStatusLlamps('Llamps desactivats');
+        actualitzarBotons();
+    }
+
+    function toggleActiu() {
+        desbloquejarAudio();
+        if (actiu) {
+            desactivar();
+        } else {
+            activar();
+        }
+    }
+
+    function toggleSo() {
+        soundOn = !soundOn;
+        const btn = document.getElementById('btnLlampsSo');
+        if (btn) btn.textContent = soundOn ? '🔊' : '🔇';
+    }
+
+    function actualitzarBotons() {
+        const btnMode = document.getElementById('btnLlamps');
+        const btnSo = document.getElementById('btnLlampsSo');
+        if (btnMode) {
+            btnMode.textContent = actiu ? 'Llamps: ON' : 'Llamps: OFF';
+            btnMode.classList.toggle('active', actiu);
+        }
+        if (btnSo) {
+            btnSo.style.display = actiu ? '' : 'none';
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  ESTILS + PANE + UI
+    // ═══════════════════════════════════════════════════════════════════
+    function injectarEstils() {
+        if (document.getElementById('lightning-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'lightning-styles';
+        style.textContent = `
+            .lg-strike-icon { pointer-events: none; }
+            .lg-strike-wrap { width: 26px; height: 26px; }
+            .lg-strike-svg {
+                opacity: 0.8;
+                filter: drop-shadow(0 0 4px rgba(201,184,255,0.55)) drop-shadow(0 0 1px rgba(255,255,255,0.4));
+                transition: opacity 4s linear;
+            }
+            #lgStatus {
+                position: absolute; top: 14px; right: 14px; z-index: 900;
+                background: rgba(13,17,23,0.85); color: #c9d1d9;
+                padding: 5px 12px; border-radius: 8px;
+                font-family: sans-serif; font-size: 12px;
+                border: 1px solid rgba(255,255,255,0.1);
+                display: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function crearIndicadorEstat() {
+        if (document.getElementById('lgStatus')) return;
+        const el = document.createElement('div');
+        el.id = 'lgStatus';
+        el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
+        const mapEl = document.getElementById('map');
+        (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
+        (mapEl || document.body).appendChild(el);
+    }
+
+    function initUI() {
+        const bb = document.getElementById('bottombar');
+        if (!bb || document.getElementById('btnLlamps')) return;
+
+        const btnMode = document.createElement('button');
+        btnMode.id = 'btnLlamps';
+        btnMode.className = 'primary';
+        btnMode.title = 'Activa/desactiva els llamps en directe (cada un dura 5 min)';
+        btnMode.textContent = 'Llamps: OFF';
+        btnMode.addEventListener('click', toggleActiu);
+        bb.appendChild(btnMode);
+
+        const btnSo = document.createElement('button');
+        btnSo.id = 'btnLlampsSo';
+        btnSo.title = 'So de tro';
+        btnSo.textContent = '🔊';
+        btnSo.style.display = 'none';
+        btnSo.addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleSo();
+        });
+        bb.appendChild(btnSo);
+    }
 
     function iniciar() {
-        if (jaIniciat) return;
-        jaIniciat = true;
-
-        if (typeof L === 'undefined' || typeof map === 'undefined') {
-            console.warn('[Lightning] Mapa Leaflet no trobat, s\'omet la capa de llamps');
+        map = window.map; // el mapa Leaflet ja creat per radar.js
+        if (!map) {
+            console.log('[Llamps] No trobo window.map, esperant...');
+            setTimeout(iniciar, 500);
             return;
         }
-        if (typeof WebSocket === 'undefined') {
-            console.warn('[Lightning] WebSocket no suportat en aquest navegador');
-            return;
-        }
+        map.createPane('paneLlamps');
+        map.getPane('paneLlamps').style.zIndex = 620;
+        map.getPane('paneLlamps').style.pointerEvents = 'auto';
 
-        map.createPane('paneLightning');
-        map.getPane('paneLightning').style.zIndex = 450; // per sobre del radar
-        map.getPane('paneLightning').style.pointerEvents = 'none';
+        injectarEstils();
+        crearIndicadorEstat();
+        initUI();
 
-        lightningLayer = new LightningLayer();
-        lightningLayer.addTo(map);
-
-        purgaTimer = setInterval(function() {
-            if (lightningLayer) lightningLayer.purgarAntics();
-        }, 10000);
-
-        connectar();
+        console.log('[Llamps] Inicialitzat');
     }
 
+    // S'inicia quan l'app ja esta autoritzada (mateix event que radar.js)
     document.addEventListener('auth:autoritzat', iniciar);
 
-    // Exposem un objecte minim per si vols consultar l'estat des de la consola
-    window.LightningDebug = {
-        comptador: function() { return lightningLayer ? lightningLayer.comptador() : 0; },
-        connectat: function() { return connectat; }
-    };
+    window.addEventListener('beforeunload', function() {
+        disconnectWs();
+    });
 
 })();
