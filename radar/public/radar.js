@@ -231,11 +231,12 @@
     }
 
     // ═══ MAPA ═══
-    const map = L.map('map', {
-        preferCanvas: true,
-        minZoom: 6,
-        maxZoom: 14
-    }).setView([41.0, 1.5], 8);
+const map = L.map('map', {
+    preferCanvas: true,
+    minZoom: 6,
+    maxZoom: 14
+}).setView([41.0, 1.5], 8);
+window.map = map;
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Esri, OpenStreetMap',
