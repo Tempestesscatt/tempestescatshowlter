@@ -172,6 +172,40 @@
       opacity: 0.8;
     }
 
+    /* ----- LIGHTNING ATTRIBUTION (CC BY-SA 4.0) ----- */
+    .lightning-attribution {
+      position: fixed;
+      bottom: 100px;
+      left: 12px;
+      z-index: 998;
+      background: rgba(13, 17, 23, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 12px;
+      font-size: 9px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      display: none;
+      max-width: calc(100% - 24px);
+      pointer-events: auto;
+    }
+
+    .lightning-attribution a {
+      color: var(--text-muted);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    .lightning-attribution a:hover {
+      color: var(--text-secondary);
+    }
+
+    .lightning-attribution.visible {
+      display: block;
+    }
+
     /* ----- STATUS BAR (mobile friendly) ----- */
     .status-bar {
       position: fixed;
@@ -610,11 +644,26 @@
       .legend-labels {
         height: 100px;
       }
+      .lightning-attribution {
+        bottom: 90px;
+        left: 6px;
+        font-size: 8px;
+        padding: 4px 8px;
+      }
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- ATRIBUCIÓ LLAMPS · CC BY-SA 4.0             -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="lightning-attribution" id="lightningAttr">
+     Dades de llamps: <a href="https://www.blitzortung.org" target="_blank" rel="noopener">Blitzortung.org</a> i col·laboradors ·
+    <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>
+    · Mapa de llamps: <a href="https://www.lightningmaps.org" target="_blank" rel="noopener">LightningMaps.org</a>
+  </div>
 
   <header class="topbar">
     <div class="topbar-brand">
@@ -622,7 +671,7 @@
         <circle cx="12" cy="12" r="10"/>
         <polyline points="12 6 12 12 16 14"/>
       </svg>
-      <h1>Tempestes.cat<span>· Radar metereológic</span></h1>
+      <h1>Tempestes.cat<span>· Radar meteorològic</span></h1>
     </div>
     <div class="topbar-right">
       <div class="topbar-badge">CIRRUS · dBZ</div>
@@ -815,10 +864,7 @@
     });
   </script>
 
-  
-
-
   <script src="radar.js"></script>
-<script src="lightning.js"></script>
+  <script src="lightning.js"></script>
 </body>
 </html>
