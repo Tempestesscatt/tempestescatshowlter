@@ -126,7 +126,7 @@
         const html =
             '<div class="lg-strike-wrap">' +
               '<svg class="lg-strike-svg" width="26" height="26" viewBox="0 0 24 24">' +
-                '<path d="M13 2 L4 14 L11 14 L10 22 L20 9 L13 9 Z" fill="#f3ecff" stroke="#c9b8ff" stroke-width="0.6"/>' +
+                '<path d="M13 2 L4 14 L11 14 L10 22 L20 9 L13 9 Z" fill="#f3ecff" stroke="#070707" stroke-width="0.6"/>' +
               '</svg>' +
             '</div>';
 
@@ -142,7 +142,7 @@
         }).addTo(map);
 
         const ring = L.circle([lat, lon], {
-            radius: 1000, color: '#c9b8ff', weight: 2,
+            radius: 1000, color: '#020202', weight: 2,
             fillColor: '#c9b8ff', fillOpacity: 0.12, opacity: 0.7,
             interactive: false, pane: 'paneLlamps'
         }).addTo(map);
