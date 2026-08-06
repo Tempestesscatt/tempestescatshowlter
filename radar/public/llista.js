@@ -9,5 +9,5 @@ window.UIDS_AUTORITZATS = [
       'kx2ACbodxQMQCFsDLeMBKk0F6e72',
       'zD8SlXoDNOQCboc0JQ3zCnFza9W2',
       'j3VfDDg7QDMaSEOqGvOAw4AHnui1',
-      'xqrOr8v1awb11l5LUsxo7bkGP622'
+      'xqrOr8v1awb11l5LUsxo7bkGP622',
     ];
