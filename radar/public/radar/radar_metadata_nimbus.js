@@ -1,5 +1,5 @@
 window.radarMetadata = {
-  "updated": "2026-08-07T22:52:49Z",
+  "updated": "2026-08-07T22:56:59Z",
   "region": "NE_Espanya",
   "product": "NIMBUS (Rainfall accumulation)",
   "resolution": "maxima (sense submostreig)",
@@ -32,7 +32,11 @@ window.radarMetadata = {
     {
       "timestamp": "2026-08-07T22:30:00Z",
       "file": "radar_frame_nimbus_07_08_2026_2230Z.js"
+    },
+    {
+      "timestamp": "2026-08-07T22:45:00Z",
+      "file": "radar_frame_nimbus_07_08_2026_2245Z.js"
     }
   ],
-  "latest_frame": "radar_frame_nimbus_07_08_2026_2230Z.js"
+  "latest_frame": "radar_frame_nimbus_07_08_2026_2245Z.js"
 };
