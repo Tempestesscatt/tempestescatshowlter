@@ -1,11 +1,15 @@
 name: Actualitza dades radar
+
 on:
   workflow_dispatch: {}
-  # També hauries d'afegir schedule perquè s'executi automàticament
-  schedule:
-    - cron: '*/5 * * * *'  # cada 5 minuts per Cirrus
+
 permissions:
   contents: read
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX: radar/
+
 jobs:
   actualitzar-dades:
     runs-on: ubuntu-latest
@@ -13,94 +17,101 @@ jobs:
     concurrency:
       group: radar-update
       cancel-in-progress: true
+
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
-      
+
       - name: Crear carpetes de dades
         run: |
           mkdir -p radar/public/radar
-      
-      # ═══ NOU PAS: Descarregar dades existents del R2 ═══
-      - name: Descarregar dades radar existents del R2
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          echo "Descarregant dades existents del R2..."
-          # Descarrega TOTS els fitxers .js del bucket a la carpeta local
-          npx wrangler r2 object get "tempestes-radar-data/radar/" --local-dir=radar/public/radar/ || echo "Cap dada prèvia (primera execució)"
-      
+
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Instal·lar dependències del sistema (HDF5)
         run: |
           sudo apt-get update
           sudo apt-get install -y libhdf5-dev
-      
+
       - name: Instal·lar dependències de Python
         run: |
           python -m pip install --upgrade pip
           pip install requests h5py numpy pyproj
-      
-      - name: Executar radar.py (CIRRUS / dBZ)
+
+      # ─────────────────────────────────────────────────────────────
+      # PAS CLAU: el runner sempre comença amb un checkout net, així
+      # que si no recuperem aquí l'estat actual de R2, radar.py veu
+      # una carpeta buida a cada execució i mai pot acumular frames
+      # (netejar_frames_dia_anterior i el glob() només troben el que
+      # ell mateix acaba de descarregar). Baixem TOT el contingut
+      # existent al bucket abans d'executar l'script.
+      # ─────────────────────────────────────────────────────────────
+      - name: Baixar estat actual de R2 (per poder acumular frames)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cd radar/public/radar
+
+          echo "Llistant objectes existents a R2 (prefix: ${R2_PREFIX})..."
+          npx wrangler r2 object list "${R2_BUCKET}" \
+            --prefix="${R2_PREFIX}" --remote --json > /tmp/r2-list.json \
+            || echo "[]" > /tmp/r2-list.json
+
+          # L'estructura exacta del JSON pot variar segons versió de
+          # wrangler (array pla, o {"objects":[...]}, amb clau "key" o
+          # "Key"). Ho normalitzem amb jq perquè no peti si canvia.
+          KEYS=$(jq -r '
+            (if type == "array" then . else (.objects // .Objects // []) end)
+            | .[]
+            | (.key // .Key // empty)
+          ' /tmp/r2-list.json)
+
+          if [ -z "$KEYS" ]; then
+            echo "Bucket buit o sense objectes amb aquest prefix (primera execució)"
+          else
+            echo "$KEYS" | while IFS= read -r key; do
+              [ -z "$key" ] && continue
+              nom_fitxer="${key#${R2_PREFIX}}"
+              [ -z "$nom_fitxer" ] && continue
+              echo "  baixant $key -> $nom_fitxer"
+              npx wrangler r2 object get "${R2_BUCKET}/${key}" \
+                --remote --file="$nom_fitxer" \
+                || echo "    avis: no s'ha pogut baixar $key (es continua igualment)"
+            done
+          fi
+
+          echo "--- Contingut baixat de R2 ---"
+          ls -la . 2>/dev/null || echo "buit"
+
+      - name: Executar radar.py (CIRRUS / dBZ + NIMBUS / mm)
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           PYTHONUNBUFFERED: "1"
         run: |
           cd radar
           python -u radar.py
-      
+
       - name: Mostrar contingut generat
         run: |
-          echo "--- public/radar ---"
+          echo "--- public/radar (despres d'executar radar.py) ---"
           ls -la radar/public/radar/ 2>/dev/null || echo "buit"
-          echo ""
-          echo "Nombre de frames:"
-          ls radar/public/radar/radar_frame_*.js 2>/dev/null | wc -l
-      
+
       - name: Pujar dades a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set +e
-          failed_files=()
-          upload_with_retry() {
-            local file="$1"
-            local key="$2"
-            local max_attempts=5
-            local attempt=1
-            local delay=3
-            while [ "$attempt" -le "$max_attempts" ]; do
-              echo "Pujant $key (intent $attempt/$max_attempts)..."
-              if npx wrangler r2 object put "$key" \
-                  --file="$file" --remote --content-type="application/javascript"; then
-                echo "OK: $key"
-                return 0
-              fi
-              echo "Fallada intent $attempt per $key. Reintentant en ${delay}s..."
-              sleep "$delay"
-              attempt=$((attempt + 1))
-              delay=$((delay * 2))
-            done
-            echo "ERROR DEFINITIU: no s'ha pogut pujar $key després de $max_attempts intents"
-            return 1
-          }
-          for f in radar/public/radar/*.js; do
+          for f in radar/public/radar/*.js radar/public/radar/*.json; do
             [ -e "$f" ] || continue
-            key="tempestes-radar-data/radar/$(basename "$f")"
-            if ! upload_with_retry "$f" "$key"; then
-              failed_files+=("$key")
-            fi
+            nom="$(basename "$f")"
+            case "$nom" in
+              *.json) content_type="application/json" ;;
+              *) content_type="application/javascript" ;;
+            esac
+            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}${nom}" \
+              --file="$f" --remote --content-type="$content_type"
           done
-          if [ "${#failed_files[@]}" -gt 0 ]; then
-            echo ""
-            echo "Fitxers que NO s'han pogut pujar (${#failed_files[@]}):"
-            printf ' - %s\n' "${failed_files[@]}"
-            exit 1
-          fi
-          echo "Totes les pujades han tingut èxit."
