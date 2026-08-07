@@ -1,130 +1,42 @@
-name: Actualitza dades radar
-
-on:
-  workflow_dispatch: {}
-
-permissions:
-  contents: read
-
-env:
-  R2_BUCKET: tempestes-radar-data
-  R2_PREFIX: radar/
-
-jobs:
-  actualitzar-dades:
-    runs-on: ubuntu-latest
-    timeout-minutes: 8
-    concurrency:
-      group: radar-update
-      cancel-in-progress: true
-
-    steps:
-      - name: Clonar repositori
-        uses: actions/checkout@v4
-
-      - name: Crear carpetes de dades
-        run: |
-          mkdir -p radar/public/radar
-
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instal·lar dependències del sistema (HDF5)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libhdf5-dev
-
-      - name: Instal·lar dependències de Python
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests h5py numpy pyproj
-
-      # ─────────────────────────────────────────────────────────────
-      # PAS CLAU: el runner sempre comença amb un checkout net, així
-      # que si no recuperem aquí l'estat actual de R2, radar.py veu
-      # una carpeta buida a cada execució i mai pot acumular frames
-      # (netejar_frames_dia_anterior i el glob() només troben el que
-      # ell mateix acaba de descarregar). Baixem TOT el contingut
-      # existent al bucket abans d'executar l'script.
-      # ─────────────────────────────────────────────────────────────
-      - name: Baixar estat actual de R2 (per poder acumular frames)
+      - name: Baixar estat actual de R2 (ULTRA-RÀPID)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          # Instal·lar rclone
+          curl -sO https://downloads.rclone.org/rclone-current-linux-amd64.deb
+          sudo dpkg -i rclone-current-linux-amd64.deb > /dev/null 2>&1
+          
+          # Configuració mínima
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${CLOUDFLARE_ACCOUNT_ID}
+          secret_access_key = ${CLOUDFLARE_API_TOKEN}
+          endpoint = https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+          no_check_bucket = true
+          EOF
+          
           cd radar/public/radar
-
-          # "wrangler r2 object list" no existeix encara com a comanda
-          # estable en aquesta versió de wrangler, així que llistem via
-          # l'API REST de Cloudflare directament (aquesta sí és
-          # estable). Cal que el token tingui permís de lectura sobre
-          # R2 (Object Read), a més de l'escriptura que ja fa servir el
-          # pas de pujada.
-          echo "Llistant objectes existents a R2 (prefix: ${R2_PREFIX})..."
-          HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}&per_page=1000" \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
-            echo "  (comprova que CLOUDFLARE_API_TOKEN tingui permis 'R2 Object Read')"
-            cat /tmp/r2-list.json 2>/dev/null || true
-            KEYS=""
-          else
-            SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
-            if [ "$SUCCESS" != "true" ]; then
-              echo "avis: l'API ha respost success=false, es tracta com a bucket buit"
-              jq -c '.errors' /tmp/r2-list.json 2>/dev/null || true
-              KEYS=""
-            else
-              KEYS=$(jq -r '.result[]?.key // empty' /tmp/r2-list.json)
-            fi
-          fi
-
-          if [ -z "$KEYS" ]; then
-            echo "Bucket buit o sense objectes amb aquest prefix (o llistat no disponible)"
-          else
-            echo "$KEYS" | while IFS= read -r key; do
-              [ -z "$key" ] && continue
-              nom_fitxer="${key#${R2_PREFIX}}"
-              [ -z "$nom_fitxer" ] && continue
-              echo "  baixant $key -> $nom_fitxer"
-              npx wrangler r2 object get "${R2_BUCKET}/${key}" \
-                --remote --file="$nom_fitxer" \
-                || echo "    avis: no s'ha pogut baixar $key (es continua igualment)"
-            done
-          fi
-
-          echo "--- Contingut baixat de R2 ---"
-          ls -la . 2>/dev/null || echo "buit"
-
-      - name: Executar radar.py (CIRRUS / dBZ + NIMBUS / mm)
-        env:
-          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
-          PYTHONUNBUFFERED: "1"
-        run: |
-          cd radar
-          python -u radar.py
-
-      - name: Mostrar contingut generat
-        run: |
-          echo "--- public/radar (despres d'executar radar.py) ---"
-          ls -la radar/public/radar/ 2>/dev/null || echo "buit"
-
-      - name: Pujar dades a R2
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          for f in radar/public/radar/*.js radar/public/radar/*.json; do
-            [ -e "$f" ] || continue
-            nom="$(basename "$f")"
-            case "$nom" in
-              *.json) content_type="application/json" ;;
-              *) content_type="application/javascript" ;;
-            esac
-            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}${nom}" \
-              --file="$f" --remote --content-type="$content_type"
-          done
+          
+          # Descàrrega MÀXIMA velocitat: 32 fils, sense verificacions
+          rclone copy r2:${R2_BUCKET}/${R2_PREFIX} . \
+            --transfers 32 \
+            --checkers 64 \
+            --multi-thread-streams 8 \
+            --fast-list \
+            --no-traverse \
+            --no-check-certificate \
+            --size-only \
+            --ignore-times \
+            --retries 1 \
+            --low-level-retries 1 \
+            --no-gzip-encoding \
+            --buffer-size 256M \
+            --progress \
+            -v
+          
+          echo "--- Baixat: $(ls -1 | wc -l) fitxers ---"
