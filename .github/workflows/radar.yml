@@ -67,6 +67,13 @@ jobs:
         run: |
           set -e
 
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "ERROR: falten els secrets R2_ACCESS_KEY_ID i/o R2_SECRET_ACCESS_KEY."
+            echo "Crea'ls a Settings -> Secrets and variables -> Actions,"
+            echo "amb un R2 API Token (Object Read & Write) generat des de R2 -> Manage API Tokens."
+            exit 1
+          fi
+
           ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
 
           echo "Comptant objectes abans de purgar..."
