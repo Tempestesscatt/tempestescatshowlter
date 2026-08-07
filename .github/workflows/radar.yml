@@ -24,41 +24,71 @@ jobs:
       - name: Crear carpetes de dades
         run: mkdir -p radar/public/radar
 
-      - name: Baixar només fitxers essencials de R2
+      - name: Baixar dades del dia actual de R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
-
-          # Només necessitem descarregar:
-          # 1. nimbus_daily_state.json (estat diari)
-          # 2. radar_daily_nimbus.js (dades diàries)
-          # 3. Els últims 6 frames (1 hora) per evitar duplicats
           
-          echo "📥 Descarregant fitxers essencials..."
+          # Obtenir data d'avui en format DD_MM_YYYY
+          AVUI=$(date -u +"%d_%m_%Y")
           
-          # Fitxers d'estat (sempre necessaris)
-          for f in nimbus_daily_state.json radar_daily_nimbus.js; do
+          echo "📅 Data d'avui: $AVUI"
+          echo "📥 Descarregant fitxers essencials i frames del dia..."
+          
+          # 1. Sempre descarregar fitxers d'estat
+          for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
             echo "  ⬇️ $f"
             npx wrangler r2 object get "${R2_BUCKET}/${R2_PREFIX}$f" \
-              --remote --file="$f" 2>/dev/null || echo "    ℹ️ $f no existeix (primera execució)"
+              --remote --file="$f" 2>/dev/null || echo "    ℹ️ $f no existeix"
           done
           
-          # Només els últims 12 frames (2 hores) per evitar processar duplicats
-          # Calculem els timestamps dels últims 120 minuts
-          for i in $(seq 0 10 110); do
-            timestamp=$(date -u -d "$i minutes ago" +"%d_%m_%Y_%H%MZ")
-            fitxer="radar_frame_${timestamp}.js"
-            if [ ! -f "$fitxer" ]; then
-              npx wrangler r2 object get "${R2_BUCKET}/${R2_PREFIX}$fitxer" \
-                --remote --file="$fitxer" 2>/dev/null || true
+          # 2. Llistar i descarregar NOMÉS frames del dia actual
+          echo "  🔍 Buscant frames del dia $AVUI..."
+          HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}radar_frame_${AVUI}&per_page=1000" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
+            if [ "$SUCCESS" = "true" ]; then
+              # Descarregar en paral·lel (5 simultanis)
+              DESCARGAR_FRAME() {
+                key="$1"
+                nom="${key#${R2_PREFIX}}"
+                echo "  ⬇️ $nom"
+                npx wrangler r2 object get "${R2_BUCKET}/${key}" \
+                  --remote --file="$nom" 2>/dev/null && return 0
+                return 1
+              }
+              
+              count=0
+              jq -r '.result[]?.key // empty' /tmp/r2-list.json | while IFS= read -r key; do
+                [ -z "$key" ] && continue
+                DESCARGAR_FRAME "$key" &
+                count=$((count + 1))
+                if [ $((count % 5)) -eq 0 ]; then
+                  wait
+                fi
+              done
+              wait
             fi
-          done
+          fi
           
           echo "--- Contingut descarregat ---"
-          ls -la . 2>/dev/null || echo "buit"
+          ls -lh . 2>/dev/null || echo "buit"
           echo "Total fitxers: $(ls -1 | wc -l)"
+          echo "Fitxers no buits: $(find . -type f -not -empty | wc -l)"
+
+      - name: Verificar que hi ha dades
+        run: |
+          cd radar/public/radar
+          FITXERS_BUIDES=$(find . -type f -empty | wc -l)
+          if [ $FITXERS_BUIDES -gt 0 ]; then
+            echo "⚠️ Hi ha $FITXERS_BUIDES fitxers buits:"
+            find . -type f -empty -exec ls -lh {} \;
+          fi
 
       - name: Pujar artefacte amb dades existents
         uses: actions/upload-artifact@v4
@@ -87,6 +117,13 @@ jobs:
           name: dades-existents
           path: radar/public/radar/
 
+      - name: Mostrar dades rebudes
+        run: |
+          cd radar/public/radar
+          echo "📊 Dades rebudes:"
+          ls -lh
+          echo "Fitxers buits: $(find . -type f -empty | wc -l)"
+
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
@@ -113,8 +150,9 @@ jobs:
       - name: Mostrar contingut generat
         run: |
           echo "--- public/radar (després d'executar radar.py) ---"
-          ls -la radar/public/radar/ 2>/dev/null || echo "buit"
-          echo "Total fitxers generats: $(ls -1 radar/public/radar/ | wc -l)"
+          cd radar/public/radar
+          ls -lh
+          echo "Total fitxers: $(ls -1 | wc -l)"
 
       - name: Pujar artefacte amb resultats processats
         uses: actions/upload-artifact@v4
@@ -123,7 +161,7 @@ jobs:
           path: radar/public/radar/
           retention-days: 1
 
-  pujar-js:
+  pujar-a-r2:
     needs: executar-radar
     runs-on: ubuntu-latest
     concurrency:
@@ -137,112 +175,46 @@ jobs:
           name: dades-processades
           path: radar/public/radar/
 
-      - name: Pujar fitxers JavaScript en paral·lel
+      - name: Pujar tots els fitxers a R2 (paral·lel)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
-          echo "📤 Pujant fitxers JS en paral·lel..."
           
-          # Funció per pujar en background
-          pujar_fitxer() {
-            echo "  ⬆️ $1"
-            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$1" \
-              --file="$1" --remote --content-type="application/javascript" 2>&1 | grep -v "^$"
-          }
+          echo "📤 Pujant tots els fitxers a R2 en paral·lel (5 simultanis)..."
           
-          # Pujar en paral·lel (màxim 10 simultanis)
-          count=0
-          for f in *.js; do
-            [ -e "$f" ] || continue
-            pujar_fitxer "$f" &
-            count=$((count + 1))
+          PUJAR() {
+            fitxer="$1"
+            # Determinar content-type
+            case "$fitxer" in
+              *.json) ct="application/json" ;;
+              *.js) ct="application/javascript" ;;
+              *) ct="application/octet-stream" ;;
+            esac
             
-            # Limitar a 10 pujades simultànies
-            if [ $((count % 10)) -eq 0 ]; then
-              wait
+            # Només pujar si no està buit
+            if [ -s "$fitxer" ]; then
+              echo "  ⬆️ $fitxer"
+              npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}${fitxer}" \
+                --file="$fitxer" --remote --content-type="$ct" 2>&1 | grep -E "(⬆️|Error|error)" || true
+            else
+              echo "  ⚠️ $fitxer està buit, no es puja"
             fi
-          done
-          wait
-          echo "✅ Tots els fitxers JS pujats"
-
-  pujar-json-grup1:
-    needs: executar-radar
-    runs-on: ubuntu-latest
-    concurrency:
-      group: radar-update
-      cancel-in-progress: true
-    
-    steps:
-      - name: Descarregar resultats processats
-        uses: actions/download-artifact@v4
-        with:
-          name: dades-processades
-          path: radar/public/radar/
-
-      - name: Pujar JSON grup 1 (A-M) en paral·lel
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          cd radar/public/radar
-          echo "📤 Pujant JSON grup 1 (A-M)..."
-          
-          pujar_fitxer() {
-            echo "  ⬆️ $1"
-            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$1" \
-              --file="$1" --remote --content-type="application/json" 2>&1 | grep -v "^$"
           }
           
           count=0
-          for f in [a-mA-M]*.json; do
+          for f in *.js *.json; do
             [ -e "$f" ] || continue
-            pujar_fitxer "$f" &
+            PUJAR "$f" &
             count=$((count + 1))
-            if [ $((count % 10)) -eq 0 ]; then
+            # Limitar a 5 pujades simultànies
+            if [ $((count % 5)) -eq 0 ]; then
               wait
+              sleep 1
             fi
           done
           wait
-          echo "✅ JSON grup 1 pujats"
-
-  pujar-json-grup2:
-    needs: executar-radar
-    runs-on: ubuntu-latest
-    concurrency:
-      group: radar-update
-      cancel-in-progress: true
-    
-    steps:
-      - name: Descarregar resultats processats
-        uses: actions/download-artifact@v4
-        with:
-          name: dades-processades
-          path: radar/public/radar/
-
-      - name: Pujar JSON grup 2 (N-Z i numèrics) en paral·lel
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          cd radar/public/radar
-          echo "📤 Pujant JSON grup 2 (N-Z i numèrics)..."
           
-          pujar_fitxer() {
-            echo "  ⬆️ $1"
-            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$1" \
-              --file="$1" --remote --content-type="application/json" 2>&1 | grep -v "^$"
-          }
-          
-          count=0
-          for f in [n-zN-Z]*.json [0-9]*.json; do
-            [ -e "$f" ] || continue
-            pujar_fitxer "$f" &
-            count=$((count + 1))
-            if [ $((count % 10)) -eq 0 ]; then
-              wait
-            fi
-          done
-          wait
-          echo "✅ JSON grup 2 pujats"
+          echo "✅ Pujada completada"
+          echo "Fitxers pujats: $count"
