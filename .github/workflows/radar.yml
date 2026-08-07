@@ -11,28 +11,19 @@ env:
   R2_PREFIX: radar/
 
 jobs:
-  # Job 1: Preparar l'entorn i baixar dades existents
+  # Job 1: Preparar entorn i baixar dades existents
   preparar-entorn:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     concurrency:
       group: radar-update
       cancel-in-progress: true
-    
-    outputs:
-      cache-key: ${{ steps.set-cache-key.outputs.cache-key }}
     
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
 
       - name: Crear carpetes de dades
-        run: |
-          mkdir -p radar/public/radar
-
-      - name: Generar clau de cache
-        id: set-cache-key
-        run: echo "cache-key=radar-data-$(date +%Y%m%d-%H%M)" >> $GITHUB_OUTPUT
+        run: mkdir -p radar/public/radar
 
       - name: Baixar estat actual de R2
         env:
@@ -47,13 +38,13 @@ jobs:
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
+            echo "⚠️ avís: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
             cat /tmp/r2-list.json 2>/dev/null || true
             KEYS=""
           else
             SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
             if [ "$SUCCESS" != "true" ]; then
-              echo "avis: l'API ha respost success=false, es tracta com a bucket buit"
+              echo "⚠️ avís: l'API ha respost success=false, es tracta com a bucket buit"
               jq -c '.errors' /tmp/r2-list.json 2>/dev/null || true
               KEYS=""
             else
@@ -62,49 +53,49 @@ jobs:
           fi
 
           if [ -z "$KEYS" ]; then
-            echo "Bucket buit o sense objectes amb aquest prefix"
+            echo "📦 Bucket buit o sense objectes amb aquest prefix"
           else
             echo "$KEYS" | while IFS= read -r key; do
               [ -z "$key" ] && continue
               nom_fitxer="${key#${R2_PREFIX}}"
               [ -z "$nom_fitxer" ] && continue
-              echo "  baixant $key -> $nom_fitxer"
+              echo "  ⬇️ baixant $key -> $nom_fitxer"
               npx wrangler r2 object get "${R2_BUCKET}/${key}" \
                 --remote --file="$nom_fitxer" \
-                || echo "    avis: no s'ha pogut baixar $key"
+                || echo "    ⚠️ avís: no s'ha pogut baixar $key"
             done
           fi
 
           echo "--- Contingut baixat de R2 ---"
           ls -la . 2>/dev/null || echo "buit"
 
-      - name: Cachejar dades
-        uses: actions/cache/save@v4
+      - name: Pujar artefacte amb dades existents
+        uses: actions/upload-artifact@v4
         with:
-          path: radar/public/radar
-          key: ${{ steps.set-cache-key.outputs.cache-key }}
+          name: dades-existents
+          path: radar/public/radar/
+          retention-days: 1
 
   # Job 2: Executar radar.py
   executar-radar:
     needs: preparar-entorn
     runs-on: ubuntu-latest
-    timeout-minutes: 8
     concurrency:
       group: radar-update
       cancel-in-progress: true
-    
-    outputs:
-      cache-key: ${{ needs.preparar-entorn.outputs.cache-key }}
     
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
 
-      - name: Recuperar dades cacheadas
-        uses: actions/cache/restore@v4
+      - name: Crear carpetes de dades
+        run: mkdir -p radar/public/radar
+
+      - name: Descarregar dades existents
+        uses: actions/download-artifact@v4
         with:
-          path: radar/public/radar
-          key: ${{ needs.preparar-entorn.outputs.cache-key }}
+          name: dades-existents
+          path: radar/public/radar/
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -121,7 +112,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests h5py numpy pyproj
 
-      - name: Executar radar.py
+      - name: Executar radar.py (CIRRUS / dBZ + NIMBUS / mm)
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           PYTHONUNBUFFERED: "1"
@@ -131,58 +122,60 @@ jobs:
 
       - name: Mostrar contingut generat
         run: |
-          echo "--- public/radar (despres d'executar radar.py) ---"
+          echo "--- public/radar (després d'executar radar.py) ---"
           ls -la radar/public/radar/ 2>/dev/null || echo "buit"
 
-      - name: Cachejar resultats
-        uses: actions/cache/save@v4
+      - name: Pujar artefacte amb resultats processats
+        uses: actions/upload-artifact@v4
         with:
-          path: radar/public/radar
-          key: ${{ needs.preparar-entorn.outputs.cache-key }}-processed
+          name: dades-processades
+          path: radar/public/radar/
+          retention-days: 1
 
-  # Job 3: Pujar dades a R2 (paral·lelitzat en 3 sub-jobs)
+  # Job 3: Pujar fitxers JS a R2
   pujar-js:
     needs: executar-radar
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     concurrency:
       group: radar-update
       cancel-in-progress: true
     
     steps:
-      - name: Recuperar resultats
-        uses: actions/cache/restore@v4
+      - name: Descarregar resultats processats
+        uses: actions/download-artifact@v4
         with:
-          path: radar/public/radar
-          key: ${{ needs.executar-radar.outputs.cache-key }}-processed
+          name: dades-processades
+          path: radar/public/radar/
 
-      - name: Pujar fitxers JS
+      - name: Pujar fitxers JavaScript
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
+          echo "📤 Pujant fitxers JS..."
           for f in *.js; do
             [ -e "$f" ] || continue
-            echo "Pujant $f..."
+            echo "  ⬆️ $f"
             npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
               --file="$f" --remote --content-type="application/javascript"
           done
+          echo "✅ Fitxers JS pujats correctament"
 
+  # Job 4: Pujar JSON del grup 1 (A-M)
   pujar-json-grup1:
     needs: executar-radar
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     concurrency:
       group: radar-update
       cancel-in-progress: true
     
     steps:
-      - name: Recuperar resultats
-        uses: actions/cache/restore@v4
+      - name: Descarregar resultats processats
+        uses: actions/download-artifact@v4
         with:
-          path: radar/public/radar
-          key: ${{ needs.executar-radar.outputs.cache-key }}-processed
+          name: dades-processades
+          path: radar/public/radar/
 
       - name: Pujar JSON grup 1 (A-M)
         env:
@@ -190,37 +183,41 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
+          echo "📤 Pujant JSON grup 1 (A-M)..."
           for f in [a-mA-M]*.json; do
             [ -e "$f" ] || continue
-            echo "Pujant $f..."
+            echo "  ⬆️ $f"
             npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
               --file="$f" --remote --content-type="application/json"
           done
+          echo "✅ JSON grup 1 pujats correctament"
 
+  # Job 5: Pujar JSON del grup 2 (N-Z i numèrics)
   pujar-json-grup2:
     needs: executar-radar
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     concurrency:
       group: radar-update
       cancel-in-progress: true
     
     steps:
-      - name: Recuperar resultats
-        uses: actions/cache/restore@v4
+      - name: Descarregar resultats processats
+        uses: actions/download-artifact@v4
         with:
-          path: radar/public/radar
-          key: ${{ needs.executar-radar.outputs.cache-key }}-processed
+          name: dades-processades
+          path: radar/public/radar/
 
-      - name: Pujar JSON grup 2 (N-Z i altres)
+      - name: Pujar JSON grup 2 (N-Z i números)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
+          echo "📤 Pujant JSON grup 2 (N-Z i numèrics)..."
           for f in [n-zN-Z]*.json [0-9]*.json; do
             [ -e "$f" ] || continue
-            echo "Pujant $f..."
+            echo "  ⬆️ $f"
             npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
               --file="$f" --remote --content-type="application/json"
           done
+          echo "✅ JSON grup 2 pujats correctament"
