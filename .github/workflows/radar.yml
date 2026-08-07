@@ -39,16 +39,36 @@ jobs:
           cd radar
           python -u radar.py
 
+      - name: Netejar frames antics del repo
+        run: |
+          cd radar/public/radar
+          
+          # Eliminar tots els frames antics del repo (no del dia actual)
+          AVUI=$(date -u +"%d_%m_%Y")
+          for f in radar_frame_*.js; do
+            [ -f "$f" ] || continue
+            # Si no és del dia actual, eliminar
+            if [[ "$f" != *"$AVUI"* ]]; then
+              echo "🗑️ Eliminant del repo: $f"
+              git rm "$f"
+            fi
+          done
+          
+          # També eliminar radar_metadata.js i status.js vells si cal
+          for f in radar_metadata.js status.js; do
+            [ -f "$f" ] && git add "$f"
+          done
+
       - name: Guardar canvis a GitHub
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Buscar els fitxers d'estat on sigui que estiguin
-          find . -name "nimbus_daily_state.json" -o -name "radar_daily_nimbus.js" | while read f; do
-            git add "$f"
-          done
+          # Afegir fitxers d'estat
+          git add radar/public/radar/nimbus_daily_state.json
+          git add radar/public/radar/radar_daily_nimbus.js
           
+          # Commit i push
           git diff --staged --quiet || git commit -m "Actualitza estat diari radar"
           git push
 
@@ -57,17 +77,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # Buscar carpeta on hi ha els frames
-          CARPETA=$(find . -name "radar_frame_*.js" -type f | head -1 | xargs dirname 2>/dev/null || echo ".")
-          
-          if [ "$CARPETA" = "." ] && [ ! -f "$CARPETA/radar_frame_"* ]; then
-            # Buscar alternatives
-            CARPETA=$(find . -type d -name "radar" | head -1)
-            [ -z "$CARPETA" ] && CARPETA="radar/public/radar"
-          fi
-          
-          echo "📁 Carpeta de frames: $CARPETA"
-          cd "$CARPETA"
+          cd radar/public/radar
           
           # Pujar fitxers d'estat
           for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
