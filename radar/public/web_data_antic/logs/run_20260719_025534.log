@@ -1,0 +1,33 @@
+=================================================================
+  AROME 51h: meteofetch SFC + meteofetch 3D + WCS + SRH/SHEAR (blindat)
+  Pausa cada 10 req: 5.0s
+=================================================================
+  Comprovant connexió... ✓
+  ✓ Borrats 98 fitxers (713.0 MB alliberats)
+
+  GetCapabilities... ✓ 16374 coverages
+  Runs WCS: 2026-07-18T21, 2026-07-18T18, 2026-07-18T15, 2026-07-18T12, 2026-07-18T09
+
+  Analitzant runs per meteofetch...
+    ⚠️  2026-07-18T21: 49H51H no disponible (HTTP 404)
+    ✅ 2026-07-18T18: 51 hores OK
+
+  ✅ Run meteofetch: 2026-07-18T18Z = 18/07 20:00 CEST
+  ✅ Run WCS:        2026-07-18T18Z = 18/07 20:00 CEST
+  Steps: +6h a +51h (46 hores)
+
+  ╔══════════════════════════════════════╗
+  ║  📡 SFC: meteofetch SP1+SP2 (19 vars)   ║
+  ╚══════════════════════════════════════╝
+  [00H06H] SP1: 54MB ✓ (5 vars)
+  [00H06H] SP2: 41MB ✓ (5 vars)
+  [07H12H] SP1: 51MB ✓ (54 vars)
+  [07H12H] SP2: 36MB ✓ (60 vars)
+  [13H18H] SP1: 50MB ✓ (54 vars)
+  [13H18H] SP2: 37MB ✓ (60 vars)
+  [19H24H] SP1: 49MB 
+
+  ⚠️  Senyal d'interrupció rebuda (Ctrl+C). Acabant la petició en curs i
+      desant tot el que ja s'hagi descarregat... (Ctrl+C un altre cop força sortida)
+
+  ❌ Sortida forçada per l'usuari.

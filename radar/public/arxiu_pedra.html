@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="utf-8">
+    <title>AROME Catalunya · Model Meteorològic</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/estilcat.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <style>
+        /* ═══ MODAL RADAR EN TEMPS REAL (flotant, mateixa pestanya) ═══ */
+        .radar-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.65);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+
+.popup-minimal .leaflet-popup-content-wrapper {
+    background: transparent;
+    box-shadow: none;
+    border-radius: 4px;
+    padding: 0;
+}
+.popup-minimal .leaflet-popup-content {
+    margin: 0;
+}
+.popup-minimal .leaflet-popup-tip {
+    background: rgba(0, 0, 0, 0.75);
+    box-shadow: none;
+}
+
+#app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    z-index: 1;
+}
+
+body > *:first-child {
+    z-index: 0 !important;
+}
+
+
+
+
+/* ═══ SCROLLBAR PERSONALITZADA — CERCADOR DE POBLACIONS ═══ */
+        #townSearchResults::-webkit-scrollbar {
+            width: 6px;
+        }
+        #townSearchResults::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #townSearchResults::-webkit-scrollbar-thumb {
+            background: #2a4361;
+            border-radius: 3px;
+        }
+        #townSearchResults::-webkit-scrollbar-thumb:hover {
+            background: #3a5a80;
+        }
+        #townSearchResults {
+            scrollbar-width: thin;
+            scrollbar-color: #2a4361 transparent;
+        }
+
+
+
+
+        /* ═══ MARCADOR HOVER — CERCADOR DE POBLACIONS ═══ */
+        .town-hover-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #000000;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 0 4px rgba(111, 195, 255, 0.35), 0 2px 6px rgba(0,0,0,0.4);
+            animation: townHoverPulse 1.2s ease-in-out infinite;
+        }
+        @keyframes townHoverPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.25); }
+        }
+        
+        .radar-modal-overlay.active {
+            display: flex;
+        }
+        .radar-modal {
+            background: #0b1420;
+            border: 1px solid #223247;
+            border-radius: 10px;
+            width: min(1100px, 94vw);
+            height: min(750px, 90vh);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+        }
+        .radar-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: #101d2e;
+            border-bottom: 1px solid #223247;
+            flex-shrink: 0;
+        }
+        .radar-modal-header h3 {
+            margin: 0;
+            font-size: 14px;
+            color: #e6edf3;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .radar-modal-header h3 i {
+            color: #3ea6ff;
+        }
+        .radar-modal-close {
+            background: transparent;
+            border: none;
+            color: #9fb0c3;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            line-height: 1;
+        }
+        .radar-modal-close:hover {
+            background: #1a2a3d;
+            color: #fff;
+        }
+        .radar-modal-body {
+            flex: 1;
+            position: relative;
+            background: #000;
+        }
+        .radar-modal-body iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+        .radar-modal-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9fb0c3;
+            font-size: 13px;
+            background: #0b1420;
+        }
+        .radar-modal-loading.hidden {
+            display: none;
+        }
+
+        /* Botó a la topnav */
+        .topnav-radar-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 12px;
+            border-radius: 6px;
+            background: #142338;
+            color: #6fc3ff;
+            border: 1px solid #2a4361;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .topnav-radar-btn:hover {
+            background: #1c3350;
+        }
+        .topnav-radar-btn i {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+
+        <!-- ═══ TOPNAV ═══ -->
+        <div id="topnav">
+            <div class="brand">TEMPESTES<span>·CAT</span></div>
+
+            <a href="index.html" class="topnav-visor-btn" title="Inici" style="margin-right:12px;">
+    <i class="fas fa-home"></i> Inici
+</a>
+
+<!-- BOTO RADAR EN TEMPS REAL -->
+<button type="button" class="topnav-radar-btn" id="btnRadarLive" title="Radar en temps real, reflectivitat" onclick="obrirRadarModal()" style="margin-right:12px;">
+    <i class="fas fa-satellite-dish"></i> Radar en temps real
+</button>
+
+<!-- BOTONS VISORS -->
+<div class="topnav-visors">
+    <a href="visorPI.html" class="topnav-visor-btn" title="AROME-CAT V1 NE">
+        <i class="fas fa-location-dot"></i> ANAR A AROME-NE V1 
+    </a>
+
+</div>
+
+            <!-- DRETA: LOGIN + XAT -->
+            <div class="topnav-right">
+                <button class="topnav-login-btn xat-btn" id="btnXat" onclick="toggleXat()">
+                    <i class="fas fa-comment"></i> <span>Xat</span>
+                </button>
+
+                <button class="topnav-login-btn google-btn" id="btnGoogleLogin" onclick="loginWithGoogle()">
+                    <i class="fab fa-google"></i> <span>Entrar</span>
+                </button>
+
+                <div class="topnav-user" id="userPill" onclick="openProfile()">
+                    <div class="topnav-user-avatar" id="userAvatarFallback">U</div>
+                    <span class="topnav-user-name" id="userDisplayName">Usuari</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ COS ═══ -->
+        <div id="body-row">
+
+            <!-- PANELL LATERAL -->
+            <div id="side-panel">
+                <div id="side-panel-header">
+                    <div class="label">Cercar paràmetre</div>
+                    <input type="text" id="parameter_search" placeholder="p.ex. temperatura, vent, CAPE..." autocomplete="off" />
+                </div>
+                <div id="parameter_selection">
+                    <!-- omplert dinàmicament per mapa.js -->
+                </div>
+            </div>
+
+            <!-- MAIN -->
+            <div id="main-area">
+
+                <div id="fh_valid_outer">
+                    <span class="lbl">Vàlid:</span>
+                    <span id="fh_validtime">—</span>
+                    <span class="lbl" style="margin-left:auto; opacity:0.5;"> Ctrl + Shift + R i clic dret de nou al mapa → Skew-T</span>
+                </div>
+
+                <div id="map-wrapper">
+                    <div id="map"></div>
+
+                    <!-- ═══ LOADING OVERLAY ═══ -->
+                    <div id="loading_overlay" class="visible">
+                        <div class="loading-bg" id="loadingBg">
+                            <img src="img/loading1.jpg" alt="" class="visible" data-index="0">
+                            <img src="img/loading2.jpg" alt="" data-index="1">
+                            <img src="img/loading3.jpg" alt="" data-index="2">
+                            <img src="img/loading4.jpg" alt="" data-index="3">
+                            <img src="img/loading5.jpg" alt="" data-index="4">
+                        </div>
+                        <div class="loading-content">
+                            <div class="spinner"></div>
+                            <div class="txt" id="loading_text">Inicialitzant...Esperi uns 30 segons, són dades de molta resolució</div>
+                            <div class="loading-progress" id="loading_progress">
+                                <div class="progress-bar" id="progress_bar"></div>
+                                <div class="progress-text" id="progress_text">0%</div>
+                            </div>
+                            <div class="loading-sub" id="loading_sub">Connectant amb el servidor...</div>
+                            <div class="loading-dots" id="loading_dots"></div>
+                        </div>
+                    </div>
+
+                    <!-- OVERLAY DE BLOQUEIG -->
+                    <div id="mapLockOverlay" class="map-lock-overlay">
+                        <i class="fas fa-lock"></i>
+                        <h3>Paràmetre bloquejat</h3>
+                        <p>Aquest paràmetre requereix <strong>iniciar sessió</strong> per visualitzar-lo.</p>
+                        <button class="btn-unlock" onclick="loginWithGoogle()">
+                            <i class="fab fa-google"></i> Iniciar sessió
+                        </button>
+                    </div>
+
+                    <div id="overlay">
+                        <div id="overlay-date">--</div>
+                        <div><span id="overlay-local">--:--</span> <span class="small">·</span> <span id="overlay-utc" class="small">--Z</span></div>
+                    </div>
+                </div>
+
+                <!-- FH HORITZONTAL -->
+                <div id="fh-panel">
+                    <div id="fh_grid">
+                        <!-- omplert dinàmicament -->
+                    </div>
+                    <div id="controls">
+                        <button id="btnVent" title="Vent"><i class="fas fa-wind"></i> Vent</button>
+                        <button id="btnVentMode" title="Mode vent">〜 Streamlines</button>
+                        <button id="btnPrev">◀ Anterior</button>
+                        <button id="btnPlay">▶ Animació</button>
+                        <button id="btnNext">Següent ▶</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL RADAR EN TEMPS REAL (flotant) ═══ -->
+    <div class="radar-modal-overlay" id="radarModal">
+        <div class="radar-modal">
+            <div class="radar-modal-header">
+                <h3><i class="fas fa-satellite-dish"></i> Radar Meteorològic — NE Península Ibèrica</h3>
+                <button class="radar-modal-close" onclick="tancarRadarModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="radar-modal-body">
+                <div class="radar-modal-loading" id="radarModalLoading">Carregant radar en temps real...</div>
+                <iframe id="radarModalIframe" src="" title="Radar en temps real"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL XAT ═══ -->
+    <div class="xat-modal-overlay" id="xatModal">
+        <div class="xat-modal">
+            <div class="xat-modal-header">
+                <h3><i class="fas fa-comment"></i> Xat en directe</h3>
+                <button class="xat-modal-close" onclick="toggleXat()">✕</button>
+            </div>
+            <div class="xat-modal-body">
+                <div class="xat-modal-msgs" id="xatModalMsgs">
+                    <div style="text-align:center;color:#556680;padding:20px;font-size:13px;">Carregant missatges...</div>
+                </div>
+                <div class="xat-modal-footer">
+                    <input type="text" id="xatInput" placeholder="Escriu un missatge..." maxlength="500" />
+                    <button id="xatSendBtn" onclick="enviarMissatgeXat()" disabled>Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL PERFIL ═══ -->
+    <div class="profile-modal-overlay" id="profileModal">
+        <div class="profile-modal">
+            <div class="profile-modal-header">
+                <span>El meu perfil</span>
+                <button onclick="closeProfile()">✕</button>
+            </div>
+            <div class="profile-modal-body">
+                <div class="profile-field">
+                    <label>Nom</label>
+                    <input type="text" id="profileName" />
+                </div>
+                <div class="profile-field">
+                    <label>Email</label>
+                    <input type="email" id="profileEmail" disabled />
+                </div>
+                <div class="profile-actions">
+                    <button class="btn-save" onclick="saveProfile()">Desar</button>
+                    <button class="btn-logout" onclick="logoutUser()">Sortir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         SCRIPTS
+    ════════════════════════════════════════════════════════════════ -->
+
+    <!-- PUSHER -->
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+
+    <!-- FIREBASE AUTH -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+        const fc = {
+            apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
+            authDomain: "tempestescat.firebaseapp.com",
+            projectId: "tempestescat",
+            storageBucket: "tempestescat.firebasestorage.app",
+            messagingSenderId: "683240351775",
+            appId: "1:683240351775:web:bc65d73249537b9cc28d2a"
+        };
+
+        const app = initializeApp(fc);
+        const auth = getAuth(app);
+
+        window.loginWithGoogle = async () => {
+            try {
+                await signInWithPopup(auth, new GoogleAuthProvider());
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        window.logoutUser = async () => {
+            try {
+                await signOut(auth);
+                closeProfile();
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
+        window._firebaseUser = null;
+
+        onAuthStateChanged(auth, user => {
+            window._firebaseUser = user;
+            if (user) {
+                window.dispatchEvent(new CustomEvent('tc:login', { detail: user }));
+            } else {
+                window.dispatchEvent(new CustomEvent('tc:logout'));
+            }
+        });
+
+        window._auth = auth;
+    </script>
+
+    <!-- LEAFLET -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="js/skewt-engine.js"></script>
+<script src="js/mapaantic.js"></script>
+<script src="js/towns_cat.js"></script>
+<script src="js/skewt.js"></script>
+
+<script>
+    // ════════════════════════════════════════════════════════════════════
+    //  MODAL RADAR EN TEMPS REAL (flotant, mateixa pestanya)
+    // ════════════════════════════════════════════════════════════════════
+
+    const RADAR_URL = 'https://radar.tempestes.cat/';
+    let radarIframeCarregat = false;
+
+    function obrirRadarModal() {
+        const overlay = document.getElementById('radarModal');
+        const iframe = document.getElementById('radarModalIframe');
+        const loading = document.getElementById('radarModalLoading');
+
+        if (!radarIframeCarregat) {
+            loading.classList.remove('hidden');
+            iframe.src = RADAR_URL;
+            radarIframeCarregat = true;
+        }
+
+        overlay.classList.add('active');
+    }
+
+    function tancarRadarModal() {
+        document.getElementById('radarModal').classList.remove('active');
+    }
+
+    document.getElementById('radarModalIframe').addEventListener('load', function() {
+        document.getElementById('radarModalLoading').classList.add('hidden');
+    });
+
+    document.getElementById('radarModal').addEventListener('click', function(e) {
+        if (e.target === this) tancarRadarModal();
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') tancarRadarModal();
+    });
+
+    // ════════════════════════════════════════════════════════════════════
+    //  GESTIÓ DE LA PANTALLA DE CÀRREGA
+    // ════════════════════════════════════════════════════════════════════
+
+    const loadingOverlay = document.getElementById('loading_overlay');
+    const loadingText = document.getElementById('loading_text');
+    const loadingSub = document.getElementById('loading_sub');
+    const progressBar = document.getElementById('progress_bar');
+    const progressText = document.getElementById('progress_text');
+    const loadingDots = document.getElementById('loading_dots');
+
+    let currentBgIndex = 0;
+    const bgImages = document.querySelectorAll('.loading-bg img');
+    let bgInterval;
+
+    function rotateBackgroundImages() {
+        const total = bgImages.length;
+        bgImages.forEach(img => img.classList.remove('visible'));
+        bgImages[currentBgIndex].classList.add('visible');
+        currentBgIndex = (currentBgIndex + 1) % total;
+    }
+
+    function iniciarRotacioImatges() {
+        bgImages.forEach((img, i) => {
+            img.classList.toggle('visible', i === 0);
+        });
+        currentBgIndex = 1;
+        bgInterval = setInterval(rotateBackgroundImages, 4000);
+    }
+
+    let dotCount = 0;
+
+    function animarDots() {
+        dotCount = (dotCount + 1) % 4;
+        loadingDots.textContent = '.'.repeat(dotCount);
+    }
+
+    function actualitzarProgres(percent, text, subtext) {
+        const p = Math.min(100, Math.max(0, percent));
+        progressBar.style.width = p + '%';
+        progressText.textContent = Math.round(p) + '%';
+        if (text) loadingText.textContent = text;
+        if (subtext) loadingSub.textContent = subtext;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  INTERFÍCIE D'USUARI
+    // ════════════════════════════════════════════════════════════════════
+
+    function actualitzarUIUsuari(user) {
+        const pill = document.getElementById('userPill');
+        const loginBtn = document.getElementById('btnGoogleLogin');
+        const avatar = document.getElementById('userAvatarFallback');
+        const nameEl = document.getElementById('userDisplayName');
+
+        if (!user) {
+            pill.style.display = 'none';
+            loginBtn.style.display = 'inline-flex';
+            return;
+        }
+
+        pill.style.display = 'flex';
+        loginBtn.style.display = 'none';
+
+        const nom = user.displayName || (user.email ? user.email.split('@')[0] : 'Usuari');
+        nameEl.textContent = nom;
+
+        if (user.photoURL) {
+            avatar.innerHTML = '<img src="' + user.photoURL + '" alt="">';
+        } else {
+            avatar.textContent = nom.charAt(0).toUpperCase();
+        }
+    }
+
+    function openProfile() {
+        const user = window._firebaseUser;
+        if (!user) {
+            loginWithGoogle();
+            return;
+        }
+        document.getElementById('profileName').value = user.displayName || '';
+        document.getElementById('profileEmail').value = user.email || '';
+        document.getElementById('profileModal').classList.add('active');
+    }
+
+    function closeProfile() {
+        document.getElementById('profileModal').classList.remove('active');
+    }
+
+    function saveProfile() {
+        const user = window._firebaseUser;
+        if (!user) return;
+        const nom = document.getElementById('profileName').value.trim();
+        if (nom) {
+            document.getElementById('userDisplayName').textContent = nom;
+            const avatar = document.getElementById('userAvatarFallback');
+            if (!user.photoURL) {
+                avatar.textContent = nom.charAt(0).toUpperCase();
+            }
+        }
+        closeProfile();
+    }
+
+    document.getElementById('profileModal')?.addEventListener('click', function(e) {
+        if (e.target === this) closeProfile();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeProfile();
+    });
+
+    // ════════════════════════════════════════════════════════════════════
+//  XAT - AMB RANG I PUNTS AL COSTAT DEL NOM (VERSIÓ ESTABLE)
+// ════════════════════════════════════════════════════════════════════
+
+const PUSHER_KEY = '54b645506c85aed5b62e';
+const PUSHER_CLUSTER = 'eu';
+const API_URL_CHAT = 'https://tempestes-cat.pages.dev/api';
+
+let xatObert = false;
+let currentUserUid = null;
+let currentUserEmail = null;
+
+// Escoltar canvis d'usuari
+window.addEventListener('tc:login', function(e) {
+    const user = e.detail;
+    if (user) {
+        currentUserUid = user.uid;
+        currentUserEmail = user.email;
+    }
+});
+window.addEventListener('tc:logout', function() {
+    currentUserUid = null;
+    currentUserEmail = null;
+});
+
+function toggleXat() {
+    xatObert = !xatObert;
+    const modal = document.getElementById('xatModal');
+    if (modal) {
+        modal.classList.toggle('active', xatObert);
+    }
+    if (xatObert) {
+        carregarMissatgesXat();
+        const input = document.getElementById('xatInput');
+        if (input) {
+            setTimeout(() => input.focus(), 300);
+        }
+        actualitzarEstatBotoXat();
+    }
+}
+
+function escHtml(t) {
+    return (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+}
+
+function getAvatarColor(nom) {
+    const colors = ['#4080c0', '#c04040', '#40a060', '#c08020', '#8040c0', '#20a0a0', '#c04080', '#608020', '#204080', '#806020'];
+    let h = 0;
+    for (let i = 0; i < (nom || '').length; i++) {
+        h = (h * 31 + nom.charCodeAt(i)) & 0xffff;
+    }
+    return colors[h % colors.length];
+}
+
+// ✅ Guardar IDs de missatges per evitar duplicats
+const missatgesVistos = new Set();
+function afegirMissatgeXat(msg) {
+    const container = document.getElementById('xatModalMsgs');
+    if (!container) return;
+
+    const msgId = msg.id || `${msg.ts}_${msg.nick}_${msg.text?.substring(0,20) || 'empty'}`;
+    
+    if (missatgesVistos.has(msgId)) return;
+    missatgesVistos.add(msgId);
+    
+    if (missatgesVistos.size > 200) {
+        const toRemove = [...missatgesVistos].slice(0, 50);
+        toRemove.forEach(id => missatgesVistos.delete(id));
+    }
+
+    const isSys = msg.type === 'system';
+    const isGif = msg.type === 'gif';
+    const cl = getAvatarColor(msg.nick || 'X');
+    const avatarContent = msg.photo && msg.photo.length < 5000 ?
+        '<img src="' + escHtml(msg.photo) + '" alt="">' :
+        (msg.nick || '?')[0].toUpperCase();
+
+    let content = escHtml(msg.text || '');
+    if (isGif && msg.gifUrl) {
+        content = '<img src="' + escHtml(msg.gifUrl) + '" alt="GIF" style="max-width:100px;max-height:80px;border-radius:4px;">';
+    }
+
+    // ✅ MOSTRAR RANG I PUNTS DE TOTHOM (si el missatge els porta)
+    let rangInfo = '';
+    let puntsInfo = '';
+    
+    if (!isSys && msg.rangNom) {
+        rangInfo = `<span style="
+            font-size: 8px;
+            background: ${msg.rangColor || '#556680'};
+            color: #fff;
+            padding: 0px 7px;
+            border-radius: 10px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            margin-left: 4px;
+            display: inline-block;
+            line-height: 1.5;
+            white-space: nowrap;
+        ">${escHtml(msg.rangNom)}</span>`;
+        
+        if (msg.punts !== undefined && msg.punts !== null) {
+            puntsInfo = `<span style="
+                font-size: 8px;
+                color: #FFD700;
+                margin-left: 3px;
+                white-space: nowrap;
+            ">⭐ ${msg.punts.toLocaleString('ca')}</span>`;
+        }
+    } else if (!isSys && msg.uid && currentUserUid && msg.uid === currentUserUid) {
+        // ✅ Fallback: si el missatge NO porta rang, intentar obtenir-lo localment (només per l'usuari actual)
+        try {
+            if (window.TempestescatRangs) {
+                const rang = window.TempestescatRangs.obtenirRang();
+                const punts = window.TempestescatRangs.obtenirPunts();
+                if (rang && rang.nom) {
+                    rangInfo = `<span style="
+                        font-size: 8px;
+                        background: ${rang.color || '#556680'};
+                        color: #fff;
+                        padding: 0px 7px;
+                        border-radius: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.2px;
+                        margin-left: 4px;
+                        display: inline-block;
+                        line-height: 1.5;
+                        white-space: nowrap;
+                    ">${rang.nom}</span>`;
+                    
+                    puntsInfo = `<span style="
+                        font-size: 8px;
+                        color: #FFD700;
+                        margin-left: 3px;
+                        white-space: nowrap;
+                    ">⭐ ${Math.round(punts).toLocaleString('ca')}</span>`;
+                }
+            }
+        } catch(e) {}
+    }
+
+    const div = document.createElement('div');
+    div.className = 'xat-modal-msg' + (isSys ? ' system' : '');
+
+    if (isSys) {
+        div.innerHTML = '<div class="xat-modal-msg-bubble">' + escHtml(msg.text) + '</div>';
+    } else {
+        div.innerHTML = `
+            <div class="xat-modal-msg-header">
+                <div class="xat-modal-msg-avatar" style="background:${cl}">${avatarContent}</div>
+                <span class="xat-modal-msg-name">${escHtml(msg.nick || 'Anonim')}</span>
+                ${rangInfo}
+                ${puntsInfo}
+                <span class="xat-modal-msg-time">${formatTime(msg.ts)}</span>
+            </div>
+            <div class="xat-modal-msg-bubble">${content}</div>
+        `;
+    }
+
+    container.appendChild(div);
+    
+    while (container.children.length > 50) {
+        container.removeChild(container.firstChild);
+    }
+    
+    container.scrollTop = container.scrollHeight;
+}
+
+async function carregarMissatgesXat() {
+    const container = document.getElementById('xatModalMsgs');
+    if (!container) return;
+
+    try {
+        const resp = await fetch(API_URL_CHAT + '/get-messages');
+        const msgs = await resp.json();
+        container.innerHTML = '';
+        missatgesVistos.clear();
+        if (msgs && msgs.length) {
+            msgs.slice(-30).forEach(m => afegirMissatgeXat(m));
+        } else {
+            container.innerHTML = '<div style="text-align:center;color:#556680;padding:20px;font-size:13px;">Encara no hi ha missatges</div>';
+        }
+    } catch (e) {
+        console.error('[Xat] Error carregant:', e);
+        container.innerHTML = '<div style="text-align:center;color:#556680;padding:20px;font-size:13px;">Error carregant xat</div>';
+    }
+}
+window.enviarMissatgeXat = async function() {
+    const input = document.getElementById('xatInput');
+    const text = input?.value?.trim();
+    
+    if (!text) return;
+
+    const user = window._firebaseUser;
+    if (!user) {
+        alert('Has d\'iniciar sessió per xatejar!');
+        return;
+    }
+
+    const nick = user.displayName || (user.email ? user.email.split('@')[0] : 'Anonim');
+    const photo = user.photoURL || '';
+    const uid = user.uid || 'anon';
+    
+    // ✅ OBTENIR EL RANG I PUNTS ACTUAL
+    let rangNom = '';
+    let rangColor = '#556680';
+    let punts = 0;
+    
+    try {
+        if (window.TempestescatRangs) {
+            const rang = window.TempestescatRangs.obtenirRang();
+            punts = window.TempestescatRangs.obtenirPunts();
+            if (rang && rang.nom) {
+                rangNom = rang.nom;
+                rangColor = rang.color || '#556680';
+            }
+        }
+    } catch(e) {
+        console.warn('[Xat] Error obtenint rang:', e);
+    }
+
+    const btn = document.getElementById('xatSendBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳';
+    }
+
+    try {
+        const resp = await fetch(API_URL_CHAT + '/send-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                nick, 
+                photo, 
+                uid, 
+                text,
+                rangNom: rangNom,      // ✅ Enviar el rang
+                rangColor: rangColor,  // ✅ Enviar el color
+                punts: Math.round(punts) // ✅ Enviar els punts
+            })
+        });
+        const data = await resp.json();
+        
+        if (data.ok) {
+            if (input) input.value = '';
+            
+
+            
+            actualitzarEstatBotoXat();
+            if (btn) {
+                btn.textContent = '✓';
+                setTimeout(() => { 
+                    if (btn) btn.textContent = 'Enviar'; 
+                }, 1000);
+            }
+        } else {
+            alert('Error: ' + (data.error || 'No s\'ha pogut enviar'));
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Enviar';
+            }
+            actualitzarEstatBotoXat();
+        }
+    } catch (e) {
+        console.error('[Xat] Error:', e);
+        alert('Error enviant missatge');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Enviar';
+        }
+        actualitzarEstatBotoXat();
+    }
+};
+
+function initPusherXat() {
+    try {
+        if (typeof Pusher === 'undefined') {
+            console.warn('[Xat] Pusher no carregat');
+            return;
+        }
+        
+        const pusher = new Pusher(PUSHER_KEY, { cluster: PUSHER_CLUSTER });
+        const channel = pusher.subscribe('chat-channel');
+        
+        channel.bind('new-message', function(msg) {
+            console.log('[Xat] Missatge rebut:', msg);
+            if (xatObert) {
+                afegirMissatgeXat(msg);
+            }
+        });
+        
+        channel.bind('pusher:subscription_succeeded', function() {
+            console.log('[Xat] Connectat al canal Pusher');
+        });
+        
+        channel.bind('pusher:subscription_error', function(err) {
+            console.error('[Xat] Error Pusher:', err);
+        });
+        
+        console.log('[Xat] Pusher connectat');
+    } catch (e) {
+        console.warn('[Xat] Pusher no disponible:', e);
+    }
+}
+
+function actualitzarEstatBotoXat() {
+    const input = document.getElementById('xatInput');
+    const btn = document.getElementById('xatSendBtn');
+    if (!input || !btn) return;
+    
+    const user = window._firebaseUser;
+    const hasText = input.value.trim().length > 0;
+    const estaHabilitat = hasText && user;
+    
+    btn.disabled = !estaHabilitat;
+    btn.style.opacity = estaHabilitat ? '1' : '0.5';
+    btn.style.cursor = estaHabilitat ? 'pointer' : 'not-allowed';
+}
+
+// ✅ Registrar events del xat
+document.addEventListener('DOMContentLoaded', function() {
+    const input = document.getElementById('xatInput');
+    if (input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (this.value.trim().length > 0) {
+                    enviarMissatgeXat();
+                }
+            }
+        });
+        
+        input.addEventListener('input', function() {
+            actualitzarEstatBotoXat();
+            const charCount = this.value.length;
+            this.style.borderColor = charCount > 400 ? '#ff6b35' : '';
+            if (charCount > 450) {
+                this.style.borderColor = '#ff3333';
+            }
+        });
+    }
+    
+    // Inicialitzar Pusher després de 1s
+    setTimeout(initPusherXat, 1000);
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  FUNCIONS PER ACTUALITZAR EL PANELL DE RANG (index.html)
+// ════════════════════════════════════════════════════════════════════
+
+function actualitzarPanelRang() {
+    const uc = document.getElementById('rangUserContent');
+    const nu = document.getElementById('rangNoUser');
+    const ok = !!(window._firebaseUser);
+    
+    if (ok) {
+        if (uc) uc.style.display = 'block';
+        if (nu) nu.style.display = 'none';
+    } else {
+        if (uc) uc.style.display = 'none';
+        if (nu) nu.style.display = 'block';
+        return;
+    }
+    
+    if (!window.TempestescatRangs) return;
+    
+    try {
+        const r = window.TempestescatRangs.obtenirRang();
+        const p = window.TempestescatRangs.obtenirPunts();
+        const pr = window.TempestescatRangs.obtenirProgress();
+        
+        const badge = document.getElementById('rangBadge');
+        if (badge) {
+            badge.textContent = r.nom;
+            badge.style.background = r.color;
+        }
+        
+        const punts = document.getElementById('rangPunts');
+        if (punts) {
+            punts.textContent = Math.round(p).toLocaleString('ca');
+        }
+        
+        const barFill = document.getElementById('rangBarFill');
+        if (barFill) {
+            barFill.style.width = Math.min(pr, 100) + '%';
+            barFill.style.background = r.color;
+        }
+        
+        // Rang següent
+        const rangs = window.TempestescatRangs.obtenirTotsRangs();
+        const claus = Object.keys(rangs).map(Number).sort((a, b) => a - b);
+        let seguentRang = { nom: 'Rang màxim' };
+        for (let j = 0; j < claus.length; j++) {
+            if (p < claus[j]) {
+                seguentRang = rangs[claus[j]];
+                break;
+            }
+        }
+        
+        const next = document.getElementById('rangNext');
+        if (next) {
+            if (p < 100000) {
+                next.innerHTML = 'Pròxim rang: <strong>' + seguentRang.nom + '</strong>';
+            } else {
+                next.innerHTML = '<strong>Rang màxim!</strong>';
+            }
+        }
+    } catch(e) {
+        console.warn('[Rang] Error:', e);
+    }
+}
+
+// Actualitzar el panell de rang cada 30 segons
+setInterval(actualitzarPanelRang, 30000);
+
+// Actualitzar quan l'usuari fa login/logout
+window.addEventListener('tc:login', function() {
+    setTimeout(actualitzarPanelRang, 500);
+});
+window.addEventListener('tc:logout', function() {
+    setTimeout(actualitzarPanelRang, 500);
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  FUNCIÓ PER TANCAR EL XAT AMB ESC
+// ════════════════════════════════════════════════════════════════════
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && xatObert) {
+        toggleXat();
+    }
+});
+
+    // ════════════════════════════════════════════════════════════════════
+    //  CLIC DRET → MENÚ CONTEXTUAL → SKEW-T
+    // ════════════════════════════════════════════════════════════════════
+
+    function configurarClicDret() {
+        if (typeof map === 'undefined') return;
+        map.off('contextmenu');
+
+        map.on('contextmenu', function(e) {
+            if (e.originalEvent) e.originalEvent.preventDefault();
+
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            console.log('[Mapa] Clic dret a:', lat.toFixed(3), lng.toFixed(3));
+
+            window.lastRightClickPos = { lat: lat, lng: lng };
+            window._skewtSurfacePressure = null;
+
+            const hourIdx = (typeof window.skewtHourIndex === 'number') ?
+                window.skewtHourIndex :
+                (typeof window.curIdx === 'number' ? window.curIdx : 0);
+
+            try {
+                if (window.totesLesHores && window.totesLesHores[hourIdx]) {
+                    const data = window.totesLesHores[hourIdx].data;
+                    const varSp = data.variables['sp'] || data.variables['pressure_msl'];
+                    if (varSp && varSp.datos) {
+                        const lats = data.coordenadas.lat;
+                        const lons = data.coordenadas.lon;
+                        let iBest = 0, jBest = 0;
+                        let bestDist = Infinity;
+                        for (let i = 0; i < lats.length; i++) {
+                            for (let j = 0; j < lons.length; j++) {
+                                const d = Math.hypot(lats[i] - lat, lons[j] - lng);
+                                if (d < bestDist) {
+                                    bestDist = d;
+                                    iBest = i;
+                                    jBest = j;
+                                }
+                            }
+                        }
+                        const Nlat = lats.length;
+                        const filaReal = Nlat - 1 - iBest;
+                        const idx = filaReal * lons.length + jBest;
+                        const sp = varSp.datos[idx];
+                        if (sp != null && !isNaN(sp)) {
+                            window._skewtSurfacePressure = sp;
+                            console.log('[Mapa] Pressió SFC:', sp.toFixed(1), 'hPa');
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('[Mapa] Error obtenint pressió:', err);
+            }
+
+            mostrarMenuContextual(e.containerPoint.x, e.containerPoint.y);
+        });
+
+        console.log('[Mapa] Clic dret configurat');
+    }
+
+    // ─── MENÚ CONTEXTUAL FLOTANT ────────────────────────────────────────
+    let menuContextual = null;
+
+    function crearMenuContextual() {
+        if (menuContextual) return menuContextual;
+
+        const menu = document.createElement('div');
+        menu.id = 'mapContextMenu';
+        menu.className = 'map-context-menu';
+        menu.innerHTML = `
+            <div class="map-context-item" id="ctxSkewt">
+                <i class="fas fa-chart-line"></i> Obrir Skew-T
+            </div>
+        `;
+        document.body.appendChild(menu);
+
+        menu.querySelector('#ctxSkewt').addEventListener('click', function() {
+            amagarMenuContextual();
+            if (typeof window.openSkewtModal === 'function') {
+                window.openSkewtModal();
+            } else {
+                console.error('[Mapa] openSkewtModal no disponible encara');
+            }
+        });
+
+        menuContextual = menu;
+        return menu;
+    }
+
+    function mostrarMenuContextual(x, y) {
+        const menu = crearMenuContextual();
+        const mapWrapper = document.getElementById('map-wrapper');
+        const rect = mapWrapper.getBoundingClientRect();
+
+        let left = rect.left + x;
+        let top = rect.top + y;
+
+        menu.style.display = 'block';
+
+        const menuRect = menu.getBoundingClientRect();
+        if (left + menuRect.width > window.innerWidth) {
+            left = window.innerWidth - menuRect.width - 8;
+        }
+        if (top + menuRect.height > window.innerHeight) {
+            top = window.innerHeight - menuRect.height - 8;
+        }
+
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+    }
+
+    function amagarMenuContextual() {
+        if (menuContextual) {
+            menuContextual.style.display = 'none';
+        }
+    }
+
+    document.addEventListener('click', function(e) {
+        if (menuContextual && !menuContextual.contains(e.target)) {
+            amagarMenuContextual();
+        }
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') amagarMenuContextual();
+    });
+
+    // ════════════════════════════════════════════════════════════════════
+    //  INICIALITZACIÓ
+    // ════════════════════════════════════════════════════════════════════
+
+    document.addEventListener('DOMContentLoaded', function() {
+        iniciarRotacioImatges();
+        setInterval(animarDots, 500);
+        setTimeout(initPusherXat, 500);
+
+        setTimeout(() => {
+            if (window._firebaseUser) {
+                actualitzarUIUsuari(window._firebaseUser);
+            }
+        }, 800);
+
+        configurarClicDret();
+
+        if (typeof map !== 'undefined') {
+            map.on('movestart zoomstart', amagarMenuContextual);
+        }
+
+        console.log('[Visor] Inicialitzat correctament');
+    });
+</script>
+    <script src="js/statuscheck.js"></script>
+
+   
+
+    <script src="js/cap.js"></script>
+    <script src="js/rangs.js"></script>
+</body>
+</html>
