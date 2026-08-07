@@ -21,9 +21,6 @@ jobs:
       - name: Clonar repositori
         uses: actions/checkout@v4
 
-      - name: Crear carpetes
-        run: mkdir -p public/radar
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
@@ -46,7 +43,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/radar/nimbus_daily_state.json public/radar/radar_daily_nimbus.js
+          
+          # Buscar els fitxers d'estat on sigui que estiguin
+          find . -name "nimbus_daily_state.json" -o -name "radar_daily_nimbus.js" | while read f; do
+            git add "$f"
+          done
+          
           git diff --staged --quiet || git commit -m "Actualitza estat diari radar"
           git push
 
@@ -55,9 +57,19 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd public/radar
+          # Buscar carpeta on hi ha els frames
+          CARPETA=$(find . -name "radar_frame_*.js" -type f | head -1 | xargs dirname 2>/dev/null || echo ".")
           
-          # Pujar fitxers d'estat (per si de cas)
+          if [ "$CARPETA" = "." ] && [ ! -f "$CARPETA/radar_frame_"* ]; then
+            # Buscar alternatives
+            CARPETA=$(find . -type d -name "radar" | head -1)
+            [ -z "$CARPETA" ] && CARPETA="radar/public/radar"
+          fi
+          
+          echo "📁 Carpeta de frames: $CARPETA"
+          cd "$CARPETA"
+          
+          # Pujar fitxers d'estat
           for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
             [ -f "$f" ] || continue
             ct="application/json"
