@@ -42,49 +42,63 @@ jobs:
           pip install requests h5py numpy pyproj
 
       # ─────────────────────────────────────────────────────────────
-      # PURGA TOTAL: esborra TOT el contingut existent a R2 sota el
-      # prefix radar/ (frames .js i .json d'estat inclosos).
-      #
-      # Fem servir l'API S3-compatible de R2 (aws-cli) en comptes de
-      # l'API REST v4 de Cloudflare: l'endpoint DELETE de v4 no
-      # accepta batch delete amb un body {"keys": [...]} (dona
-      # HTTP 400 "JSON not well formed"). "aws s3 rm --recursive" és
-      # el metode oficialment suportat per esborrar en massa i gestiona
-      # ell mateix el batching intern (fins a 1000 objectes/crida) i
-      # la paginacio.
-      #
-      # Necessita credencials R2 en format S3 (Access Key ID + Secret
-      # Access Key), NO el CLOUDFLARE_API_TOKEN de la REST API v4.
-      # Es generen a: R2 -> Manage API Tokens -> Create API Token,
-      # amb permisos "Object Read & Write" sobre aquest bucket.
+      # PAS CLAU: el runner sempre comença amb un checkout net, així
+      # que si no recuperem aquí l'estat actual de R2, radar.py veu
+      # una carpeta buida a cada execució i mai pot acumular frames
+      # (netejar_frames_dia_anterior i el glob() només troben el que
+      # ell mateix acaba de descarregar). Baixem TOT el contingut
+      # existent al bucket abans d'executar l'script.
       # ─────────────────────────────────────────────────────────────
-      - name: Purgar TOT el contingut de R2 (S3 API)
+      - name: Baixar estat actual de R2 (per poder acumular frames)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -e
+          cd radar/public/radar
 
-          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-            echo "ERROR: falten els secrets R2_ACCESS_KEY_ID i/o R2_SECRET_ACCESS_KEY."
-            echo "Crea'ls a Settings -> Secrets and variables -> Actions,"
-            echo "amb un R2 API Token (Object Read & Write) generat des de R2 -> Manage API Tokens."
-            exit 1
+          # "wrangler r2 object list" no existeix encara com a comanda
+          # estable en aquesta versió de wrangler, així que llistem via
+          # l'API REST de Cloudflare directament (aquesta sí és
+          # estable). Cal que el token tingui permís de lectura sobre
+          # R2 (Object Read), a més de l'escriptura que ja fa servir el
+          # pas de pujada.
+          echo "Llistant objectes existents a R2 (prefix: ${R2_PREFIX})..."
+          HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}&per_page=1000" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
+            echo "  (comprova que CLOUDFLARE_API_TOKEN tingui permis 'R2 Object Read')"
+            cat /tmp/r2-list.json 2>/dev/null || true
+            KEYS=""
+          else
+            SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
+            if [ "$SUCCESS" != "true" ]; then
+              echo "avis: l'API ha respost success=false, es tracta com a bucket buit"
+              jq -c '.errors' /tmp/r2-list.json 2>/dev/null || true
+              KEYS=""
+            else
+              KEYS=$(jq -r '.result[]?.key // empty' /tmp/r2-list.json)
+            fi
           fi
 
-          ENDPOINT="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          if [ -z "$KEYS" ]; then
+            echo "Bucket buit o sense objectes amb aquest prefix (o llistat no disponible)"
+          else
+            echo "$KEYS" | while IFS= read -r key; do
+              [ -z "$key" ] && continue
+              nom_fitxer="${key#${R2_PREFIX}}"
+              [ -z "$nom_fitxer" ] && continue
+              echo "  baixant $key -> $nom_fitxer"
+              npx wrangler r2 object get "${R2_BUCKET}/${key}" \
+                --remote --file="$nom_fitxer" \
+                || echo "    avis: no s'ha pogut baixar $key (es continua igualment)"
+            done
+          fi
 
-          echo "Comptant objectes abans de purgar..."
-          aws s3 ls "s3://${R2_BUCKET}/${R2_PREFIX}" --recursive --endpoint-url "$ENDPOINT" | wc -l || true
-
-          echo "Purgant s3://${R2_BUCKET}/${R2_PREFIX} ..."
-          aws s3 rm "s3://${R2_BUCKET}/${R2_PREFIX}" --recursive --endpoint-url "$ENDPOINT"
-
-          echo "=== Purga completada ==="
-          echo "Comprovant que ha quedat buit..."
-          aws s3 ls "s3://${R2_BUCKET}/${R2_PREFIX}" --recursive --endpoint-url "$ENDPOINT" || echo "(buit, com s'esperava)"
+          echo "--- Contingut baixat de R2 ---"
+          ls -la . 2>/dev/null || echo "buit"
 
       - name: Executar radar.py (CIRRUS / dBZ + NIMBUS / mm)
         env:
