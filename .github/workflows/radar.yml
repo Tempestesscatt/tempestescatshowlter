@@ -24,73 +24,50 @@ jobs:
       - name: Crear carpetes de dades
         run: mkdir -p radar/public/radar
 
-      - name: Baixar dades del dia actual de R2
+      - name: Baixar només els últims 5 frames i fitxers d'estat
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
           
-          # Obtenir data d'avui en format DD_MM_YYYY
-          AVUI=$(date -u +"%d_%m_%Y")
+          echo "📥 Descarregant fitxers essencials + últims 5 frames..."
           
-          echo "📅 Data d'avui: $AVUI"
-          echo "📥 Descarregant fitxers essencials i frames del dia..."
-          
-          # 1. Sempre descarregar fitxers d'estat
+          # 1. Fitxers d'estat (sempre)
           for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
             echo "  ⬇️ $f"
             npx wrangler r2 object get "${R2_BUCKET}/${R2_PREFIX}$f" \
               --remote --file="$f" 2>/dev/null || echo "    ℹ️ $f no existeix"
           done
           
-          # 2. Llistar i descarregar NOMÉS frames del dia actual
-          echo "  🔍 Buscant frames del dia $AVUI..."
+          # 2. Llistar tots els frames i agafar els últims 5
+          echo "  🔍 Buscant els últims 5 frames..."
           HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}radar_frame_${AVUI}&per_page=1000" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}radar_frame_&per_page=1000" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
           
-          if [ "$HTTP_CODE" = "200" ]; then
-            SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
-            if [ "$SUCCESS" = "true" ]; then
-              # Descarregar en paral·lel (5 simultanis)
-              DESCARGAR_FRAME() {
-                key="$1"
+          if [ "$HTTP_CODE" = "200" ] && [ "$(jq -r '.success' /tmp/r2-list.json)" = "true" ]; then
+            # Ordenar per data i agafar els últims 5
+            ULTIMS_FRAMES=$(jq -r '.result[]?.key // empty' /tmp/r2-list.json | sort -r | head -5)
+            
+            if [ -n "$ULTIMS_FRAMES" ]; then
+              echo "$ULTIMS_FRAMES" | while IFS= read -r key; do
+                [ -z "$key" ] && continue
                 nom="${key#${R2_PREFIX}}"
                 echo "  ⬇️ $nom"
                 npx wrangler r2 object get "${R2_BUCKET}/${key}" \
-                  --remote --file="$nom" 2>/dev/null && return 0
-                return 1
-              }
-              
-              count=0
-              jq -r '.result[]?.key // empty' /tmp/r2-list.json | while IFS= read -r key; do
-                [ -z "$key" ] && continue
-                DESCARGAR_FRAME "$key" &
-                count=$((count + 1))
-                if [ $((count % 5)) -eq 0 ]; then
-                  wait
-                fi
+                  --remote --file="$nom" 2>/dev/null || echo "    ⚠️ Error descarregant $nom"
               done
-              wait
+            else
+              echo "  ℹ️ No hi ha frames anteriors"
             fi
           fi
           
           echo "--- Contingut descarregat ---"
           ls -lh . 2>/dev/null || echo "buit"
-          echo "Total fitxers: $(ls -1 | wc -l)"
-          echo "Fitxers no buits: $(find . -type f -not -empty | wc -l)"
+          echo "Total: $(ls -1 | wc -l) fitxers"
 
-      - name: Verificar que hi ha dades
-        run: |
-          cd radar/public/radar
-          FITXERS_BUIDES=$(find . -type f -empty | wc -l)
-          if [ $FITXERS_BUIDES -gt 0 ]; then
-            echo "⚠️ Hi ha $FITXERS_BUIDES fitxers buits:"
-            find . -type f -empty -exec ls -lh {} \;
-          fi
-
-      - name: Pujar artefacte amb dades existents
+      - name: Pujar artefacte
         uses: actions/upload-artifact@v4
         with:
           name: dades-existents
@@ -117,29 +94,17 @@ jobs:
           name: dades-existents
           path: radar/public/radar/
 
-      - name: Mostrar dades rebudes
-        run: |
-          cd radar/public/radar
-          echo "📊 Dades rebudes:"
-          ls -lh
-          echo "Fitxers buits: $(find . -type f -empty | wc -l)"
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Instal·lar dependències del sistema (HDF5)
+      - name: Instal·lar dependències
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libhdf5-dev
-
-      - name: Instal·lar dependències de Python
-        run: |
-          python -m pip install --upgrade pip
+          sudo apt-get update && sudo apt-get install -y libhdf5-dev
           pip install requests h5py numpy pyproj
 
-      - name: Executar radar.py (CIRRUS / dBZ + NIMBUS / mm)
+      - name: Executar radar.py
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           PYTHONUNBUFFERED: "1"
@@ -147,14 +112,31 @@ jobs:
           cd radar
           python -u radar.py
 
-      - name: Mostrar contingut generat
+      - name: Mantenir només últims 5 frames
         run: |
-          echo "--- public/radar (després d'executar radar.py) ---"
           cd radar/public/radar
-          ls -lh
-          echo "Total fitxers: $(ls -1 | wc -l)"
+          
+          echo "🧹 Netejant frames antics, guardant només últims 5..."
+          
+          # Llistar frames JS (excloent radar_daily_nimbus.js)
+          FRAMES=$(ls -1 radar_frame_*.js 2>/dev/null | sort -r)
+          TOTAL=$(echo "$FRAMES" | wc -l)
+          
+          if [ "$TOTAL" -gt 5 ]; then
+            # Mantenir els 5 primers (més recents) i eliminar la resta
+            echo "$FRAMES" | tail -n +6 | while IFS= read -r frame; do
+              echo "  🗑️ Eliminant $frame"
+              rm "$frame"
+            done
+            echo "✅ Eliminats $((TOTAL - 5)) frames antics"
+          else
+            echo "ℹ️ Només hi ha $TOTAL frames (≤ 5), no cal eliminar"
+          fi
+          
+          echo "📊 Frames restants:"
+          ls -lh radar_frame_*.js 2>/dev/null || echo "cap"
 
-      - name: Pujar artefacte amb resultats processats
+      - name: Pujar artefacte
         uses: actions/upload-artifact@v4
         with:
           name: dades-processades
@@ -169,52 +151,56 @@ jobs:
       cancel-in-progress: true
     
     steps:
-      - name: Descarregar resultats processats
+      - name: Descarregar resultats
         uses: actions/download-artifact@v4
         with:
           name: dades-processades
           path: radar/public/radar/
 
-      - name: Pujar tots els fitxers a R2 (paral·lel)
+      - name: Pujar a R2 i netejar bucket
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
           
-          echo "📤 Pujant tots els fitxers a R2 en paral·lel (5 simultanis)..."
+          echo "📤 Pujant fitxers nous..."
           
-          PUJAR() {
-            fitxer="$1"
-            # Determinar content-type
-            case "$fitxer" in
+          # Pujar fitxers d'estat i frames
+          for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js radar_frame_*.js; do
+            [ -e "$f" ] || continue
+            [ ! -s "$f" ] && continue
+            
+            case "$f" in
               *.json) ct="application/json" ;;
               *.js) ct="application/javascript" ;;
-              *) ct="application/octet-stream" ;;
             esac
             
-            # Només pujar si no està buit
-            if [ -s "$fitxer" ]; then
-              echo "  ⬆️ $fitxer"
-              npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}${fitxer}" \
-                --file="$fitxer" --remote --content-type="$ct" 2>&1 | grep -E "(⬆️|Error|error)" || true
-            else
-              echo "  ⚠️ $fitxer està buit, no es puja"
-            fi
-          }
-          
-          count=0
-          for f in *.js *.json; do
-            [ -e "$f" ] || continue
-            PUJAR "$f" &
-            count=$((count + 1))
-            # Limitar a 5 pujades simultànies
-            if [ $((count % 5)) -eq 0 ]; then
-              wait
-              sleep 1
-            fi
+            echo "  ⬆️ $f"
+            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}${f}" \
+              --file="$f" --remote --content-type="$ct"
           done
-          wait
           
-          echo "✅ Pujada completada"
-          echo "Fitxers pujats: $count"
+          # Eliminar frames antics del bucket (mantenir només 5)
+          echo "🧹 Netejant bucket (frames antics)..."
+          
+          HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}radar_frame_&per_page=1000" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+          
+          if [ "$HTTP_CODE" = "200" ] && [ "$(jq -r '.success' /tmp/r2-list.json)" = "true" ]; then
+            FRAMES_ANTICS=$(jq -r '.result[]?.key // empty' /tmp/r2-list.json | sort -r | tail -n +6)
+            
+            if [ -n "$FRAMES_ANTICS" ]; then
+              echo "$FRAMES_ANTICS" | while IFS= read -r key; do
+                [ -z "$key" ] && continue
+                echo "  🗑️ Eliminant $key"
+                npx wrangler r2 object delete "${R2_BUCKET}/${key}" --remote
+              done
+              echo "✅ Bucket netejat"
+            else
+              echo "ℹ️ No hi ha frames per eliminar"
+            fi
+          fi
+          
+          echo "✅ Tot completat!"
