@@ -1,13 +1,55 @@
-      - name: Baixar estat actual de R2 (ULTRA-RÀPID)
+name: Actualitza dades radar
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX: radar/
+
+jobs:
+  actualitzar-dades:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    concurrency:
+      group: radar-update
+      cancel-in-progress: true
+
+    steps:
+      - name: Clonar repositori
+        uses: actions/checkout@v4
+
+      - name: Crear carpetes de dades
+        run: mkdir -p radar/public/radar
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències del sistema (HDF5)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev
+
+      - name: Instal·lar dependències de Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests h5py numpy pyproj
+
+      # ─────────────────────────────────────────────────────────────
+      # BAIXAR ESTAT ACTUAL DE R2 AMB rclone (ULTRA-RÀPID)
+      # ─────────────────────────────────────────────────────────────
+      - name: Instal·lar i configurar rclone
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # Instal·lar rclone
           curl -sO https://downloads.rclone.org/rclone-current-linux-amd64.deb
           sudo dpkg -i rclone-current-linux-amd64.deb > /dev/null 2>&1
-          
-          # Configuració mínima
           mkdir -p ~/.config/rclone
           cat > ~/.config/rclone/rclone.conf << EOF
           [r2]
@@ -19,24 +61,56 @@
           acl = private
           no_check_bucket = true
           EOF
-          
+
+      - name: Baixar estat actual de R2
+        run: |
           cd radar/public/radar
-          
-          # Descàrrega MÀXIMA velocitat: 32 fils, sense verificacions
           rclone copy r2:${R2_BUCKET}/${R2_PREFIX} . \
             --transfers 32 \
             --checkers 64 \
             --multi-thread-streams 8 \
             --fast-list \
             --no-traverse \
-            --no-check-certificate \
             --size-only \
             --ignore-times \
             --retries 1 \
             --low-level-retries 1 \
             --no-gzip-encoding \
             --buffer-size 256M \
-            --progress \
-            -v
-          
-          echo "--- Baixat: $(ls -1 | wc -l) fitxers ---"
+            --verbose
+          echo "--- Contingut baixat de R2 ---"
+          ls -la
+
+      - name: Executar radar.py (CIRRUS / dBZ + NIMBUS / mm)
+        env:
+          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cd radar
+          python -u radar.py
+
+      - name: Mostrar contingut generat
+        run: |
+          echo "--- public/radar (despres d'executar radar.py) ---"
+          ls -la radar/public/radar/ 2>/dev/null || echo "buit"
+
+      - name: Pujar dades a R2
+        run: |
+          cd radar/public/radar
+          rclone copy . r2:${R2_BUCKET}/${R2_PREFIX} \
+            --transfers 32 \
+            --checkers 64 \
+            --multi-thread-streams 8 \
+            --fast-list \
+            --no-traverse \
+            --size-only \
+            --ignore-times \
+            --retries 1 \
+            --low-level-retries 1 \
+            --no-gzip-encoding \
+            --buffer-size 256M \
+            --include "*.js" \
+            --include "*.json" \
+            --s3-upload-concurrency 32 \
+            --s3-chunk-size 64M \
+            --verbose
