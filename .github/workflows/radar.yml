@@ -56,22 +56,35 @@ jobs:
         run: |
           cd radar/public/radar
 
+          # "wrangler r2 object list" no existeix encara com a comanda
+          # estable en aquesta versió de wrangler, així que llistem via
+          # l'API REST de Cloudflare directament (aquesta sí és
+          # estable). Cal que el token tingui permís de lectura sobre
+          # R2 (Object Read), a més de l'escriptura que ja fa servir el
+          # pas de pujada.
           echo "Llistant objectes existents a R2 (prefix: ${R2_PREFIX})..."
-          npx wrangler r2 object list "${R2_BUCKET}" \
-            --prefix="${R2_PREFIX}" --remote --json > /tmp/r2-list.json \
-            || echo "[]" > /tmp/r2-list.json
+          HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}&per_page=1000" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
 
-          # L'estructura exacta del JSON pot variar segons versió de
-          # wrangler (array pla, o {"objects":[...]}, amb clau "key" o
-          # "Key"). Ho normalitzem amb jq perquè no peti si canvia.
-          KEYS=$(jq -r '
-            (if type == "array" then . else (.objects // .Objects // []) end)
-            | .[]
-            | (.key // .Key // empty)
-          ' /tmp/r2-list.json)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
+            echo "  (comprova que CLOUDFLARE_API_TOKEN tingui permis 'R2 Object Read')"
+            cat /tmp/r2-list.json 2>/dev/null || true
+            KEYS=""
+          else
+            SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
+            if [ "$SUCCESS" != "true" ]; then
+              echo "avis: l'API ha respost success=false, es tracta com a bucket buit"
+              jq -c '.errors' /tmp/r2-list.json 2>/dev/null || true
+              KEYS=""
+            else
+              KEYS=$(jq -r '.result[]?.key // empty' /tmp/r2-list.json)
+            fi
+          fi
 
           if [ -z "$KEYS" ]; then
-            echo "Bucket buit o sense objectes amb aquest prefix (primera execució)"
+            echo "Bucket buit o sense objectes amb aquest prefix (o llistat no disponible)"
           else
             echo "$KEYS" | while IFS= read -r key; do
               [ -z "$key" ] && continue
