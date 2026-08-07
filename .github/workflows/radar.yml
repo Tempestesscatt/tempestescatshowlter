@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -42,21 +44,13 @@ jobs:
       - name: Netejar frames antics del repo
         run: |
           cd radar/public/radar
-          
-          # Eliminar tots els frames antics del repo (no del dia actual)
           AVUI=$(date -u +"%d_%m_%Y")
           for f in radar_frame_*.js; do
             [ -f "$f" ] || continue
-            # Si no és del dia actual, eliminar
             if [[ "$f" != *"$AVUI"* ]]; then
-              echo "🗑️ Eliminant del repo: $f"
-              git rm "$f"
+              echo "🗑️ Eliminant: $f"
+              rm "$f"
             fi
-          done
-          
-          # També eliminar radar_metadata.js i status.js vells si cal
-          for f in radar_metadata.js status.js; do
-            [ -f "$f" ] && git add "$f"
           done
 
       - name: Guardar canvis a GitHub
@@ -64,13 +58,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Afegir fitxers d'estat
-          git add radar/public/radar/nimbus_daily_state.json
-          git add radar/public/radar/radar_daily_nimbus.js
+          # Sincronitzar amb remot
+          git fetch origin main
+          git reset --soft origin/main
+          
+          # Afegir tots els canvis
+          git add -A radar/public/radar/
           
           # Commit i push
-          git diff --staged --quiet || git commit -m "Actualitza estat diari radar"
-          git push
+          if git diff --staged --quiet; then
+            echo "Sense canvis per guardar"
+          else
+            git commit -m "Actualitza estat diari radar"
+            git push origin main
+          fi
 
       - name: Pujar frames a R2
         env:
@@ -79,7 +80,6 @@ jobs:
         run: |
           cd radar/public/radar
           
-          # Pujar fitxers d'estat
           for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
             [ -f "$f" ] || continue
             ct="application/json"
@@ -89,7 +89,6 @@ jobs:
               --file="$f" --remote --content-type="$ct"
           done
           
-          # Pujar últims 5 frames
           echo "📤 Pujant últims 5 frames..."
           ls -1t radar_frame_*.js 2>/dev/null | head -5 | while IFS= read -r frame; do
             echo "⬆️ $frame"
