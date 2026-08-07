@@ -60,7 +60,6 @@ jobs:
         run: |
           cd radar/public/radar
           
-          # Pujar fitxers d'estat (sempre)
           for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
             [ -f "$f" ] || continue
             ct="application/json"
@@ -70,7 +69,6 @@ jobs:
               --file="$f" --remote --content-type="$ct"
           done
           
-          # Pujar només els últims 5 frames
           echo "📤 Pujant últims 5 frames..."
           ls -1t radar_frame_*.js 2>/dev/null | head -5 | while IFS= read -r frame; do
             echo "⬆️ $frame"
