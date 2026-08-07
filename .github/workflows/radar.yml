@@ -13,7 +13,7 @@ env:
 jobs:
   actualitzar-dades:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 20
     concurrency:
       group: radar-update
       cancel-in-progress: true
@@ -42,44 +42,90 @@ jobs:
           pip install requests h5py numpy pyproj
 
       # ─────────────────────────────────────────────────────────────
-      # PAS CLAU: el runner sempre comença amb un checkout net, així
-      # que si no recuperem aquí l'estat actual de R2, radar.py veu
-      # una carpeta buida a cada execució i mai pot acumular frames
-      # (netejar_frames_dia_anterior i el glob() només troben el que
-      # ell mateix acaba de descarregar). Baixem TOT el contingut
-      # existent al bucket abans d'executar l'script.
+      # Esborrem a R2 tots els radar_frame_*.js de dies ANTERIORS
+      # a avui (UTC). Els d'avui es deixen intactes perquè radar.py
+      # els segueixi acumulant. nimbus_daily_state.json i
+      # radar_daily_nimbus.js no porten data al nom i queden fora
+      # del patró, així que no es toquen.
       # ─────────────────────────────────────────────────────────────
-      - name: Baixar estat actual de R2 (per poder acumular frames)
+      - name: Esborrar frames de dies anteriors a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          cd radar/public/radar
+          AVUI=$(date -u +%d_%m_%Y)
+          echo "Data d'avui (UTC): ${AVUI}"
 
-          # "wrangler r2 object list" no existeix encara com a comanda
-          # estable en aquesta versió de wrangler, així que llistem via
-          # l'API REST de Cloudflare directament (aquesta sí és
-          # estable). Cal que el token tingui permís de lectura sobre
-          # R2 (Object Read), a més de l'escriptura que ja fa servir el
-          # pas de pujada.
           echo "Llistant objectes existents a R2 (prefix: ${R2_PREFIX})..."
           HTTP_CODE=$(curl -s -o /tmp/r2-list.json -w "%{http_code}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}&per_page=1000" \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
 
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
-            echo "  (comprova que CLOUDFLARE_API_TOKEN tingui permis 'R2 Object Read')"
+            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es continua sense esborrar res"
             cat /tmp/r2-list.json 2>/dev/null || true
-            KEYS=""
           else
             SUCCESS=$(jq -r '.success' /tmp/r2-list.json)
             if [ "$SUCCESS" != "true" ]; then
-              echo "avis: l'API ha respost success=false, es tracta com a bucket buit"
+              echo "avis: l'API ha respost success=false, es continua sense esborrar res"
               jq -c '.errors' /tmp/r2-list.json 2>/dev/null || true
+            else
+              # Només fitxers "radar_frame_DD_MM_YYYY_HHMMZ.js" la data dels quals NO sigui avui.
+              KEYS_JSON=$(jq -c --arg avui "$AVUI" '
+                [.result[]?.key // empty
+                 | select(test("radar_frame_\\d{2}_\\d{2}_\\d{4}_\\d{4}Z\\.js$"))
+                 | select(test("radar_frame_" + $avui + "_") | not)]
+              ' /tmp/r2-list.json)
+
+              COUNT=$(echo "$KEYS_JSON" | jq 'length')
+              echo "Frames de dies anteriors a esborrar: $COUNT"
+
+              if [ "$COUNT" -gt 0 ]; then
+                echo "$KEYS_JSON" | jq -r '.[]'
+
+                DEL_HTTP_CODE=$(curl -s -o /tmp/r2-delete.json -w "%{http_code}" \
+                  -X DELETE \
+                  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects" \
+                  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                  -H "Content-Type: application/json" \
+                  --data "{\"keys\": ${KEYS_JSON}}")
+
+                echo "HTTP esborrat: $DEL_HTTP_CODE"
+                cat /tmp/r2-delete.json
+              else
+                echo "Res a esborrar."
+              fi
+            fi
+          fi
+
+      # ─────────────────────────────────────────────────────────────
+      # Baixem el que queda a R2 (nomes els frames d'avui + estat)
+      # perque radar.py pugui continuar acumulant frames del dia.
+      # ─────────────────────────────────────────────────────────────
+      - name: Baixar estat actual de R2 (nomes frames d'avui)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          cd radar/public/radar
+
+          echo "Llistant objectes existents a R2 (prefix: ${R2_PREFIX})..."
+          HTTP_CODE=$(curl -s -o /tmp/r2-list2.json -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects?prefix=${R2_PREFIX}&per_page=1000" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "avis: llistat ha fallat (HTTP $HTTP_CODE), es tracta com a bucket buit"
+            cat /tmp/r2-list2.json 2>/dev/null || true
+            KEYS=""
+          else
+            SUCCESS=$(jq -r '.success' /tmp/r2-list2.json)
+            if [ "$SUCCESS" != "true" ]; then
+              echo "avis: l'API ha respost success=false, es tracta com a bucket buit"
+              jq -c '.errors' /tmp/r2-list2.json 2>/dev/null || true
               KEYS=""
             else
-              KEYS=$(jq -r '.result[]?.key // empty' /tmp/r2-list.json)
+              KEYS=$(jq -r '.result[]?.key // empty' /tmp/r2-list2.json)
             fi
           fi
 
