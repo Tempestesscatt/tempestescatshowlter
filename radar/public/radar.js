@@ -432,98 +432,82 @@ window.map = map;
         if (dot) dot.classList.toggle('offline', !!offline);
     }
 
-    async function carregarDades(silencios) {
-        const ld = document.getElementById('loading');
-        if (ld && !silencios) ld.classList.remove('hidden');
+// ═══ CARREGA DE DADES (ÚLTIMS 5 FRAMES) ═══
+async function carregarDades(silencios) {
+    const ld = document.getElementById('loading');
+    if (ld && !silencios) ld.classList.remove('hidden');
 
-        // Es guarda quin producte estava actiu quan s'ha iniciat la
-        // peticio: si l'usuari canvia de producte mentre la peticio
-        // esta en curs, descartem el resultat per no barrejar dades.
-        const producteDeLaPeticio = producteActual;
-        const metadataFile = PRODUCTS[producteDeLaPeticio].metadataFile;
+    const producteDeLaPeticio = producteActual;
+    const metadataFile = PRODUCTS[producteDeLaPeticio].metadataFile;
 
-        try {
-            // Cache-busting: evita servir una copia en cache del CDN
-            // en comptes de les dades acabades de pujar.
-            const mr = await fetch(BASE_PATH+'/'+metadataFile+'?t='+Date.now(), {cache:'no-store'});
-            if (!mr.ok) {
-                if (ld) ld.classList.add('hidden');
-                setStatus('Error carregant dades', true);
-                return;
-            }
-            const metaText = await mr.text();
-
-            // Parsegem sense eval(): extraiem el JSON directament,
-            // evitant que un frame fallit deixi window.radarMetadata
-            // en un estat inconsistent.
-            const metaMatch = metaText.match(/window\.radarMetadata\s*=\s*(\{[\s\S]*\});?\s*$/);
-            if (!metaMatch) {
-                if (ld) ld.classList.add('hidden');
-                return;
-            }
-            const metadata = JSON.parse(metaMatch[1]);
-
-            if (!metadata || !metadata.frames || !metadata.frames.length) {
-                if (ld) ld.classList.add('hidden');
-                return;
-            }
-
-            const framesInfo = metadata.frames;
-            const framesNous = [];
-
-            for (let i=0; i<framesInfo.length; i++) {
-                const url = BASE_PATH+'/'+framesInfo[i].file;
-                try {
-                    const r = await fetch(url+'?t='+Date.now(), {cache:'no-store'});
-                    if (!r.ok) continue;
-                    const txt = await r.text();
-                    const frameMatch = txt.match(/window\.radarFrame\s*=\s*(\{[\s\S]*\});?\s*$/);
-                    if (!frameMatch) continue;
-                    const frame = JSON.parse(frameMatch[1]);
-                    if (frame && frame.points) {
-                        framesNous.push({
-                            timestamp: frame.timestamp,
-                            bounds: frame.bounds,
-                            points: frame.points,
-                            resolution_m: frame.resolution_m || FALLBACK_RESOLUTION_M
-                        });
-                    }
-                } catch(e) {}
-            }
-
-            // Si mentrestant l'usuari ha canviat de producte, aquesta
-            // resposta ja no es valida: la descartem sense tocar l'UI.
-            if (producteDeLaPeticio !== producteActual) {
-                if (ld) ld.classList.add('hidden');
-                return;
-            }
-
-            if (ld) ld.classList.add('hidden');
-            if (!framesNous.length) {
-                setStatus('Sense dades noves', true);
-                return;
-            }
-
-            const estavaAlDarrer = (currentFrame === radarFrames.length - 1) || radarFrames.length === 0;
-
-            radarFrames = framesNous;
-            console.log('[Radar]', producteActual, 'frames:', radarFrames.length, silencios ? '(auto-refresc)' : '(carrega inicial)');
-
-            if (estavaAlDarrer) {
-                currentFrame = radarFrames.length - 1;
-            } else if (currentFrame >= radarFrames.length) {
-                currentFrame = radarFrames.length - 1;
-            }
-
-            radarLayer.setFrame(radarFrames[currentFrame]);
-            updateUI();
-            setStatus('En directe', false);
-            avaluarAlertaProximitat();
-        } catch(e) {
+    try {
+        // 1. Carregar metadata
+        const mr = await fetch(BASE_PATH+'/'+metadataFile+'?t='+Date.now(), {cache:'no-store'});
+        if (!mr.ok) {
             if (ld) ld.classList.add('hidden');
             setStatus('Error carregant dades', true);
+            return;
         }
+        const metaText = await mr.text();
+        const metaMatch = metaText.match(/window\.radarMetadata\s*=\s*(\{[\s\S]*\});?\s*$/);
+        if (!metaMatch) return;
+        const metadata = JSON.parse(metaMatch[1]);
+
+        if (!metadata || !metadata.frames || !metadata.frames.length) {
+            if (ld) ld.classList.add('hidden');
+            return;
+        }
+
+        // 2. Carregar només els últims 5 frames
+        const framesACarregar = metadata.frames.slice(-5);
+        const framesNous = [];
+
+        for (let i = 0; i < framesACarregar.length; i++) {
+            const url = BASE_PATH + '/' + framesACarregar[i].file + '?t=' + Date.now();
+            try {
+                const r = await fetch(url, {cache:'no-store'});
+                if (!r.ok) continue;
+                const txt = await r.text();
+                const frameMatch = txt.match(/window\.radarFrame\s*=\s*(\{[\s\S]*\});?\s*$/);
+                if (!frameMatch) continue;
+                const frame = JSON.parse(frameMatch[1]);
+                if (frame && frame.points) {
+                    framesNous.push({
+                        timestamp: frame.timestamp,
+                        bounds: frame.bounds,
+                        points: frame.points,
+                        resolution_m: frame.resolution_m || FALLBACK_RESOLUTION_M
+                    });
+                }
+            } catch(e) {}
+        }
+
+        if (producteDeLaPeticio !== producteActual) {
+            if (ld) ld.classList.add('hidden');
+            return;
+        }
+
+        if (ld) ld.classList.add('hidden');
+        if (!framesNous.length) {
+            setStatus('Sense dades noves', true);
+            return;
+        }
+
+        radarFrames = framesNous;
+        currentFrame = radarFrames.length - 1;
+        
+        console.log('[Radar]', producteActual, 'frames:', radarFrames.length, '(últims 5)');
+        
+        radarLayer.setFrame(radarFrames[currentFrame]);
+        updateUI();
+        setStatus('En directe', false);
+        avaluarAlertaProximitat();
+        
+    } catch(e) {
+        if (ld) ld.classList.add('hidden');
+        setStatus('Error carregant dades', true);
     }
+}
 
     // ═══ NAVEGACIÓ ═══
     function framePrev() {
