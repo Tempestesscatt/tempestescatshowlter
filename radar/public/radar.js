@@ -459,7 +459,7 @@ async function carregarDades(silencios) {
         }
 
         // 2. Carregar només els últims 5 frames
-        const framesACarregar = metadata.frames.slice(-15);
+        const framesACarregar = metadata.frames.slice(-5);
         const framesNous = [];
 
         for (let i = 0; i < framesACarregar.length; i++) {
@@ -496,7 +496,7 @@ async function carregarDades(silencios) {
         radarFrames = framesNous;
         currentFrame = radarFrames.length - 1;
         
-        console.log('[Radar]', producteActual, 'frames:', radarFrames.length, '(últims 15)');
+        console.log('[Radar]', producteActual, 'frames:', radarFrames.length, '(últims 5)');
         
         radarLayer.setFrame(radarFrames[currentFrame]);
         updateUI();
