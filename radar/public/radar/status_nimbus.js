@@ -1,6 +1,6 @@
 window.radarStatus = {
-    executedAtUTC: "2026-08-08T14:57:31Z",
-    executedAtEpochMs: 1786201051521,
-    frameNouAquestaExecucio: 1,
+    executedAtUTC: "2026-08-08T15:01:34Z",
+    executedAtEpochMs: 1786201294799,
+    frameNouAquestaExecucio: 0,
     framesVigentsAvui: 60
 };
