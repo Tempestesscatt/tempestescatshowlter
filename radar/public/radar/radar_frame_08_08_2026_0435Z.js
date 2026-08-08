@@ -1,0 +1,1 @@
+window.radarFrame = {"timestamp":"2026-08-08T043500Z","bounds":{"north":45.0,"south":38.5,"east":5.0,"west":-2.0},"points":[],"resolution_m":1000.0};
