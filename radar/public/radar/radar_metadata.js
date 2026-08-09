@@ -1,5 +1,5 @@
 window.radarMetadata = {
-  "updated": "2026-08-09T01:29:17Z",
+  "updated": "2026-08-09T01:33:06Z",
   "region": "NE_Espanya",
   "product": "CIRRUS (dBZ)",
   "resolution": "maxima (sense submostreig)",
