@@ -1,71 +1,0 @@
-=================================================================
-  AROME 51h: SFC + 3D + SATÈL·LIT + RADAR + SRH/SHEAR
-  Satèl·lit: ACTIVAT
-=================================================================
-  Comprovant connexió... ✓
-  ✓ Borrats 20 fitxers (217.9 MB alliberats)
-
-  🔍 Buscant el millor run disponible (51 hores)...
-    ❌ Run 2026-08-05T12Z: 49H51H no disponible
-    ✅ Run 2026-08-05T06Z: 51 hores OK
-    📌 Seleccionat: 2026-08-05T06Z
-
-  ✅ Run: 2026-08-05T06Z = 05/08 08:00 CEST
-  Steps: +7h a +51h (45 hores)
-
-  ╔══════════════════════════════════════╗
-  ║  📡 SFC: meteofetch SP1+SP2 (17 vars)   ║
-  ╚══════════════════════════════════════╝
-  [[█░░░░░░░░░░░░░░░░░░░]   6.2%] [07H12H] SP1: 52MB ✓ (42 vars)
-  [[██░░░░░░░░░░░░░░░░░░]  12.5%] [07H12H] SP2: 40MB ✓ (60 vars)
-  [[███░░░░░░░░░░░░░░░░░]  18.8%] [13H18H] SP1: 52MB ✓ (42 vars)
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [13H18H] SP2: 38MB ✓ (60 vars)
-  [[██████░░░░░░░░░░░░░░]  31.2%] [19H24H] SP1: 53MB ✓ (42 vars)
-  [[███████░░░░░░░░░░░░░]  37.5%] [19H24H] SP2: 38MB ✓ (60 vars)
-  [[████████░░░░░░░░░░░░]  43.8%] [25H30H] SP1: 52MB ✓ (42 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [25H30H] SP2: 39MB ✓ (60 vars)
-  [[███████████░░░░░░░░░]  56.2%] [31H36H] SP1: 52MB ✓ (42 vars)
-  [[████████████░░░░░░░░]  62.5%] [31H36H] SP2: 39MB ✓ (60 vars)
-  [[█████████████░░░░░░░]  68.8%] [37H42H] SP1: 52MB ✓ (42 vars)
-  [[███████████████░░░░░]  75.0%] [37H42H] SP2: 37MB ✓ (60 vars)
-  [[████████████████░░░░]  81.2%] [43H48H] SP1: 54MB ✓ (42 vars)
-  [[█████████████████░░░]  87.5%] [43H48H] SP2: 37MB ✓ (60 vars)
-  [[██████████████████░░]  93.8%] [49H51H] SP1: 26MB ✓ (21 vars)
-  [[████████████████████] 100.0%] [49H51H] SP2: 19MB ✓ (30 vars)
-  ✅ SFC meteofetch: 765 vars en 45/45h
-     Pes GRIB: 680.4 MB
-     Graella: 140×200 = 28000 punts
-     Temps: 3m 6s
-
-  ╔══════════════════════════════════════╗
-  ║  📡 3D: IP1+IP3 (meteofetch)        ║
-  ╚══════════════════════════════════════╝
-  [[█░░░░░░░░░░░░░░░░░░░]   6.2%] [IP1][07H12H] Descarregant... 409MB | Processant... ✓ (480 vars)
-  [[██░░░░░░░░░░░░░░░░░░]  12.5%] [IP1][13H18H] Descarregant... 411MB | Processant... ✓ (480 vars)
-  [[███░░░░░░░░░░░░░░░░░]  18.8%] [IP1][19H24H] Descarregant... 411MB | Processant... ✓ (480 vars)
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [IP1][25H30H] Descarregant... 407MB | Processant... ✓ (480 vars)
-  [[██████░░░░░░░░░░░░░░]  31.2%] [IP1][31H36H] Descarregant... ❌
-  [[███████░░░░░░░░░░░░░]  37.5%] [IP1][37H42H] Descarregant... ❌
-  [[████████░░░░░░░░░░░░]  43.8%] [IP1][43H48H] Descarregant... ❌
-  [[██████████░░░░░░░░░░]  50.0%] [IP1][49H51H] Descarregant... ❌
-  [[███████████░░░░░░░░░]  56.2%] [IP3][07H12H] Descarregant... 648MB | Processant... ✓ (186 vars)
-  [[████████████░░░░░░░░]  62.5%] [IP3][13H18H] Descarregant... 652MB | Processant... ✓ (186 vars)
-  [[█████████████░░░░░░░]  68.8%] [IP3][19H24H] Descarregant... 658MB | Processant... ✓ (186 vars)
-  [[███████████████░░░░░]  75.0%] [IP3][25H30H] Descarregant... 653MB | Processant... ✓ (186 vars)
-  [[████████████████░░░░]  81.2%] [IP3][31H36H] Descarregant... 627MB | Processant... ✓ (186 vars)
-  [[█████████████████░░░]  87.5%] [IP3][37H42H] Descarregant... 638MB | Processant... ✓ (186 vars)
-  [[██████████████████░░]  93.8%] [IP3][43H48H] Descarregant... 647MB | Processant... ✓ (186 vars)
-  [[████████████████████] 100.0%] [IP3][49H51H] Descarregant... 324MB | Processant... ✓ (93 vars)
-  ✅ 3D: 3315 vars en 32m 15s
-     Pes GRIB: 6.33 GB
-     Graella: 140×200 = 28000 punts
-    ⚠️  grups fallits: IP1/31H36H, IP1/37H42H, IP1/43H48H, IP1/49H51H
-
-  ╔══════════════════════════════════════╗
-  ║  🛰️  SATÈL·LIT: BT 10.8µm + LLAMPS + RADAR ║
-  ╚══════════════════════════════════════╝
-  GetCapabilities WCS... ✓ (8676 IDs)
-  🎯 Run WCS més recent: 2026-08-05T09Z
-  ℹ️  (Run meteofetch: 2026-08-05T06Z)
-  BT 10.8µm: ✅  |  Llamps: ✅  |  Radar: ✅
-  [[░░░░░░░░░░░░░░░░░░░░]   2.2%] Satèl·lit +07h | BT:1 LL:1 RDR:1     [[░░░░░░░░░░░░░░░░░░░░]   4.4%] Satèl·lit +08h | BT:2 LL:2 RDR:2     [[█░░░░░░░░░░░░░░░░░░░]   6.7%] Satèl·lit +09h | BT:3 LL:3 RDR:3     [[█░░░░░░░░░░░░░░░░░░░]   8.9%] Satèl·lit +10h | BT:4 LL:4 RDR:4     [[██░░░░░░░░░░░░░░░░░░]  11.1%] Satèl·lit +11h | BT:5 LL:5 RDR:5     [[██░░░░░░░░░░░░░░░░░░]  13.3%] Satèl·lit +12h | BT:6 LL:6 RDR:6     [[███░░░░░░░░░░░░░░░░░]  15.6%] Satèl·lit +13h | BT:7 LL:7 RDR:7   

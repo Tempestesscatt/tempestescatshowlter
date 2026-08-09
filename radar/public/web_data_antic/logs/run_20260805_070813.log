@@ -1,80 +1,0 @@
-=================================================================
-  AROME 51h: meteofetch SFC + 3D + SRH/SHEAR
-  Pausa cada 10 req: 5.0s
-=================================================================
-  Comprovant connexió... ✓
-  ✓ Borrats 4 fitxers (42.9 MB alliberats)
-
-  🔍 Buscant el millor run disponible (51 hores)...
-    ✅ Run 2026-08-05T00Z: 51 hores OK (27 MB)
-    📌 Seleccionat: 2026-08-05T00Z
-
-  ✅ Run meteofetch: 2026-08-05T00Z = 05/08 02:00 CEST
-  Steps: +5h a +9h (5 hores)
-
-  ╔══════════════════════════════════════╗
-  ║  📡 SFC: meteofetch SP1+SP2 (18 vars)   ║
-  ╚══════════════════════════════════════╝
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [00H06H] SP1: 55MB ✓ (13 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [00H06H] SP2: 43MB ✓ (15 vars)
-  [[███████████████░░░░░]  75.0%] [07H12H] SP1: 52MB ✓ (24 vars)
-  [[████████████████████] 100.0%] [07H12H] SP2: 40MB ✓ (30 vars)
-  ✅ SFC meteofetch: 82 vars en 5/5h
-     Pes GRIB: 189.3 MB
-     Graella: 140×200 = 28000 punts
-     Temps: 47s
-
-  ╔══════════════════════════════════════╗
-  ║  📡 3D: IP1+IP3 (meteofetch)        ║
-  ╚══════════════════════════════════════╝
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [IP1][00H06H] Descarregant... 492MB | Processant... ✓ (160 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [IP1][07H12H] Descarregant... 413MB | Processant... ✓ (240 vars)
-  [[███████████████░░░░░]  75.0%] [IP3][00H06H] Descarregant... 779MB | Processant... ✓ (62 vars)
-  [[████████████████████] 100.0%] [IP3][07H12H] Descarregant... 660MB | Processant... ✓ (93 vars)
-  ✅ 3D: 555 vars en 9m 26s
-     Pes GRIB: 2.29 GB
-     Graella: 140×200 = 28000 punts
-
-  ╔══════════════════════════════════════╗
-  ║  🌪️  SRH + SHEAR (0-1km, 0-3km, 0-6km) ║
-  ╚══════════════════════════════════════╝
-  [[████░░░░░░░░░░░░░░░░]  20.0%] Calculant SRH/Shear +05h...  [[████████░░░░░░░░░░░░]  40.0%] Calculant SRH/Shear +06h...  [[████████████░░░░░░░░]  60.0%] Calculant SRH/Shear +07h...  [[████████████████░░░░]  80.0%] Calculant SRH/Shear +08h...  [[████████████████████] 100.0%] Calculant SRH/Shear +09h...
-  ✅ SRH + Shear calculats en 19s
-
-  ╔══════════════════════════════════════╗
-  ║  🌡️  Convectiu (LCL, LFC, LI, EL)    ║
-  ╚══════════════════════════════════════╝
-  [[████░░░░░░░░░░░░░░░░]  20.0%] Calculant convectiu +05h... ✓  [[████████░░░░░░░░░░░░]  40.0%] Calculant convectiu +06h... ✓  [[████████████░░░░░░░░]  60.0%] Calculant convectiu +07h... ✓  [[████████████████░░░░]  80.0%] Calculant convectiu +08h... ✓  [[████████████████████] 100.0%] Calculant convectiu +09h... ✓
-  ✅ 5/5 hores (3s)
-
-  ╔══════════════════════════════════════╗
-  ║  📦 GENERANT JSONs                   ║
-  ╚══════════════════════════════════════╝
-  sfc_05.json: 4220 KB (26 vars) | +05h | 2026-08-05 07:00 CEST
-  3d_05.json: 17807 KB (111 vars) | +05h | 2026-08-05 07:00 CEST
-  sfc_06.json: 3047 KB (18 vars) | +06h | 2026-08-05 08:00 CEST
-  3d_06.json: 17789 KB (111 vars) | +06h | 2026-08-05 08:00 CEST
-  sfc_07.json: 4229 KB (26 vars) | +07h | 2026-08-05 09:00 CEST
-  3d_07.json: 17777 KB (111 vars) | +07h | 2026-08-05 09:00 CEST
-  sfc_08.json: 4235 KB (26 vars) | +08h | 2026-08-05 10:00 CEST
-  3d_08.json: 17752 KB (111 vars) | +08h | 2026-08-05 10:00 CEST
-  sfc_09.json: 4240 KB (26 vars) | +09h | 2026-08-05 11:00 CEST
-  3d_09.json: 17728 KB (111 vars) | +09h | 2026-08-05 11:00 CEST
-
-  ╔══════════════════════════════════════╗
-  ║  🔎 INFORME D'INTEGRITAT              ║
-  ╚══════════════════════════════════════╝
-  ✅ Totes les 5 hores SFC tenen variables crítiques
-  ✅ Totes les 5 hores 3D generades
-
-  📊 status.json: 515 B
-
-  ╔══════════════════════════════════════╗
-  ║  ✅ FINALITZAT
-  ╠══════════════════════════════════════╣
-  ║  Fitxers: 10 (SFC: 5/5, 3D: 5/5)
-  ║  Pes total: 106.3 MB
-  ║  Temps: 10m 52s
-  ╚══════════════════════════════════════╝
-
-  📝 Log: C:\Users\simob\Documents\GitHub\joctempestes\private-scripts\..\meu-mapa\public\web_data\logs\run_20260805_070813.log
