@@ -25,13 +25,7 @@
             unitat: 'dBZ',
             nomCamp: 'Reflectivitat'
         },
-        nimbus: {
-            label: 'NIMBUS (mm)',
-            metadataFile: 'radar_metadata_nimbus.js',
-            valorKey: 'rain_mm',
-            unitat: 'mm',
-            nomCamp: 'Precipitació acumulada'
-        }
+
     };
     const PRODUCT_STORAGE_KEY = 'radar_producte_seleccionat';
     let producteActual = 'cirrus';
@@ -238,10 +232,10 @@ const map = L.map('map', {
 }).setView([41.0, 1.5], 8);
 window.map = map;
 
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-        attribution: 'Esri, OpenStreetMap',
-        maxZoom: 19
-    }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB',
+    maxZoom: 19
+}).addTo(map);
 
     map.createPane('paneRadar');
     map.getPane('paneRadar').style.zIndex = 400;

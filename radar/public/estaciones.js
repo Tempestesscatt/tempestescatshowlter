@@ -156,23 +156,24 @@
         }
         return parts;
     }
-
 function iconaBarbaVent(dv, vv) {
     if (dv === null || dv === undefined || isNaN(dv)) return '';
     const kmh = (vv !== null && vv !== undefined) ? vv * 3.6 : 0;
     const kmhTxt = kmh.toFixed(0);
-    // dv és "d'on ve el vent" (meteorologic). La barba (l'astil) ha
-    // d'apuntar cap ON VE el vent — així ho fan els mapes sinòptics
-    // estàndard. Per tant NO sumem 180.
     const rot = dv % 360;
+    
+    // Si no hay viento, círculo con radio 6
+    const svgContent = (kmh  <5) ? 
+        '<circle cx="12" cy="12" r="6" fill="none" stroke="#0a0a0a" stroke-width="1.5" opacity="0.94"/>' :
+        svgBarbaVent(kmh);
+    
     return '' +
         '<div class="eb-vent" title="Vent ' + kmhTxt + ' km/h" data-kmh="' + kmhTxt + '" data-dv="' + Math.round(dv) + '">' +
             '<svg viewBox="0 0 24 24" style="transform:rotate(' + rot + 'deg);" width="20" height="20">' +
-                svgBarbaVent(kmh) +
+                svgContent +
             '</svg>' +
         '</div>';
 }
-
     function crearIconaEstacio(estacio) {
         const ta = estacio.ta;
         const tpr = estacio.tpr;
