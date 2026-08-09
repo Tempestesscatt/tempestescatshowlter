@@ -1,0 +1,131 @@
+=================================================================
+  AROME 51h: SFC + 3D + SATÈL·LIT + RADAR + SRH/SHEAR
+  Satèl·lit: ACTIVAT
+=================================================================
+  Comprovant connexió... ✓
+  ✓ Borrats 88 fitxers (973.0 MB alliberats)
+
+  🔍 Buscant el millor run disponible (51 hores)...
+    ❌ Run 2026-08-07T06Z: 49H51H no disponible
+    ✅ Run 2026-08-07T00Z: 51 hores OK
+    📌 Seleccionat: 2026-08-07T00Z
+
+  ✅ Run: 2026-08-07T00Z = 07/08 02:00 CEST
+  Steps: +6h a +25h (20 hores)
+
+  ╔══════════════════════════════════════╗
+  ║  📡 SFC: meteofetch SP1+SP2 (17 vars)   ║
+  ╚══════════════════════════════════════╝
+  [[██░░░░░░░░░░░░░░░░░░]  10.0%] [00H06H] SP1: 54MB ✓ (5 vars)
+  [[████░░░░░░░░░░░░░░░░]  20.0%] [00H06H] SP2: 41MB ✓ (5 vars)
+  [[██████░░░░░░░░░░░░░░]  30.0%] [07H12H] SP1: 50MB ✓ (42 vars)
+  [[████████░░░░░░░░░░░░]  40.0%] [07H12H] SP2: 36MB ✓ (60 vars)
+  [[██████████░░░░░░░░░░]  50.0%] [13H18H] SP1: 49MB ✓ (42 vars)
+  [[████████████░░░░░░░░]  60.0%] [13H18H] SP2: 36MB ✓ (60 vars)
+  [[██████████████░░░░░░]  70.0%] [19H24H] SP1: 49MB ✓ (42 vars)
+  [[████████████████░░░░]  80.0%] [19H24H] SP2: 35MB ✓ (60 vars)
+  [[██████████████████░░]  90.0%] [25H30H] SP1: 52MB ✓ (7 vars)
+  [[████████████████████] 100.0%] [25H30H] SP2: 36MB ✓ (10 vars)
+  ✅ SFC meteofetch: 333 vars en 20/20h
+     Pes GRIB: 437.8 MB
+     Graella: 140×200 = 28000 punts
+     Temps: 2m 10s
+
+  ╔══════════════════════════════════════╗
+  ║  📡 3D: IP1+IP3 (meteofetch)        ║
+  ╚══════════════════════════════════════╝
+  [[██░░░░░░░░░░░░░░░░░░]  10.0%] [IP1][00H06H] Descarregant... 481MB | Processant... ✓ (80 vars)
+  [[████░░░░░░░░░░░░░░░░]  20.0%] [IP1][07H12H] Descarregant... 404MB | Processant... ✓ (480 vars)
+  [[██████░░░░░░░░░░░░░░]  30.0%] [IP1][13H18H] Descarregant... 406MB | Processant... ✓ (480 vars)
+  [[████████░░░░░░░░░░░░]  40.0%] [IP1][19H24H] Descarregant... 407MB | Processant... ✓ (480 vars)
+  [[██████████░░░░░░░░░░]  50.0%] [IP1][25H30H] Descarregant... 410MB | Processant... ✓ (80 vars)
+  [[████████████░░░░░░░░]  60.0%] [IP3][00H06H] Descarregant... 776MB | Processant... ✓ (31 vars)
+  [[██████████████░░░░░░]  70.0%] [IP3][07H12H] Descarregant... 648MB | Processant... ✓ (186 vars)
+  [[████████████████░░░░]  80.0%] [IP3][13H18H] Descarregant... 628MB | Processant... ✓ (186 vars)
+  [[██████████████████░░]  90.0%] [IP3][19H24H] Descarregant... 638MB | Processant... ✓ (186 vars)
+  [[████████████████████] 100.0%] [IP3][25H30H] Descarregant... 655MB | Processant... ✓ (31 vars)
+  ✅ 3D: 2220 vars en 20m 16s
+     Pes GRIB: 5.32 GB
+     Graella: 140×200 = 28000 punts
+
+  ╔══════════════════════════════════════╗
+  ║  🛰️  SATÈL·LIT: BT 10.8µm + LLAMPS + RADAR ║
+  ╚══════════════════════════════════════╝
+  GetCapabilities WCS... ✓ (8194 IDs)
+  🎯 Runs WCS disponibles: 2026-08-07T03Z, 2026-08-07T00Z, 2026-08-06T21Z, 2026-08-06T18Z ...
+  ℹ️  (Run meteofetch: 2026-08-07T00Z)
+  BT 10.8µm: ✅  |  Llamps: ✅  |  Radar: ✅  (run 2026-08-07T03Z)
+  [[█░░░░░░░░░░░░░░░░░░░]   5.0%] Satèl·lit +06h | BT:1 LL:1 RDR:1     [[██░░░░░░░░░░░░░░░░░░]  10.0%] Satèl·lit +07h | BT:2 LL:2 RDR:2     [[███░░░░░░░░░░░░░░░░░]  15.0%] Satèl·lit +08h | BT:3 LL:3 RDR:3     [[████░░░░░░░░░░░░░░░░]  20.0%] Satèl·lit +09h | BT:4 LL:4 RDR:4     [[█████░░░░░░░░░░░░░░░]  25.0%] Satèl·lit +10h | BT:5 LL:5 RDR:5     [[██████░░░░░░░░░░░░░░]  30.0%] Satèl·lit +11h | BT:6 LL:6 RDR:6     [[███████░░░░░░░░░░░░░]  35.0%] Satèl·lit +12h | BT:7 LL:7 RDR:7     [[████████░░░░░░░░░░░░]  40.0%] Satèl·lit +13h | BT:8 LL:8 RDR:8     [[█████████░░░░░░░░░░░]  45.0%] Satèl·lit +14h | BT:9 LL:9 RDR:9     [[██████████░░░░░░░░░░]  50.0%] Satèl·lit +15h | BT:10 LL:10 RDR:10     [[███████████░░░░░░░░░]  55.0%] Satèl·lit +16h | BT:11 LL:11 RDR:11     [[████████████░░░░░░░░]  60.0%] Satèl·lit +17h | BT:12 LL:12 RDR:12     [[█████████████░░░░░░░]  65.0%] Satèl·lit +18h | BT:13 LL:13 RDR:13     [[██████████████░░░░░░]  70.0%] Satèl·lit +19h | BT:14 LL:14 RDR:14     [[███████████████░░░░░]  75.0%] Satèl·lit +20h | BT:15 LL:15 RDR:15     [[████████████████░░░░]  80.0%] Satèl·lit +21h | BT:16 LL:16 RDR:16     [[█████████████████░░░]  85.0%] Satèl·lit +22h | BT:17 LL:17 RDR:17     [[██████████████████░░]  90.0%] Satèl·lit +23h | BT:18 LL:18 RDR:18     [[███████████████████░]  95.0%] Satèl·lit +24h | BT:19 LL:19 RDR:19     [[████████████████████] 100.0%] Satèl·lit +25h | BT:20 LL:20 RDR:20   
+  ✅ Satèl·lit: 20h BT108, 20h llamps, 20h radar (9m 46s)
+
+  ╔══════════════════════════════════════╗
+  ║  🌪️  SRH + SHEAR (0-1km, 0-3km, 0-6km) ║
+  ╚══════════════════════════════════════╝
+  [[█░░░░░░░░░░░░░░░░░░░]   5.0%] Calculant SRH/Shear +06h...  [[██░░░░░░░░░░░░░░░░░░]  10.0%] Calculant SRH/Shear +07h...  [[███░░░░░░░░░░░░░░░░░]  15.0%] Calculant SRH/Shear +08h...  [[████░░░░░░░░░░░░░░░░]  20.0%] Calculant SRH/Shear +09h...  [[█████░░░░░░░░░░░░░░░]  25.0%] Calculant SRH/Shear +10h...  [[██████░░░░░░░░░░░░░░]  30.0%] Calculant SRH/Shear +11h...  [[███████░░░░░░░░░░░░░]  35.0%] Calculant SRH/Shear +12h...  [[████████░░░░░░░░░░░░]  40.0%] Calculant SRH/Shear +13h...  [[█████████░░░░░░░░░░░]  45.0%] Calculant SRH/Shear +14h...  [[██████████░░░░░░░░░░]  50.0%] Calculant SRH/Shear +15h...  [[███████████░░░░░░░░░]  55.0%] Calculant SRH/Shear +16h...  [[████████████░░░░░░░░]  60.0%] Calculant SRH/Shear +17h...  [[█████████████░░░░░░░]  65.0%] Calculant SRH/Shear +18h...  [[██████████████░░░░░░]  70.0%] Calculant SRH/Shear +19h...  [[███████████████░░░░░]  75.0%] Calculant SRH/Shear +20h...  [[████████████████░░░░]  80.0%] Calculant SRH/Shear +21h...  [[█████████████████░░░]  85.0%] Calculant SRH/Shear +22h...  [[██████████████████░░]  90.0%] Calculant SRH/Shear +23h...  [[███████████████████░]  95.0%] Calculant SRH/Shear +24h...  [[████████████████████] 100.0%] Calculant SRH/Shear +25h...
+  ✅ SRH + Shear calculats en 35s
+
+  ╔══════════════════════════════════════╗
+  ║  🌡️  Convectiu (LCL, LFC, LI, EL)    ║
+  ╚══════════════════════════════════════╝
+  ✅ 20/20 hores (5s)
+
+  ╔══════════════════════════════════════╗
+  ║  📦 GENERANT JSONs                   ║
+  ╚══════════════════════════════════════╝
+  sfc_06.json: 4118 KB (25 vars) | +06h | 2026-08-07 08:00 CEST
+  3d_06.json: 17798 KB (111 vars) | +06h | 2026-08-07 08:00 CEST
+  sfc_07.json: 4818 KB (30 vars) | +07h | 2026-08-07 09:00 CEST
+  3d_07.json: 17789 KB (111 vars) | +07h | 2026-08-07 09:00 CEST
+  sfc_08.json: 4828 KB (30 vars) | +08h | 2026-08-07 10:00 CEST
+  3d_08.json: 17788 KB (111 vars) | +08h | 2026-08-07 10:00 CEST
+  sfc_09.json: 4840 KB (30 vars) | +09h | 2026-08-07 11:00 CEST
+  3d_09.json: 17776 KB (111 vars) | +09h | 2026-08-07 11:00 CEST
+  sfc_10.json: 4834 KB (30 vars) | +10h | 2026-08-07 12:00 CEST
+  3d_10.json: 17760 KB (111 vars) | +10h | 2026-08-07 12:00 CEST
+  sfc_11.json: 4861 KB (30 vars) | +11h | 2026-08-07 13:00 CEST
+  3d_11.json: 17750 KB (111 vars) | +11h | 2026-08-07 13:00 CEST
+  sfc_12.json: 4885 KB (30 vars) | +12h | 2026-08-07 14:00 CEST
+  3d_12.json: 17746 KB (111 vars) | +12h | 2026-08-07 14:00 CEST
+  sfc_13.json: 4902 KB (30 vars) | +13h | 2026-08-07 15:00 CEST
+  3d_13.json: 17749 KB (111 vars) | +13h | 2026-08-07 15:00 CEST
+  sfc_14.json: 4916 KB (30 vars) | +14h | 2026-08-07 16:00 CEST
+  3d_14.json: 17750 KB (111 vars) | +14h | 2026-08-07 16:00 CEST
+  sfc_15.json: 4953 KB (30 vars) | +15h | 2026-08-07 17:00 CEST
+  3d_15.json: 17752 KB (111 vars) | +15h | 2026-08-07 17:00 CEST
+  sfc_16.json: 4956 KB (30 vars) | +16h | 2026-08-07 18:00 CEST
+  3d_16.json: 17766 KB (111 vars) | +16h | 2026-08-07 18:00 CEST
+  sfc_17.json: 4961 KB (30 vars) | +17h | 2026-08-07 19:00 CEST
+  3d_17.json: 17791 KB (111 vars) | +17h | 2026-08-07 19:00 CEST
+  sfc_18.json: 4936 KB (30 vars) | +18h | 2026-08-07 20:00 CEST
+  3d_18.json: 17774 KB (111 vars) | +18h | 2026-08-07 20:00 CEST
+  sfc_19.json: 4924 KB (30 vars) | +19h | 2026-08-07 21:00 CEST
+  3d_19.json: 17770 KB (111 vars) | +19h | 2026-08-07 21:00 CEST
+  sfc_20.json: 4905 KB (30 vars) | +20h | 2026-08-07 22:00 CEST
+  3d_20.json: 17770 KB (111 vars) | +20h | 2026-08-07 22:00 CEST
+  sfc_21.json: 4885 KB (30 vars) | +21h | 2026-08-07 23:00 CEST
+  3d_21.json: 17767 KB (111 vars) | +21h | 2026-08-07 23:00 CEST
+  sfc_22.json: 4861 KB (30 vars) | +22h | 2026-08-08 00:00 CEST
+  3d_22.json: 17770 KB (111 vars) | +22h | 2026-08-08 00:00 CEST
+  sfc_23.json: 4855 KB (30 vars) | +23h | 2026-08-08 01:00 CEST
+  3d_23.json: 17765 KB (111 vars) | +23h | 2026-08-08 01:00 CEST
+  sfc_24.json: 4841 KB (30 vars) | +24h | 2026-08-08 02:00 CEST
+  3d_24.json: 17735 KB (111 vars) | +24h | 2026-08-08 02:00 CEST
+  sfc_25.json: 4827 KB (30 vars) | +25h | 2026-08-08 03:00 CEST
+  3d_25.json: 17702 KB (111 vars) | +25h | 2026-08-08 03:00 CEST
+
+  ╔══════════════════════════════════════╗
+  ║  🔎 INFORME D'INTEGRITAT              ║
+  ╚══════════════════════════════════════╝
+  ✅ Totes les 20 hores SFC tenen variables crítiques
+  ✅ Totes les 20 hores 3D generades
+
+  📊 status.json: 535 B
+
+  ╔══════════════════════════════════════╗
+  ║  ✅ FINALITZAT
+  ║  Fitxers: 40 | SFC: 20/20 | 3D: 20/20
+  ║  Satèl·lit: 20h BT | 20h LL | 20h RDR
+  ║  Pes total: 441.6 MB | Temps: 33m 40s
+  ╚══════════════════════════════════════╝
+
+  📝 Log: C:\Users\simob\Documents\GitHub\joctempestes\private-scripts\..\meu-mapa\public\web_data\logs\run_20260807_085456.log

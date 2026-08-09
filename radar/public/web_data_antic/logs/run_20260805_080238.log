@@ -1,0 +1,25 @@
+=================================================================
+  AROME 51h: meteofetch SFC + 3D + SRH/SHEAR
+  Pausa cada 10 req: 5.0s
+=================================================================
+  Comprovant connexió... ✓
+  ✓ Borrats 10 fitxers (106.3 MB alliberats)
+
+  🔍 Buscant el millor run disponible (51 hores)...
+    ❌ Run 2026-08-05T06Z: 49H51H no disponible (HTTP 404)
+    ✅ Run 2026-08-05T00Z: 51 hores OK (27 MB)
+    📌 Seleccionat: 2026-08-05T00Z
+
+  ✅ Run meteofetch: 2026-08-05T00Z = 05/08 02:00 CEST
+  Steps: +6h a +51h (46 hores)
+
+  ╔══════════════════════════════════════╗
+  ║  📡 SFC: meteofetch SP1+SP2 (18 vars)   ║
+  ╚══════════════════════════════════════╝
+  [[█░░░░░░░░░░░░░░░░░░░]   5.6%] [00H06H] SP1: 55MB ✓ (0 vars)
+  [[██░░░░░░░░░░░░░░░░░░]  11.1%] [00H06H] SP2: 43MB ✓ (0 vars)
+
+
+  ⚠️  Ctrl+C. Acabant petició en curs i desant...
+
+  ❌ Sortida forçada.

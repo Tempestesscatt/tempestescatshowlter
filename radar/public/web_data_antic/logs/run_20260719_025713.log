@@ -1,0 +1,91 @@
+=================================================================
+  AROME 51h: meteofetch SFC + meteofetch 3D + WCS + SRH/SHEAR (blindat)
+  Pausa cada 10 req: 5.0s
+=================================================================
+  Comprovant connexió... ✓
+
+  GetCapabilities... ✓ 9625 coverages
+  Runs WCS: 2026-07-18T21, 2026-07-18T18, 2026-07-18T15, 2026-07-18T12, 2026-07-18T09
+
+  Analitzant runs per meteofetch...
+    ⚠️  2026-07-18T21: 49H51H no disponible (HTTP 404)
+    ✅ 2026-07-18T18: 51 hores OK
+
+  ✅ Run meteofetch: 2026-07-18T18Z = 18/07 20:00 CEST
+  ✅ Run WCS:        2026-07-18T18Z = 18/07 20:00 CEST
+  Steps: +6h a +7h (2 hores)
+
+  ╔══════════════════════════════════════╗
+  ║  📡 SFC: meteofetch SP1+SP2 (19 vars)   ║
+  ╚══════════════════════════════════════╝
+  [00H06H] SP1: 54MB ✓ (5 vars)
+  [00H06H] SP2: 41MB ✓ (5 vars)
+  [07H12H] SP1: 51MB ✓ (9 vars)
+  [07H12H] SP2: 36MB ✓ (10 vars)
+  ✅ SFC meteofetch: 29 vars en 2/2h
+     Pes GRIB: 182.2 MB
+     Graella: 120×160 = 19200 punts
+     Temps: 15s
+
+  ╔══════════════════════════════════════╗
+  ║  🌐 WCS: 4 vars × 2h = 8 req        ║
+  ║  Pausa: 0.15s | Descans cada 10: 5.0s ║
+  ╚══════════════════════════════════════╝
+    ✓ reflectivity_dbz
+    ✓ rain
+    ✓ lightning
+    ✓ precip_water
+  [████████████████████] 100.0% 8/8 | 2.8 req/s | ✓8 ✗0 | ETA 0s | +07h  
+  ✅ WCS: 8 vars OK en 3s
+
+  ╔══════════════════════════════════════╗
+  ║  📡 3D: IP1+IP3 (meteofetch)        ║
+  ╚══════════════════════════════════════╝
+  [IP1][00H06H] 466MB ✓ (80 vars)
+  [IP1][07H12H] 394MB ✓ (80 vars)
+  [IP3][00H06H] 717MB ✓ (31 vars)
+  [IP3][07H12H] 621MB ✓ (31 vars)
+  ✅ 3D: 222 vars en 2m 47s
+     Pes GRIB: 2.15 GB
+     Graella: 120×160 = 19200 punts
+
+  ╔══════════════════════════════════════╗
+  ║  🌪️  SRH + SHEAR (0-1km, 0-3km, 0-6km) ║
+  ╚══════════════════════════════════════╝
+  ✅ SRH + Shear calculats en 2s
+
+  ╔══════════════════════════════════════╗
+  ║  🔄 Interpolant WCS → meteofetch    ║
+  ╚══════════════════════════════════════╝
+  ✅ 8 variables interpolades (61×81 → 120×160)
+
+  ╔══════════════════════════════════════╗
+  ║  🌡️  Convectiu (LCL, LFC, LI, EL)    ║
+  ╚══════════════════════════════════════╝
+  ✅ 2/2 hores (0s)
+
+  ╔══════════════════════════════════════╗
+  ║  📦 GENERANT JSONs                   ║
+  ╚══════════════════════════════════════╝
+  sfc_06.json: 2562 KB (22 vars) | +06h | 2026-07-19 02:00 CEST
+  3d_06.json: 12241 KB (111 vars) | +06h | 2026-07-19 02:00 CEST
+  sfc_07.json: 3468 KB (31 vars) | +07h | 2026-07-19 03:00 CEST
+  3d_07.json: 12242 KB (111 vars) | +07h | 2026-07-19 03:00 CEST
+
+  ╔══════════════════════════════════════╗
+  ║  🔎 INFORME D'INTEGRITAT              ║
+  ╚══════════════════════════════════════╝
+  ✅ Totes les 2 hores SFC tenen les variables crítiques
+  ✅ Totes les 2 hores 3D generades
+
+  📊 status.json generat: 705 B
+
+  ╔══════════════════════════════════════╗
+  ║  ✅ FINALITZAT
+  ╠══════════════════════════════════════╣
+  ║  Fitxers: 4 (SFC: 2/2, 3D: 2/2)
+  ║  Pes total: 29.8 MB
+  ║  Temps: 3m 12s
+  ╚══════════════════════════════════════╝
+
+  📝 Log complet desat a: C:\Users\simob\Documents\GitHub\joctempestes\private-scripts\..\meu-mapa\public\web_data\logs\run_20260719_025713.log
