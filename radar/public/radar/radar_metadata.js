@@ -1,5 +1,5 @@
 window.radarMetadata = {
-  "updated": "2026-08-09T00:37:16Z",
+  "updated": "2026-08-09T00:41:20Z",
   "region": "NE_Espanya",
   "product": "CIRRUS (dBZ)",
   "resolution": "maxima (sense submostreig)",
@@ -28,7 +28,11 @@ window.radarMetadata = {
     {
       "timestamp": "2026-08-09T00:30:00Z",
       "file": "radar_frame_09_08_2026_0030Z.js"
+    },
+    {
+      "timestamp": "2026-08-09T00:35:00Z",
+      "file": "radar_frame_09_08_2026_0035Z.js"
     }
   ],
-  "latest_frame": "radar_frame_09_08_2026_0030Z.js"
+  "latest_frame": "radar_frame_09_08_2026_0035Z.js"
 };
