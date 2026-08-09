@@ -26,8 +26,6 @@ OUTPUT_DIR = Path("public/radar")
 
 REGIO = {"lat_min": 38.5, "lat_max": 45.0, "lon_min": -2.0, "lon_max": 5.0}
 
-MAX_FRAMES = 5  # Nombre màxim de frames a mantenir per producte
-
 CONFIG = {
     "cirrus": {
         "output_dir": OUTPUT_DIR,
@@ -51,7 +49,8 @@ CONFIG = {
 # Nomes es demana UN instant per producte: l'actual, arrodonit cap
 # avall al seu interval. No es busca cap frame historic ni es
 # completa cap quota cap enrere; els frames s'acumulen sols execucio
-# rere execucio (p.ex. via cron), i es manten NOMES els ultims MAX_FRAMES.
+# rere execucio (p.ex. via cron), i la purga diaria neteja tot quan
+# canvia la data UTC.
 REINTENTOS_INSTANTE_ACTUAL = 3
 ESPERA_ENTRE_REINTENTOS_SEG = 5
 
@@ -111,34 +110,29 @@ def parse_frame_filename(nom_fitxer):
         return None, None
 
 
-def netejar_frames_antics(carpeta, filename_prefix=""):
+def netejar_frames_dia_anterior(carpeta, avui_utc, filename_prefix=""):
     """
-    Manté només els MAX_FRAMES frames més recents del producte indicat.
-    Esborra la resta (els més antics).
-    Retorna el nombre de frames esborrats.
+    Esborra nomes els frames DEL MATEIX PRODUCTE (mateix prefix) la
+    data dels quals sigui diferent del dia d'avui (UTC). Aixi Cirrus i
+    Nimbus, que comparteixen carpeta, no s'esborren l'un a l'altre.
     """
     if not carpeta.exists():
         carpeta.mkdir(parents=True, exist_ok=True)
         return 0
 
-    # Recollir tots els frames d'aquest producte
-    frames = []
+    esborrats = 0
     for f in carpeta.glob("radar_frame_*.js"):
         dt_frame, prefix = parse_frame_filename(f.name)
-        if dt_frame is not None and prefix == filename_prefix:
-            frames.append((dt_frame, f))
-
-    # Ordenar per timestamp (més recent primer)
-    frames.sort(key=lambda x: x[0], reverse=True)
-
-    esborrats = 0
-    # Esborrar tots excepte els MAX_FRAMES més recents
-    for _, fitxer in frames[MAX_FRAMES:]:
-        fitxer.unlink()
-        esborrats += 1
+        if dt_frame is None:
+            continue
+        if prefix != filename_prefix:
+            continue
+        if dt_frame.date() != avui_utc:
+            f.unlink()
+            esborrats += 1
 
     if esborrats:
-        print(f"    Esborrats {esborrats} frames antics (es mantenen els {MAX_FRAMES} més recents)")
+        print(f"    Esborrats {esborrats} frames d'un dia anterior")
     return esborrats
 
 
@@ -418,8 +412,10 @@ def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_
     """
     Desa el frame nou (si n'hi ha) amb el seu nom basat en timestamp
     real, i despres regenera els fitxers de metadata NOMES amb els
-    frames vigents d'aquest producte (mateix prefix), mantenint nomes
-    els MAX_FRAMES més recents.
+    frames vigents d'aquest producte (mateix prefix) i d'avui, perque
+    Cirrus i Nimbus tinguin cadascun la seva propia metadata/status.
+    Els frames de execucions anteriors (encara vigents avui) es
+    mantenen tal qual: aixi es com s'acumulen sols amb el temps.
     """
     if frame_nou is not None:
         dt_frame, data = frame_nou
@@ -434,14 +430,10 @@ def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_
         with open(output_dir / nom, 'w', encoding='utf-8') as f:
             f.write(js)
 
-    # Netejar frames antics per mantenir només els MAX_FRAMES més recents
-    netejar_frames_antics(output_dir, filename_prefix)
-
-    # Recollir frames vigents (els que queden després de la neteja)
     frames_vigents = []
     for f in output_dir.glob("radar_frame_*.js"):
         dt_frame, prefix = parse_frame_filename(f.name)
-        if dt_frame is not None and prefix == filename_prefix:
+        if dt_frame is not None and prefix == filename_prefix and dt_frame.date() == avui_utc:
             frames_vigents.append((dt_frame, f.name))
     frames_vigents.sort(key=lambda x: x[0])
 
@@ -457,7 +449,6 @@ def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_
         "product": product_label,
         "resolution": "maxima (sense submostreig)",
         "interval": f"{interval_min} min",
-        "max_frames": MAX_FRAMES,
         "frames": [
             {"timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"), "file": nom}
             for dt, nom in frames_vigents
@@ -474,10 +465,10 @@ def generate_web_files(frame_nou, output_dir, interval_min, product_label, avui_
             f"    executedAtUTC: \"{ara.strftime('%Y-%m-%dT%H:%M:%SZ')}\",\n"
             f"    executedAtEpochMs: {int(ara.timestamp() * 1000)},\n"
             f"    frameNouAquestaExecucio: {1 if frame_nou is not None else 0},\n"
-            f"    framesVigents: {len(frames_vigents)}\n"
+            f"    framesVigentsAvui: {len(frames_vigents)}\n"
             "};"
         )
-    print(f"    {'1 frame nou' if frame_nou is not None else '0 frames nous'} | {len(frames_vigents)} frames vigents (max {MAX_FRAMES})")
+    print(f"    {'1 frame nou' if frame_nou is not None else '0 frames nous'} | {len(frames_vigents)} frames vigents avui")
     return True
 
 
@@ -490,6 +481,7 @@ def procesar_producte(nom_producte, config, api_key, regio):
     print(f"\n  {label}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    netejar_frames_dia_anterior(output_dir, avui_utc, filename_prefix)
 
     dt_candidat, content = obtenir_frame_actual(
         config["base_url"], api_key, config["interval"], output_dir, filename_prefix
@@ -527,7 +519,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("  RADAR OPERA - CICLE UNIC")
     print("  CIRRUS (dBZ) + NIMBUS (rainfall) -> public/radar/")
-    print(f"  Es mantenen els {MAX_FRAMES} frames més recents per producte")
+    print("  Frames acumulatius per timestamp real (purga diaria)")
     print("=" * 60)
 
     if not API_KEY:

@@ -1,5 +1,5 @@
 window.radarMetadata = {
-  "updated": "2026-08-09T02:17:50Z",
+  "updated": "2026-08-09T02:22:03Z",
   "region": "NE_Espanya",
   "product": "NIMBUS (Rainfall accumulation)",
   "resolution": "maxima (sense submostreig)",
