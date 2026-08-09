@@ -1,122 +1,0 @@
-=================================================================
-  AROME 51h: meteofetch SFC + 3D + SRH/SHEAR + SATÈL·LIT
-  Pausa cada 10 req: 5.0s
-  Satèl·lit: ACTIVAT
-=================================================================
-  Comprovant connexió... ✓
-  ✓ Borrats 4 fitxers (43.5 MB alliberats)
-
-  🔍 Buscant el millor run disponible (51 hores)...
-    ❌ Run 2026-08-05T06Z: 49H51H no disponible (HTTP 404)
-    ✅ Run 2026-08-05T00Z: 51 hores OK (27 MB)
-    📌 Seleccionat: 2026-08-05T00Z
-
-  ✅ Run meteofetch: 2026-08-05T00Z = 05/08 02:00 CEST
-  Steps: +8h a +17h (10 hores)
-
-  ╔══════════════════════════════════════╗
-  ║  📡 SFC: meteofetch SP1+SP2 (18 vars)   ║
-  ╚══════════════════════════════════════╝
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [07H12H] SP1: 52MB ✓ (40 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [07H12H] SP2: 40MB ✓ (50 vars)
-  [[███████████████░░░░░]  75.0%] [13H18H] SP1: 52MB ✓ (40 vars)
-  [[████████████████████] 100.0%] [13H18H] SP2: 41MB ✓ (50 vars)
-  ✅ SFC meteofetch: 180 vars en 10/10h
-     Pes GRIB: 185.0 MB
-     Graella: 140×200 = 28000 punts
-     Temps: 51s
-
-  ╔══════════════════════════════════════╗
-  ║  📡 3D: IP1+IP3 (meteofetch)        ║
-  ╚══════════════════════════════════════╝
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [IP1][07H12H] Descarregant...     ⚠️  error xarxa (intent 1/5): HTTPSConnectionPool(host='meteofrance-pnt.s3.rbx.io.cloud.ovh.net', port=443): Read timed out.
-413MB | Processant... ✓ (400 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [IP1][13H18H] Descarregant... 409MB | Processant... ✓ (400 vars)
-  [[███████████████░░░░░]  75.0%] [IP3][07H12H] Descarregant... 660MB | Processant... ✓ (155 vars)
-  [[████████████████████] 100.0%] [IP3][13H18H] Descarregant... 647MB | Processant... ✓ (155 vars)
-  ✅ 3D: 1110 vars en 11m 54s
-     Pes GRIB: 2.08 GB
-     Graella: 140×200 = 28000 punts
-
-  ╔══════════════════════════════════════╗
-  ║  🛰️  SATÈL·LIT: BT 10.8µm + LLAMPS   ║
-  ╚══════════════════════════════════════╝
-  Run WCS 0025: 2026-08-05T00Z
-  GetCapabilities WCS 0025... ✓ (8194 IDs)
-  BT 10.8µm: ✅  |  Llamps 1h: ✅
-  [[██░░░░░░░░░░░░░░░░░░]  10.0%] BT108 +08h... ✓ [-25 a 34°C]
-  [[██░░░░░░░░░░░░░░░░░░]  10.0%] LLAMPS +08h... ✓ [max: 0.5498]
-  [[████░░░░░░░░░░░░░░░░]  20.0%] BT108 +09h... ✓ [-24 a 38°C]
-  [[████░░░░░░░░░░░░░░░░]  20.0%] LLAMPS +09h... ✓ [max: 0.3088]
-  [[██████░░░░░░░░░░░░░░]  30.0%] BT108 +10h... ✓ [-24 a 44°C]
-  [[██████░░░░░░░░░░░░░░]  30.0%] LLAMPS +10h... ✓ [max: 0.5001]
-  [[████████░░░░░░░░░░░░]  40.0%] BT108 +11h... ✓ [-24 a 46°C]
-  [[████████░░░░░░░░░░░░]  40.0%] LLAMPS +11h... ✓ [max: 0.2582]
-  [[██████████░░░░░░░░░░]  50.0%] BT108 +12h... ✓ [-25 a 48°C]
-  [[██████████░░░░░░░░░░]  50.0%] LLAMPS +12h... ✓ [max: 1.1128]
-  [[████████████░░░░░░░░]  60.0%] BT108 +13h... ✓ [-26 a 49°C]
-  [[████████████░░░░░░░░]  60.0%] LLAMPS +13h... ✓ [max: 1.0218]
-  [[██████████████░░░░░░]  70.0%] BT108 +14h... ✓ [-51 a 49°C]
-  [[██████████████░░░░░░]  70.0%] LLAMPS +14h... ✓ [max: 1.4467]
-  [[████████████████░░░░]  80.0%] BT108 +15h... ✓ [-62 a 46°C]
-  [[████████████████░░░░]  80.0%] LLAMPS +15h... ✓ [max: 1.7665]
-  [[██████████████████░░]  90.0%] BT108 +16h... ✓ [-59 a 43°C]
-  [[██████████████████░░]  90.0%] LLAMPS +16h... ✓ [max: 2.2244]
-  [[████████████████████] 100.0%] BT108 +17h... ✓ [-58 a 39°C]
-  [[████████████████████] 100.0%] LLAMPS +17h... ✓ [max: 1.2688]
-  ✅ Satèl·lit: 10h BT108, 10h llamps (2m 33s)
-
-  ╔══════════════════════════════════════╗
-  ║  🌪️  SRH + SHEAR (0-1km, 0-3km, 0-6km) ║
-  ╚══════════════════════════════════════╝
-  [[██░░░░░░░░░░░░░░░░░░]  10.0%] Calculant SRH/Shear +08h...  [[████░░░░░░░░░░░░░░░░]  20.0%] Calculant SRH/Shear +09h...  [[██████░░░░░░░░░░░░░░]  30.0%] Calculant SRH/Shear +10h...  [[████████░░░░░░░░░░░░]  40.0%] Calculant SRH/Shear +11h...  [[██████████░░░░░░░░░░]  50.0%] Calculant SRH/Shear +12h...  [[████████████░░░░░░░░]  60.0%] Calculant SRH/Shear +13h...  [[██████████████░░░░░░]  70.0%] Calculant SRH/Shear +14h...  [[████████████████░░░░]  80.0%] Calculant SRH/Shear +15h...  [[██████████████████░░]  90.0%] Calculant SRH/Shear +16h...  [[████████████████████] 100.0%] Calculant SRH/Shear +17h...
-  ✅ SRH + Shear calculats en 17s
-
-  ╔══════════════════════════════════════╗
-  ║  🌡️  Convectiu (LCL, LFC, LI, EL)    ║
-  ╚══════════════════════════════════════╝
-  [[██░░░░░░░░░░░░░░░░░░]  10.0%] Calculant convectiu +08h... ✓  [[████░░░░░░░░░░░░░░░░]  20.0%] Calculant convectiu +09h... ✓  [[██████░░░░░░░░░░░░░░]  30.0%] Calculant convectiu +10h... ✓  [[████████░░░░░░░░░░░░]  40.0%] Calculant convectiu +11h... ✓  [[██████████░░░░░░░░░░]  50.0%] Calculant convectiu +12h... ✓  [[████████████░░░░░░░░]  60.0%] Calculant convectiu +13h... ✓  [[██████████████░░░░░░]  70.0%] Calculant convectiu +14h... ✓  [[████████████████░░░░]  80.0%] Calculant convectiu +15h... ✓  [[██████████████████░░]  90.0%] Calculant convectiu +16h... ✓  [[████████████████████] 100.0%] Calculant convectiu +17h... ✓
-  ✅ 10/10 hores (2s)
-
-  ╔══════════════════════════════════════╗
-  ║  📦 GENERANT JSONs                   ║
-  ╚══════════════════════════════════════╝
-  sfc_08.json: 4536 KB (28 vars) | +08h | 2026-08-05 10:00 CEST
-  3d_08.json: 17752 KB (111 vars) | +08h | 2026-08-05 10:00 CEST
-  sfc_09.json: 4541 KB (28 vars) | +09h | 2026-08-05 11:00 CEST
-  3d_09.json: 17728 KB (111 vars) | +09h | 2026-08-05 11:00 CEST
-  sfc_10.json: 4555 KB (28 vars) | +10h | 2026-08-05 12:00 CEST
-  3d_10.json: 17695 KB (111 vars) | +10h | 2026-08-05 12:00 CEST
-  sfc_11.json: 4569 KB (28 vars) | +11h | 2026-08-05 13:00 CEST
-  3d_11.json: 17656 KB (111 vars) | +11h | 2026-08-05 13:00 CEST
-  sfc_12.json: 4582 KB (28 vars) | +12h | 2026-08-05 14:00 CEST
-  3d_12.json: 17620 KB (111 vars) | +12h | 2026-08-05 14:00 CEST
-  sfc_13.json: 4593 KB (28 vars) | +13h | 2026-08-05 15:00 CEST
-  3d_13.json: 17598 KB (111 vars) | +13h | 2026-08-05 15:00 CEST
-  sfc_14.json: 4595 KB (28 vars) | +14h | 2026-08-05 16:00 CEST
-  3d_14.json: 17594 KB (111 vars) | +14h | 2026-08-05 16:00 CEST
-  sfc_15.json: 4597 KB (28 vars) | +15h | 2026-08-05 17:00 CEST
-  3d_15.json: 17588 KB (111 vars) | +15h | 2026-08-05 17:00 CEST
-  sfc_16.json: 4601 KB (28 vars) | +16h | 2026-08-05 18:00 CEST
-  3d_16.json: 17584 KB (111 vars) | +16h | 2026-08-05 18:00 CEST
-  sfc_17.json: 4603 KB (28 vars) | +17h | 2026-08-05 19:00 CEST
-  3d_17.json: 17566 KB (111 vars) | +17h | 2026-08-05 19:00 CEST
-
-  ╔══════════════════════════════════════╗
-  ║  🔎 INFORME D'INTEGRITAT              ║
-  ╚══════════════════════════════════════╝
-  ✅ Totes les 10 hores SFC tenen variables crítiques
-  ✅ Totes les 10 hores 3D generades
-
-  📊 status.json: 560 B
-
-  ╔══════════════════════════════════════╗
-  ║  ✅ FINALITZAT
-  ╠══════════════════════════════════════╣
-  ║  Fitxers: 20 (SFC: 10/10, 3D: 10/10)
-  ║  Satèl·lit: 10h BT108, 10h llamps
-  ║  Pes total: 216.9 MB
-  ║  Temps: 16m 1s
-  ╚══════════════════════════════════════╝
-
-  📝 Log: C:\Users\simob\Documents\GitHub\joctempestes\private-scripts\..\meu-mapa\public\web_data\logs\run_20260805_101420.log

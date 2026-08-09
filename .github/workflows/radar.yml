@@ -11,17 +11,17 @@ env:
   R2_PREFIX: radar/
 
 jobs:
-  actualitzar:
+  # ═══════════════════════════════════════════════════════════════════
+  #  3 JOBS EN PARAL·LEL — cadascun genera els seus propis fitxers dins
+  #  radar/public/radar/, sense tocar-se entre ells, i els puja com a
+  #  artifact perquè el job final els pugui recollir tots junts.
+  # ═══════════════════════════════════════════════════════════════════
+
+  radar:
     runs-on: ubuntu-latest
-    concurrency:
-      group: radar-update
-      cancel-in-progress: true
-    
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -41,7 +41,7 @@ jobs:
           cd radar
           python -u radar.py
 
-      - name: Netejar frames antics del repo
+      - name: Netejar frames antics
         run: |
           cd radar/public/radar
           AVUI=$(date -u +"%d_%m_%Y")
@@ -53,23 +53,122 @@ jobs:
             fi
           done
 
+      - name: Pujar resultat com a artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-radar
+          path: radar/public/radar/
+          retention-days: 1
+
+  estacions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositori
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: pip install requests
+
+      - name: Executar estacions.py
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cd radar
+          python -u estacions.py
+
+      - name: Pujar resultat com a artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-estacions
+          path: |
+            radar/public/radar/estaciones.json
+            radar/public/radar/estaciones_meta.js
+          retention-days: 1
+
+  llamps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositori
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: pip install websocket-client
+
+      - name: Executar llamps.py
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          cd radar
+          python -u llamps.py
+
+      - name: Pujar resultat com a artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-llamps
+          path: |
+            radar/public/radar/rayos.json
+            radar/public/radar/rayos_metadata.js
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════════════
+  #  JOB FINAL — espera als 3 en paral·lel, recull els artifacts,
+  #  fa UN sol commit/push i UNA sola pujada a R2 amb tot junt.
+  # ═══════════════════════════════════════════════════════════════════
+  publicar:
+    needs: [radar, estacions, llamps]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: radar-update
+      cancel-in-progress: true
+    steps:
+      - name: Clonar repositori
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Descarregar artifact radar
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-radar
+          path: radar/public/radar/
+
+      - name: Descarregar artifact estacions
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-estacions
+          path: radar/public/radar/
+
+      - name: Descarregar artifact llamps
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-llamps
+          path: radar/public/radar/
+
       - name: Guardar canvis a GitHub
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Sincronitzar amb remot
+
           git fetch origin main
           git reset --soft origin/main
-          
-          # Afegir tots els canvis
+
           git add -A radar/public/radar/
-          
-          # Commit i push
+
           if git diff --staged --quiet; then
             echo "Sense canvis per guardar"
           else
-            git commit -m "Actualitza estat diari radar"
+            git commit -m "Actualitza estat diari radar, estacions i llamps"
             git push origin main
           fi
 
@@ -79,8 +178,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           cd radar/public/radar
-          
-          for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js; do
+
+          for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js estaciones.json estaciones_meta.js rayos.json rayos_metadata.js; do
             [ -f "$f" ] || continue
             ct="application/json"
             [[ "$f" == *.js ]] && ct="application/javascript"
@@ -88,12 +187,12 @@ jobs:
             npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
               --file="$f" --remote --content-type="$ct"
           done
-          
+
           echo "📤 Pujant últims 5 frames..."
           ls -1t radar_frame_*.js 2>/dev/null | head -5 | while IFS= read -r frame; do
             echo "⬆️ $frame"
             npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$frame" \
               --file="$frame" --remote --content-type="application/javascript"
           done
-          
+
           echo "✅ Tot pujat!"

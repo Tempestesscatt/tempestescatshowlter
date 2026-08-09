@@ -1,5 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════════
-//  lightning.js — LLAMPS EN DIRECTE (Blitzortung)
+//  lightning.js — LLAMPS EN DIRECTE (Blitzortung, via backend propi)
+//  Ja NO es connecta per WebSocket des del navegador. En comptes d'aixo,
+//  llegeix periòdicament radar/rayos_metadata.js, generat pel daemon
+//  Python (generar_rayos.py) que escolta Blitzortung de forma contínua
+//  al servidor. Així els llamps es veuen sempre actualitzats encara que
+//  ningú tingui la pestanya oberta.
+//
 //  Cada llamp dura 5 min a pantalla i es va esvaint fins desapareixer.
 //  Pensat per conviure amb radar.js: mateix estil de panes, bottombar, etc.
 // ═══════════════════════════════════════════════════════════════════════
@@ -8,56 +14,28 @@
     'use strict';
 
     // ═══ CONFIG ═══
-    const WS_URL = 'wss://ws1.blitzortung.org/';
-    const STRIKE_LIFESPAN_MS = 5 * 60 * 1000;    // cada llamp dura 5 min
+    const RAYOS_URL = 'radar/rayos_metadata.js';
+    const FETCH_INTERVAL_MS = 15 * 1000;         // el backend escriu cada 15s
+    const STRIKE_LIFESPAN_MS = 5 * 60 * 1000;    // cada llamp dura 5 min a pantalla
     const RING_MAX_RADIUS_M = 50000;             // ona expansiva fins a 50km
     const RING_DURATION_MS = 1400;
-    const RECONNECT_BASE_MS = 2000;
-    const RECONNECT_MAX_MS = 20000;
-
-    // Zona de cobertura: Europa central (ampliada des del NE d'Espanya)
-    const BOUNDS = { latMin: 38.5, latMax: 45.0, lonMin: -2.0, lonMax: 5.0 };
 
     let actiu = false;
     let map = null;
-    let ws = null;
-    let reconnectDelay = RECONNECT_BASE_MS;
-    let reconnectTimer = null;
+    let fetchTimer = null;
 
-    // Llamps a pantalla: array de { marker, ring, lat, lon, ts, fadeInterval }
-    let strikes = [];
+    // Llamps a pantalla: Map de clau_unica -> { marker, ring, lat, lon, ts, fadeInterval }
+    let strikes = new Map();
 
     let soundOn = true;
     let audioCtx = null;
+    const VOLUM_TRO = 0.12;             // volum base (abans 0.22, massa fort)
+    const MAX_SONS_PER_CICLE = 3;       // no sonen mes de N llamps de cop
+    const ESPAI_ENTRE_SONS_MS = 260;    // separacio minima entre truenos en cua
+    let sonsEnAquestCicle = 0;
+    let ultimSoTs = 0;
 
-    console.log('[Llamps] Modul carregat');
-
-    // ═══════════════════════════════════════════════════════════════════
-    //  DECODIFICACIO LZW (format Blitzortung)
-    // ═══════════════════════════════════════════════════════════════════
-    function decode(raw) {
-        const dict = {};
-        const data = raw.split('');
-        let currChar = data[0];
-        let oldPhrase = currChar;
-        const out = [currChar];
-        let code = 256;
-        let phrase;
-        for (let i = 1; i < data.length; i++) {
-            const currCode = data[i].charCodeAt(0);
-            if (currCode < 256) {
-                phrase = data[i];
-            } else {
-                phrase = dict[currCode] ? dict[currCode] : (oldPhrase + currChar);
-            }
-            out.push(phrase);
-            currChar = phrase.charAt(0);
-            dict[code] = oldPhrase + currChar;
-            code++;
-            oldPhrase = phrase;
-        }
-        return out.join('');
-    }
+    console.log('[Llamps] Modul carregat (mode fetch)');
 
     // ═══════════════════════════════════════════════════════════════════
     //  SO DE TRO — dues fases: crack + rumble
@@ -89,7 +67,7 @@
             bandpass.Q.value = 0.7;
             const gain1 = ctx.createGain();
             gain1.gain.setValueAtTime(0.0001, now);
-            gain1.gain.exponentialRampToValueAtTime(volume * 1.3, now + 0.005);
+            gain1.gain.exponentialRampToValueAtTime(volume * 0.9, now + 0.005);
             gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
             noise1.connect(bandpass); bandpass.connect(gain1); gain1.connect(ctx.destination);
             noise1.start(now); noise1.stop(now + 0.2);
@@ -106,7 +84,7 @@
             lowpass.frequency.exponentialRampToValueAtTime(50, now + 1.8);
             const gain2 = ctx.createGain();
             gain2.gain.setValueAtTime(0.0001, now + 0.1);
-            gain2.gain.exponentialRampToValueAtTime(volume * 0.8, now + 0.25);
+            gain2.gain.exponentialRampToValueAtTime(volume * 0.5, now + 0.25);
             gain2.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
             noise2.connect(lowpass); lowpass.connect(gain2); gain2.connect(ctx.destination);
             noise2.start(now + 0.1); noise2.stop(now + 1.8);
@@ -117,11 +95,29 @@
         try { getAudioCtx(); } catch(e) {}
     }
 
+    // Evita que arribar 10-15 llamps de cop (un sol cicle de fetch amb
+    // tempesta activa) soni com un mur de truenos simultanis, que
+    // espanta molt. Nomes sonen els primers N del cicle, espaiats.
+    function programarSo() {
+        if (sonsEnAquestCicle >= MAX_SONS_PER_CICLE) return;
+        sonsEnAquestCicle++;
+
+        const ara = Date.now();
+        const espera = Math.max(0, ultimSoTs + ESPAI_ENTRE_SONS_MS - ara);
+        ultimSoTs = ara + espera;
+
+        setTimeout(function() {
+            playThunder(VOLUM_TRO);
+        }, espera);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  AFEGIR LLAMP — icona + ona expansiva + fade de 5 min + so
+    //  ts_restant_ms: quant li queda de vida (si venia ja "vell" del
+    //  backend, comença directament amb menys temps de fade).
     // ═══════════════════════════════════════════════════════════════════
-    function afegirLlamp(lat, lon, ts) {
-        playThunder(0.22);
+    function afegirLlamp(clau, lat, lon, ts, ambSo) {
+        if (ambSo) programarSo();
 
         const html =
             '<div class="lg-strike-wrap">' +
@@ -147,139 +143,150 @@
             interactive: false, pane: 'paneLlamps'
         }).addTo(map);
 
-        const ringStart = Date.now();
-        const ringInterval = setInterval(function() {
-            const t = (Date.now() - ringStart) / RING_DURATION_MS;
-            if (t >= 1) {
-                clearInterval(ringInterval);
-                map.removeLayer(ring);
-                return;
-            }
-            ring.setRadius(1000 + t * (RING_MAX_RADIUS_M - 1000));
-            ring.setStyle({ opacity: 0.7 * (1 - t), fillOpacity: 0.12 * (1 - t) });
-        }, 40);
+        // L'ona expansiva només te sentit si el llamp és fresc (< uns
+        // segons), no la mostrem si ja arriba amb minuts de vida.
+        const edatMs = Date.now() - ts;
+        if (edatMs < 20000) {
+            const ringStart = Date.now();
+            const ringInterval = setInterval(function() {
+                const t = (Date.now() - ringStart) / RING_DURATION_MS;
+                if (t >= 1) {
+                    clearInterval(ringInterval);
+                    map.removeLayer(ring);
+                    return;
+                }
+                ring.setRadius(1000 + t * (RING_MAX_RADIUS_M - 1000));
+                ring.setStyle({ opacity: 0.7 * (1 - t), fillOpacity: 0.12 * (1 - t) });
+            }, 40);
+        } else {
+            map.removeLayer(ring);
+        }
 
-        const startTime = Date.now();
         const el = marker.getElement();
         const svgEl = el ? el.querySelector('.lg-strike-svg') : null;
 
-        const entry = { marker: marker, ring: ring, lat: lat, lon: lon, ts: ts, fadeInterval: null };
+        // El fade sempre dura STRIKE_LIFESPAN_MS complets DES DEL MOMENT
+        // QUE ES PINTA, no des del ts real del llamp (que pot arribar amb
+        // fins a 10 min d'antiguitat des del backend). Aixi cap llamp
+        // "neix mort" i sempre es veu el cicle sencer de 5 min.
+        const visualStart = Date.now();
+        const entry = { marker: marker, lat: lat, lon: lon, ts: ts, fadeInterval: null };
 
         entry.fadeInterval = setInterval(function() {
-            const elapsed = Date.now() - startTime;
+            const elapsed = Date.now() - visualStart;
             const remaining = 1 - (elapsed / STRIKE_LIFESPAN_MS);
             if (remaining <= 0) {
                 clearInterval(entry.fadeInterval);
                 map.removeLayer(marker);
-                strikes = strikes.filter(function(s) { return s !== entry; });
+                strikes.delete(clau);
                 return;
             }
             if (svgEl) svgEl.style.opacity = Math.max(remaining * 0.75, 0.12);
         }, 1000);
 
-        strikes.push(entry);
+        strikes.set(clau, entry);
     }
 
     function netejarTot() {
         strikes.forEach(function(s) {
             if (s.fadeInterval) clearInterval(s.fadeInterval);
             map.removeLayer(s.marker);
-            if (s.ring) map.removeLayer(s.ring);
         });
-        strikes = [];
+        strikes.clear();
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  WEBSOCKET
+    //  FETCH PERIÒDIC — llegeix radar/rayos_metadata.js
     // ═══════════════════════════════════════════════════════════════════
-    function dinsBounds(lat, lon) {
-        return lat >= BOUNDS.latMin && lat <= BOUNDS.latMax &&
-               lon >= BOUNDS.lonMin && lon <= BOUNDS.lonMax;
-    }
-
     function setStatusLlamps(text) {
         const el = document.getElementById('lgStatusText');
         if (el) el.textContent = text;
     }
 
-    function connectWs() {
+    function claUnica(r) {
+        return r.lat + '_' + r.lon + '_' + r.ts;
+    }
+
+    async function carregarRayos(primeraCarrega) {
         if (!actiu) return;
-        setStatusLlamps('Connectant...');
         try {
-            ws = new WebSocket(WS_URL);
+            const r = await fetch(RAYOS_URL + '?t=' + Date.now(), {
+                cache: 'no-store',
+                headers: { 'Cache-Control': 'no-cache, no-store', 'Pragma': 'no-cache' }
+            });
+            if (!r.ok) {
+                console.log('[Llamps] Error HTTP', r.status, RAYOS_URL);
+                setStatusLlamps('Error de connexio');
+                return;
+            }
+            const txt = await r.text();
+            const m = txt.match(/window\.rayosData\s*=\s*(\{[\s\S]*\});?\s*$/);
+            if (!m) {
+                console.log('[Llamps] Format inesperat de resposta. Primers 200 car.:', txt.slice(0, 200));
+                return;
+            }
+            const payload = JSON.parse(m[1]);
+            const rayos = payload.rayos || [];
+            console.log('[Llamps] Fetch OK ·', rayos.length, 'rayos · updated:', payload.updated, '· ara:', new Date().toISOString());
+
+            sonsEnAquestCicle = 0; // nou cicle, tornem a permetre fins a MAX_SONS_PER_CICLE
+
+            rayos.forEach(function(r) {
+                const clau = claUnica(r);
+                if (!strikes.has(clau)) {
+                    // So només per llamps que apareixen DESPRES de la
+                    // primera carrega (si no, sonaria tot de cop en obrir).
+                    afegirLlamp(clau, r.lat, r.lon, r.ts, !primeraCarrega);
+                }
+            });
+
+            // NOTA: NO esborrem aqui els llamps que ja no surten al
+            // fetch actual. El backend pot re-generar el 'ts' amb
+            // lleugeres variacions entre escriptures i la clau deixaria
+            // de coincidir, fent que un llamp real "morís" als pocs
+            // segons en comptes dels 5 min complets. Cada llamp es neteja
+            // nomes pel seu propi fadeInterval (veure afegirLlamp).
+
+            setStatusLlamps('Llamps en directe · ' + rayos.length + ' actius');
         } catch (e) {
-            scheduleReconnect();
-            return;
-        }
-
-        ws.onopen = function() {
-            setStatusLlamps('Llamps en directe');
-            reconnectDelay = RECONNECT_BASE_MS;
-            ws.send(JSON.stringify({ a: 111 }));
-        };
-
-        ws.onmessage = function(evt) {
-            if (!actiu) return;
-            try {
-                const decoded = decode(evt.data);
-                const obj = JSON.parse(decoded);
-                if (typeof obj.lat !== 'number' || typeof obj.lon !== 'number') return;
-                if (!dinsBounds(obj.lat, obj.lon)) return;
-                afegirLlamp(obj.lat, obj.lon, obj.time);
-            } catch (err) {}
-        };
-
-        ws.onclose = function() {
-            if (!actiu) return;
-            setStatusLlamps('Reconnectant...');
-            scheduleReconnect();
-        };
-
-        ws.onerror = function() {
+            console.log('[Llamps] Error carregant:', e.message);
             setStatusLlamps('Error de connexio');
-        };
-    }
-
-    function scheduleReconnect() {
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(function() {
-            if (actiu) connectWs();
-        }, reconnectDelay);
-        reconnectDelay = Math.min(reconnectDelay * 1.5, RECONNECT_MAX_MS);
-    }
-
-    function disconnectWs() {
-        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-        if (ws) {
-            ws.onclose = null;
-            ws.close();
-            ws = null;
         }
+    }
+
+    function iniciarFetchPeriodic() {
+        carregarRayos(true); // primera carrega: sense so
+        if (fetchTimer) clearInterval(fetchTimer);
+        fetchTimer = setInterval(function() { carregarRayos(false); }, FETCH_INTERVAL_MS);
+    }
+
+    function aturarFetchPeriodic() {
+        if (fetchTimer) { clearInterval(fetchTimer); fetchTimer = null; }
     }
 
     // ═══════════════════════════════════════════════════════════════════
     //  ON / OFF
     // ═══════════════════════════════════════════════════════════════════
-function activar() {
-    actiu = true;
-    reconnectDelay = RECONNECT_BASE_MS;
-    connectWs();
-    actualitzarBotons();
-    // ═══ MOSTRAR ATRIBUCIÓ CC BY-SA 4.0 ═══
-    const attr = document.getElementById('lightningAttr');
-    if (attr) attr.classList.add('visible');
-}
+    function activar() {
+        actiu = true;
+        setStatusLlamps('Connectant...');
+        iniciarFetchPeriodic();
+        actualitzarBotons();
+        // ═══ MOSTRAR ATRIBUCIÓ CC BY-SA 4.0 ═══
+        const attr = document.getElementById('lightningAttr');
+        if (attr) attr.classList.add('visible');
+    }
 
-function desactivar() {
-    actiu = false;
-    disconnectWs();
-    netejarTot();
-    setStatusLlamps('Llamps desactivats');
-    actualitzarBotons();
-    // ═══ AMAGAR ATRIBUCIÓ ═══
-    const attr = document.getElementById('lightningAttr');
-    if (attr) attr.classList.remove('visible');
-}
+    function desactivar() {
+        actiu = false;
+        aturarFetchPeriodic();
+        netejarTot();
+        setStatusLlamps('Llamps desactivats');
+        actualitzarBotons();
+        // ═══ AMAGAR ATRIBUCIÓ ═══
+        const attr = document.getElementById('lightningAttr');
+        if (attr) attr.classList.remove('visible');
+    }
 
     function toggleActiu() {
         desbloquejarAudio();
@@ -335,23 +342,23 @@ function desactivar() {
         document.head.appendChild(style);
     }
 
-function crearIndicadorEstat() {
-    if (document.getElementById('lgStatus')) return;
-    const el = document.createElement('div');
-    el.id = 'lgStatus';
-    el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
-    
-    // ═══ ATRIBUCIÓ OBLIGATÒRIA CC BY-SA 4.0 ═══
-    const attr = document.createElement('div');
-    attr.id = 'lgAttribution';
-    attr.style.cssText = 'margin-top:6px;font-size:9px;color:#8b949e;line-height:1.3;';
-    attr.innerHTML = 'Dades: <a href="https://www.blitzortung.org" target="_blank" style="color:#8b949e;">Blitzortung.org</a> i col·laboradors · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" style="color:#8b949e;">CC BY-SA 4.0</a>';
-    el.appendChild(attr);
-    
-    const mapEl = document.getElementById('map');
-    (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
-    (mapEl || document.body).appendChild(el);
-}
+    function crearIndicadorEstat() {
+        if (document.getElementById('lgStatus')) return;
+        const el = document.createElement('div');
+        el.id = 'lgStatus';
+        el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
+
+        // ═══ ATRIBUCIÓ OBLIGATÒRIA CC BY-SA 4.0 ═══
+        const attr = document.createElement('div');
+        attr.id = 'lgAttribution';
+        attr.style.cssText = 'margin-top:6px;font-size:9px;color:#8b949e;line-height:1.3;';
+        attr.innerHTML = 'Dades: <a href="https://www.blitzortung.org" target="_blank" style="color:#8b949e;">Blitzortung.org</a> i col·laboradors · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" style="color:#8b949e;">CC BY-SA 4.0</a>';
+        el.appendChild(attr);
+
+        const mapEl = document.getElementById('map');
+        (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
+        (mapEl || document.body).appendChild(el);
+    }
 
     function initUI() {
         const bb = document.getElementById('bottombar');
@@ -360,7 +367,7 @@ function crearIndicadorEstat() {
         const btnMode = document.createElement('button');
         btnMode.id = 'btnLlamps';
         btnMode.className = 'primary';
-        btnMode.title = 'Activa/desactiva els llamps en directe (cada un dura 5 min)';
+        btnMode.title = 'Activa/desactiva els llamps (cada un dura 5 min a pantalla)';
         btnMode.textContent = 'Llamps: OFF';
         btnMode.addEventListener('click', toggleActiu);
         bb.appendChild(btnMode);
@@ -392,14 +399,14 @@ function crearIndicadorEstat() {
         crearIndicadorEstat();
         initUI();
 
-        console.log('[Llamps] Inicialitzat');
+        console.log('[Llamps] Inicialitzat (mode fetch)');
     }
 
     // S'inicia quan l'app ja esta autoritzada (mateix event que radar.js)
     document.addEventListener('auth:autoritzat', iniciar);
 
     window.addEventListener('beforeunload', function() {
-        disconnectWs();
+        aturarFetchPeriodic();
     });
 
 })();

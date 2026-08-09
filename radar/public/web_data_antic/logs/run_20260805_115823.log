@@ -1,97 +1,0 @@
-=================================================================
-  AROME 51h: SFC + 3D + SATÈL·LIT + RADAR + SRH/SHEAR
-  Satèl·lit: ACTIVAT
-=================================================================
-  Comprovant connexió... ✓
-
-  🔍 Buscant el millor run disponible (51 hores)...
-    ❌ Run 2026-08-05T06Z: 49H51H no disponible (HTTP 404)
-    ✅ Run 2026-08-05T00Z: 51 hores OK (27 MB)
-    📌 Seleccionat: 2026-08-05T00Z
-
-  ✅ Run: 2026-08-05T00Z = 05/08 02:00 CEST
-  Steps: +9h a +18h (10 hores)
-
-  ╔══════════════════════════════════════╗
-  ║  📡 SFC: meteofetch SP1+SP2 (17 vars)   ║
-  ╚══════════════════════════════════════╝
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [07H12H] SP1: 52MB ✓ (28 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [07H12H] SP2: 40MB ✓ (40 vars)
-  [[███████████████░░░░░]  75.0%] [13H18H] SP1: 52MB ✓ (42 vars)
-  [[████████████████████] 100.0%] [13H18H] SP2: 41MB ✓ (60 vars)
-  ✅ SFC meteofetch: 170 vars en 10/10h
-     Pes GRIB: 185.0 MB
-     Graella: 140×200 = 28000 punts
-     Temps: 52s
-
-  ╔══════════════════════════════════════╗
-  ║  📡 3D: IP1+IP3 (meteofetch)        ║
-  ╚══════════════════════════════════════╝
-  [[█████░░░░░░░░░░░░░░░]  25.0%] [IP1][07H12H] Descarregant... 413MB | Processant... ✓ (320 vars)
-  [[██████████░░░░░░░░░░]  50.0%] [IP1][13H18H] Descarregant... 409MB | Processant... ✓ (480 vars)
-  [[███████████████░░░░░]  75.0%] [IP3][07H12H] Descarregant... 660MB | Processant... ✓ (124 vars)
-  [[████████████████████] 100.0%] [IP3][13H18H] Descarregant... 647MB | Processant... ✓ (186 vars)
-  ✅ 3D: 1110 vars en 8m 18s
-     Pes GRIB: 2.08 GB
-     Graella: 140×200 = 28000 punts
-
-  ╔══════════════════════════════════════╗
-  ║  🛰️  SATÈL·LIT: BT 10.8µm + LLAMPS + RADAR ║
-  ╚══════════════════════════════════════╝
-  Run WCS 0025: 2026-08-05T00Z
-  GetCapabilities... ✓ (8327 IDs)
-  BT 10.8µm: ✅  |  Llamps: ✅  |  Radar: ✅
-  [[██░░░░░░░░░░░░░░░░░░]  10.0%] Satèl·lit +09h | BT:1 LL:1 RDR:1     [[████░░░░░░░░░░░░░░░░]  20.0%] Satèl·lit +10h | BT:2 LL:2 RDR:2     [[██████░░░░░░░░░░░░░░]  30.0%] Satèl·lit +11h | BT:3 LL:3 RDR:3     [[████████░░░░░░░░░░░░]  40.0%] Satèl·lit +12h | BT:4 LL:4 RDR:4     [[██████████░░░░░░░░░░]  50.0%] Satèl·lit +13h | BT:5 LL:5 RDR:5     [[████████████░░░░░░░░]  60.0%] Satèl·lit +14h | BT:6 LL:6 RDR:6     [[██████████████░░░░░░]  70.0%] Satèl·lit +15h | BT:6 LL:6 RDR:6     [[████████████████░░░░]  80.0%] Satèl·lit +16h | BT:6 LL:6 RDR:6     [[██████████████████░░]  90.0%] Satèl·lit +17h | BT:6 LL:6 RDR:6     [[████████████████████] 100.0%] Satèl·lit +18h | BT:6 LL:6 RDR:6   
-  ✅ Satèl·lit: 6h BT108, 6h llamps, 6h radar (3m 7s)
-
-  ╔══════════════════════════════════════╗
-  ║  🌪️  SRH + SHEAR (0-1km, 0-3km, 0-6km) ║
-  ╚══════════════════════════════════════╝
-  [[██░░░░░░░░░░░░░░░░░░]  10.0%] Calculant SRH/Shear +09h...  [[████░░░░░░░░░░░░░░░░]  20.0%] Calculant SRH/Shear +10h...  [[██████░░░░░░░░░░░░░░]  30.0%] Calculant SRH/Shear +11h...  [[████████░░░░░░░░░░░░]  40.0%] Calculant SRH/Shear +12h...  [[██████████░░░░░░░░░░]  50.0%] Calculant SRH/Shear +13h...  [[████████████░░░░░░░░]  60.0%] Calculant SRH/Shear +14h...  [[██████████████░░░░░░]  70.0%] Calculant SRH/Shear +15h...  [[████████████████░░░░]  80.0%] Calculant SRH/Shear +16h...  [[██████████████████░░]  90.0%] Calculant SRH/Shear +17h...  [[████████████████████] 100.0%] Calculant SRH/Shear +18h...
-  ✅ SRH + Shear calculats en 17s
-
-  ╔══════════════════════════════════════╗
-  ║  🌡️  Convectiu (LCL, LFC, LI, EL)    ║
-  ╚══════════════════════════════════════╝
-  ✅ 10/10 hores (3s)
-
-  ╔══════════════════════════════════════╗
-  ║  📦 GENERANT JSONs                   ║
-  ╚══════════════════════════════════════╝
-  sfc_09.json: 4818 KB (30 vars) | +09h | 2026-08-05 11:00 CEST
-  3d_09.json: 17728 KB (111 vars) | +09h | 2026-08-05 11:00 CEST
-  sfc_10.json: 4837 KB (30 vars) | +10h | 2026-08-05 12:00 CEST
-  3d_10.json: 17695 KB (111 vars) | +10h | 2026-08-05 12:00 CEST
-  sfc_11.json: 4855 KB (30 vars) | +11h | 2026-08-05 13:00 CEST
-  3d_11.json: 17656 KB (111 vars) | +11h | 2026-08-05 13:00 CEST
-  sfc_12.json: 4872 KB (30 vars) | +12h | 2026-08-05 14:00 CEST
-  3d_12.json: 17620 KB (111 vars) | +12h | 2026-08-05 14:00 CEST
-  sfc_13.json: 4884 KB (30 vars) | +13h | 2026-08-05 15:00 CEST
-  3d_13.json: 17598 KB (111 vars) | +13h | 2026-08-05 15:00 CEST
-  sfc_14.json: 4912 KB (30 vars) | +14h | 2026-08-05 16:00 CEST
-  3d_14.json: 17594 KB (111 vars) | +14h | 2026-08-05 16:00 CEST
-  sfc_15.json: 4450 KB (27 vars) | +15h | 2026-08-05 17:00 CEST
-  3d_15.json: 17588 KB (111 vars) | +15h | 2026-08-05 17:00 CEST
-  sfc_16.json: 4451 KB (27 vars) | +16h | 2026-08-05 18:00 CEST
-  3d_16.json: 17584 KB (111 vars) | +16h | 2026-08-05 18:00 CEST
-  sfc_17.json: 4451 KB (27 vars) | +17h | 2026-08-05 19:00 CEST
-  3d_17.json: 17566 KB (111 vars) | +17h | 2026-08-05 19:00 CEST
-  sfc_18.json: 4448 KB (27 vars) | +18h | 2026-08-05 20:00 CEST
-  3d_18.json: 17543 KB (111 vars) | +18h | 2026-08-05 20:00 CEST
-
-  ╔══════════════════════════════════════╗
-  ║  🔎 INFORME D'INTEGRITAT              ║
-  ╚══════════════════════════════════════╝
-  ✅ Totes les 10 hores SFC tenen variables crítiques
-  ✅ Totes les 10 hores 3D generades
-
-  📊 status.json: 534 B
-
-  ╔══════════════════════════════════════╗
-  ║  ✅ FINALITZAT
-  ║  Fitxers: 20 | SFC: 10/10 | 3D: 10/10
-  ║  Satèl·lit: 6h BT | 6h LL | 6h RDR
-  ║  Pes total: 217.9 MB | Temps: 13m 3s
-  ╚══════════════════════════════════════╝
-
-  📝 Log: C:\Users\simob\Documents\GitHub\joctempestes\private-scripts\..\meu-mapa\public\web_data\logs\run_20260805_115823.log
