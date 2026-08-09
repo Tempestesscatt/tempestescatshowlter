@@ -402,4 +402,4 @@ function crearIndicadorEstat() {
         disconnectWs();
     });
 
-})();
+})();    
