@@ -1,15 +1,11 @@
 window.radarMetadata = {
-  "updated": "2026-08-10T20:01:08Z",
+  "updated": "2026-08-10T20:04:49Z",
   "region": "NE_Espanya",
   "product": "CIRRUS (dBZ)",
   "resolution": "maxima (sense submostreig)",
   "interval": "5 min",
-  "total_frames": 5,
+  "total_frames": 4,
   "frames": [
-    {
-      "timestamp": "2026-08-10T19:35:00Z",
-      "file": "radar_frame_10_08_2026_1935Z.js"
-    },
     {
       "timestamp": "2026-08-10T19:40:00Z",
       "file": "radar_frame_10_08_2026_1940Z.js"
