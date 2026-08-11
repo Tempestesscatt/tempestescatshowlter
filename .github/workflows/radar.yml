@@ -10,6 +10,10 @@ env:
   R2_BUCKET: tempestes-radar-data
   R2_PREFIX: radar/
 
+concurrency:
+  group: actualitza-dades-radar
+  cancel-in-progress: false
+
 jobs:
   # ═══════════════════════════════════════════════════════════════════
   #  3 JOBS EN PARAL·LEL — cadascun genera els seus propis fitxers dins
@@ -22,16 +26,19 @@ jobs:
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Instal·lar dependències
         run: |
-          sudo apt-get update && sudo apt-get install -y libhdf5-dev
-          pip install requests h5py numpy pyproj
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends libhdf5-dev
+          pip install --disable-pip-version-check --no-cache-dir requests h5py numpy pyproj
 
       - name: Executar radar.py
         env:
@@ -59,20 +66,24 @@ jobs:
           name: dades-radar
           path: radar/public/radar/
           retention-days: 1
+          compression-level: 0
 
   estacions:
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Instal·lar dependències
-        run: pip install requests
+        run: pip install --disable-pip-version-check --no-cache-dir requests
 
       - name: Executar estacions.py
         env:
@@ -90,20 +101,24 @@ jobs:
             radar/public/radar/estaciones.json
             radar/public/radar/estaciones_meta.js
           retention-days: 1
+          compression-level: 0
 
   llamps:
     runs-on: ubuntu-latest
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Instal·lar dependències
-        run: pip install websocket-client
+        run: pip install --disable-pip-version-check --no-cache-dir websocket-client
 
       - name: Executar llamps.py
         env:
@@ -120,6 +135,7 @@ jobs:
             radar/public/radar/rayos.json
             radar/public/radar/rayos_metadata.js
           retention-days: 1
+          compression-level: 0
 
   # ═══════════════════════════════════════════════════════════════════
   #  JOB FINAL — espera als 3 en paral·lel, recull els artifacts,
@@ -129,13 +145,13 @@ jobs:
     needs: [radar, estacions, llamps]
     runs-on: ubuntu-latest
     concurrency:
-      group: radar-update
+      group: radar-publicar
       cancel-in-progress: true
     steps:
       - name: Clonar repositori
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Descarregar artifact radar
         uses: actions/download-artifact@v4
@@ -160,16 +176,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin main
-          git reset --soft origin/main
-
           git add -A radar/public/radar/
 
           if git diff --staged --quiet; then
             echo "Sense canvis per guardar"
           else
             git commit -m "Actualitza estat diari radar, estacions i llamps"
-            git push origin main
+            git push origin HEAD:main
           fi
 
       - name: Pujar frames a R2
@@ -179,20 +192,17 @@ jobs:
         run: |
           cd radar/public/radar
 
-          for f in nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js estaciones.json estaciones_meta.js rayos.json rayos_metadata.js; do
+          FILES="nimbus_daily_state.json radar_daily_nimbus.js radar_metadata.js status.js estaciones.json estaciones_meta.js rayos.json rayos_metadata.js"
+          FILES="$FILES $(ls -1t radar_frame_*.js 2>/dev/null | head -5)"
+
+          for f in $FILES; do
             [ -f "$f" ] || continue
             ct="application/json"
             [[ "$f" == *.js ]] && ct="application/javascript"
-            echo "⬆️ $f"
+            echo "⬆️ $f" &
             npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
-              --file="$f" --remote --content-type="$ct"
+              --file="$f" --remote --content-type="$ct" &
           done
-
-          echo "📤 Pujant últims 5 frames..."
-          ls -1t radar_frame_*.js 2>/dev/null | head -5 | while IFS= read -r frame; do
-            echo "⬆️ $frame"
-            npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$frame" \
-              --file="$frame" --remote --content-type="application/javascript"
-          done
+          wait
 
           echo "✅ Tot pujat!"
