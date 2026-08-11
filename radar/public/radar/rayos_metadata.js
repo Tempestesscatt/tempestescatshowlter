@@ -1,1 +1,1 @@
-window.rayosData = {"updated":"2026-08-11T03:29:26Z","ventana_min":1,"total":0,"rayos":[]};
+window.rayosData = {"updated":"2026-08-11T03:42:21Z","ventana_min":1,"total":2,"rayos":[{"lat":43.31118,"lon":4.05195,"ts":1786419695117},{"lat":43.33139,"lon":4.10577,"ts":1786419695117}]};
