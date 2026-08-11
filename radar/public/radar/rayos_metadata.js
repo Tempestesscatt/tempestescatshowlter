@@ -1,1 +1,1 @@
-window.rayosData = {"updated":"2026-08-11T08:49:56Z","ventana_min":1,"total":0,"rayos":[]};
+window.rayosData = {"updated":"2026-08-11T09:25:21Z","ventana_min":1,"total":0,"rayos":[]};
