@@ -1,27 +1,31 @@
 window.radarMetadata = {
-  "updated": "2026-08-18T03:20:08Z",
+  "updated": "2026-08-18T09:26:31Z",
   "region": "NE_Espanya",
   "product": "CIRRUS (dBZ)",
   "resolution": "maxima (sense submostreig)",
   "interval": "5 min",
-  "total_frames": 4,
+  "total_frames": 5,
   "frames": [
     {
-      "timestamp": "2026-08-18T02:55:00Z",
-      "file": "radar_frame_18_08_2026_0255Z.js"
+      "timestamp": "2026-08-18T09:00:00Z",
+      "file": "radar_frame_18_08_2026_0900Z.js"
     },
     {
-      "timestamp": "2026-08-18T03:00:00Z",
-      "file": "radar_frame_18_08_2026_0300Z.js"
+      "timestamp": "2026-08-18T09:05:00Z",
+      "file": "radar_frame_18_08_2026_0905Z.js"
     },
     {
-      "timestamp": "2026-08-18T03:05:00Z",
-      "file": "radar_frame_18_08_2026_0305Z.js"
+      "timestamp": "2026-08-18T09:10:00Z",
+      "file": "radar_frame_18_08_2026_0910Z.js"
     },
     {
-      "timestamp": "2026-08-18T03:10:00Z",
-      "file": "radar_frame_18_08_2026_0310Z.js"
+      "timestamp": "2026-08-18T09:15:00Z",
+      "file": "radar_frame_18_08_2026_0915Z.js"
+    },
+    {
+      "timestamp": "2026-08-18T09:20:00Z",
+      "file": "radar_frame_18_08_2026_0920Z.js"
     }
   ],
-  "latest_frame": "radar_frame_18_08_2026_0310Z.js"
+  "latest_frame": "radar_frame_18_08_2026_0920Z.js"
 };
