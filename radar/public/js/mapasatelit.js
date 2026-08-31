@@ -5,7 +5,6 @@
 
 const R2_BASE = 'https://radar-data.tempestes.cat/dades_sat/';
 
-// ─── CONFIG ───
 const CONFIG = {
   dataUrl: R2_BASE + 'meteosat_ne_spain.msgpack.gz',
   irDataUrl: R2_BASE + 'meteosat_ne_spain_temp.msgpack.gz',
@@ -14,16 +13,17 @@ const CONFIG = {
   lightningAccDataUrl: R2_BASE + 'meteosat_ne_spain_lightning_acc.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
+ 
   bbox: {
-    lon_min: -4.497856,
-    lat_min: 35.923407,
-    lon_max: 5.002144,
-    lat_max: 45.267707,
+    lon_min: -4.545066,
+    lat_min: 35.901552,
+    lon_max: 5.012116,
+    lat_max: 45.302098,
   },
 
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
-  defaultOpacity: 0.75,  // ← 75% de opacidad (valor 0-1)
+  defaultOpacity: 0.75,
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts
