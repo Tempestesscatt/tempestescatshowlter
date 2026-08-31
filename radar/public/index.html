@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Tempestes.cat — Meteosat</title>
+  <title>Tempestes.cat — Satèl·lit i Radar</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -11,34 +11,64 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/msgpack-lite/0.1.26/msgpack.min.js"></script>
 
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { height: 100%; background: #0a0e1a; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
-    #map { position: absolute; inset: 0; z-index: 0; }
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
-    /* ───────── PANTALLA DE CÀRREGA ───────── */
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --bg-panel: rgba(13, 18, 28, 0.88);
+      --bg-panel-solid: #0d121c;
+      --line: rgba(255,255,255,0.08);
+      --line-soft: rgba(255,255,255,0.05);
+      --text-primary: #eef1f6;
+      --text-secondary: #8592a8;
+      --text-muted: #57647a;
+      --accent: #ff9d3d;
+      --accent-soft: rgba(255, 157, 61, 0.14);
+      --accent-dim: #c97a2b;
+      --cyan: #4fd8f7;
+      --cyan-soft: rgba(79, 216, 247, 0.14);
+      --ok: #4fd8a0;
+      --warn: #ffb74d;
+      --danger: #ff5f5f;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --font-display: 'Barlow Condensed', sans-serif;
+      --font-body: 'Barlow', -apple-system, sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: var(--bg); font-family: var(--font-body); overflow: hidden; color: var(--text-primary); }
+    #map { position: absolute; inset: 0; z-index: 0; }
+    button { font-family: inherit; }
+
+    /* Pantalla de carrega */
     #preloader {
       position: fixed;
       inset: 0;
       z-index: 5000;
-      background: #0a0e1a;
+      background: var(--bg);
       display: flex;
       align-items: center;
       justify-content: center;
       transition: opacity 0.6s ease, visibility 0.6s ease;
     }
-    #preloader.hidden {
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-    }
+    #preloader.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
     #preloader::before {
       content: '';
       position: absolute;
       inset: 0;
       background:
-        radial-gradient(circle at 22% 28%, rgba(79,195,247,0.10) 0%, transparent 55%),
-        radial-gradient(circle at 78% 72%, rgba(79,195,247,0.06) 0%, transparent 55%);
+        radial-gradient(circle at 20% 25%, rgba(255,157,61,0.08) 0%, transparent 55%),
+        radial-gradient(circle at 80% 75%, rgba(79,216,247,0.06) 0%, transparent 55%);
       pointer-events: none;
     }
     .preloader-inner {
@@ -46,402 +76,472 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 26px;
+      gap: 24px;
       padding: 0 24px;
       width: 100%;
       max-width: 340px;
     }
-
-    .preloader-mark {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-    }
+    .preloader-mark { display: flex; flex-direction: column; align-items: center; gap: 14px; }
     .preloader-ring {
-      width: 46px;
-      height: 46px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      border: 1.5px solid rgba(79,195,247,0.15);
-      border-top-color: #4fc3f7;
-      animation: spin 1s linear infinite;
+      border: 2px solid rgba(255,157,61,0.15);
+      border-top-color: var(--accent);
+      animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
     .preloader-title {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      color: #e8edf5;
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--text-primary);
     }
     .preloader-subtitle {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 400;
-      color: #7a8ba8;
-      letter-spacing: 0.02em;
+      color: var(--text-secondary);
       min-height: 14px;
       text-align: center;
       transition: opacity 0.25s ease;
     }
-
-    .preloader-progress-track {
-      width: 100%;
-      height: 2px;
-      border-radius: 2px;
-      background: rgba(255,255,255,0.06);
-      overflow: hidden;
-    }
+    .preloader-progress-track { width: 100%; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden; }
     .preloader-progress-fill {
       height: 100%;
       width: 0%;
-      border-radius: 2px;
-      background: linear-gradient(90deg, #4fc3f7, #81d4fa);
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent-dim), var(--accent));
       transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
     }
-
-    .preloader-steps {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
+    .preloader-steps { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
     .preloader-step {
-      font-size: 8px;
+      font-size: 10px;
       font-weight: 500;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: #4a5a75;
-      padding: 3px 8px;
+      color: var(--text-muted);
+      padding: 4px 10px;
       border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.06);
+      border: 1px solid var(--line-soft);
       transition: color 0.3s ease, border-color 0.3s ease, background 0.3s ease;
     }
-    .preloader-step.done {
-      color: #4fc3f7;
-      border-color: rgba(79,195,247,0.3);
-      background: rgba(79,195,247,0.06);
-    }
-    .preloader-step.failed {
-      color: #ef5350;
-      border-color: rgba(239,83,80,0.3);
-      background: rgba(239,83,80,0.06);
-      text-decoration: line-through;
-    }
-    .preloader-step.pending {
-      color: #4a5a75;
-      border-color: rgba(255,255,255,0.06);
-    }
+    .preloader-step.done { color: var(--accent); border-color: rgba(255,157,61,0.3); background: var(--accent-soft); }
+    .preloader-step.failed { color: var(--danger); border-color: rgba(255,95,95,0.3); background: rgba(255,95,95,0.06); text-decoration: line-through; }
+    .preloader-step.pending { color: var(--text-muted); border-color: var(--line-soft); }
 
-    /* ───────── HUD ───────── */
+    /* HUD superior */
     .hud {
       position: absolute;
-      top: 16px;
-      left: 16px;
+      top: 14px;
+      left: 14px;
       z-index: 1000;
-      background: rgba(10, 14, 26, 0.75);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 10px;
-      padding: 8px 14px;
-      min-width: 120px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 10px 16px;
+      min-width: 130px;
       user-select: none;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 10px 34px rgba(0,0,0,0.5);
     }
-    .hud-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .hud-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #4fc3f7; opacity: 0.8; }
-    .hud-time { font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; color: #e8edf5; white-space: nowrap; }
-    .hud-status { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 9px; color: #7a8ba8; }
-    .dot { width: 5px; height: 5px; border-radius: 50%; background: #4fc3f7; flex-shrink: 0; transition: background 0.3s; }
-    .dot.loading { background: #ffb74d; animation: pulse 1.4s ease-in-out infinite; }
-    .dot.error { background: #ef5350; }
+    .hud-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+    .hud-title {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--text-primary);
+    }
+    .hud-time {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .hud-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 10px; color: var(--text-secondary); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; transition: background 0.3s; }
+    .dot.loading { background: var(--warn); animation: pulse 1.4s ease-in-out infinite; }
+    .dot.error { background: var(--danger); }
     @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.8)} }
 
-    /* ───────── BOTÓ TORNAR ───────── */
+    /* Botó tornar */
     .back-btn {
       position: absolute;
-      top: 16px;
-      right: 16px;
+      top: 14px;
+      right: 14px;
       z-index: 1001;
-      background: rgba(10, 14, 26, 0.75);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px;
-      padding: 8px 14px;
-      color: #e8edf5;
-      font-size: 11px;
-      font-weight: 500;
-      font-family: inherit;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 10px 15px;
+      color: var(--text-primary);
+      font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
       transition: all 0.25s ease;
       display: flex;
       align-items: center;
-      gap: 6px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      gap: 7px;
+      box-shadow: 0 10px 34px rgba(0,0,0,0.4);
       text-decoration: none;
     }
-    .back-btn:hover {
-      background: rgba(79,195,247,0.15);
-      border-color: rgba(79,195,247,0.3);
-      transform: translateY(-1px);
-    }
-    .back-btn:active {
-      transform: scale(0.95);
-    }
-    .back-btn svg {
-      width: 14px;
-      height: 14px;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2.5;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
+    .back-btn:hover { background: var(--accent-soft); border-color: rgba(255,157,61,0.3); transform: translateY(-1px); }
+    .back-btn:active { transform: scale(0.96); }
+    .back-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 
-    /* ───────── MENÚ LATERAL (3 punts) ───────── */
-    .menu-toggle {
+    /* Panel de radar */
+    .radar-panel {
       position: absolute;
-      bottom: 80px;
-      left: 16px;
-      z-index: 1001;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: rgba(10, 14, 26, 0.85);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255,255,255,0.08);
-      color: #e8edf5;
-      font-size: 20px;
-      font-weight: 300;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.3s ease;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-      user-select: none;
-      letter-spacing: 2px;
-    }
-    .menu-toggle:hover {
-      background: rgba(79,195,247,0.15);
-      border-color: rgba(79,195,247,0.3);
-    }
-    .menu-toggle.active {
-      background: rgba(79,195,247,0.2);
-      border-color: #4fc3f7;
-    }
-
-    /* ───────── PANELL LATERAL ───────── */
-    .side-panel {
-      position: absolute;
-      bottom: 130px;
-      left: 16px;
+      top: 68px;
+      left: 14px;
       z-index: 1000;
-      background: rgba(10, 14, 26, 0.92);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 14px;
-      padding: 12px 10px;
-      min-width: 160px;
-      max-width: 200px;
-      box-shadow: 0 12px 48px rgba(0,0,0,0.6);
-      transform: translateX(-110%);
-      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      min-width: 150px;
+      box-shadow: 0 10px 34px rgba(0,0,0,0.5);
     }
-    .side-panel.open {
-      transform: translateX(0);
-    }
-    .side-panel .panel-title {
-      font-size: 8px;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #4a5a75;
-      padding: 0 4px 6px 4px;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      margin-bottom: 3px;
-    }
-    .side-panel .layer-btn {
-      background: transparent;
-      border: none;
-      color: #7a8ba8;
-      font-size: 9px;
-      font-weight: 500;
-      font-family: inherit;
-      padding: 8px 10px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-align: left;
-      white-space: nowrap;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .side-panel .layer-btn::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #4a5a75;
-      transition: background 0.3s ease;
+    .radar-panel-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .radar-panel-label { display: flex; align-items: center; gap: 8px; }
+    .radar-panel-label svg { width: 15px; height: 15px; color: var(--cyan); flex-shrink: 0; }
+    .radar-panel-text { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+
+    .switch {
+      position: relative;
+      width: 38px;
+      height: 21px;
       flex-shrink: 0;
     }
-    .side-panel .layer-btn:hover {
-      color: #e8edf5;
-      background: rgba(255,255,255,0.04);
+    .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .switch-track {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 21px;
+      cursor: pointer;
+      transition: background 0.25s ease;
     }
-    .side-panel .layer-btn.active {
-      color: #4fc3f7;
-      background: rgba(79,195,247,0.08);
+    .switch-track::before {
+      content: '';
+      position: absolute;
+      width: 15px;
+      height: 15px;
+      left: 3px;
+      top: 3px;
+      background: var(--text-secondary);
+      border-radius: 50%;
+      transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), background 0.25s ease;
     }
-    .side-panel .layer-btn.active::before {
-      background: #4fc3f7;
-      box-shadow: 0 0 12px rgba(79,195,247,0.3);
+    .switch input:checked + .switch-track { background: rgba(79,216,247,0.25); }
+    .switch input:checked + .switch-track::before { transform: translateX(17px); background: var(--cyan); box-shadow: 0 0 10px rgba(79,216,247,0.5); }
+    .switch input:disabled + .switch-track { opacity: 0.5; cursor: wait; }
+
+    .radar-panel-sub { font-size: 9px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
+
+    /* Barra de capes */
+    .layer-dock {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+      max-width: calc(100vw - 28px);
+      overflow-x: auto;
+      scrollbar-width: none;
     }
-    .side-panel .layer-btn.unavailable {
-      opacity: 0.2;
-      cursor: not-allowed;
-      text-decoration: line-through;
+    .layer-dock::-webkit-scrollbar { display: none; }
+
+    .layer-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 9px 15px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
-    .side-panel .layer-btn.loading-layer {
-      opacity: 0.7;
-      cursor: wait;
-    }
-    .side-panel .layer-btn.loading-layer::after {
+    .layer-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+    .layer-btn.active { color: #0a0e17; background: var(--accent); }
+    .layer-btn.unavailable { opacity: 0.4; }
+    .layer-btn.loading-layer { opacity: 0.7; cursor: wait; }
+    .layer-btn.loading-layer::after {
       content: '';
       display: inline-block;
       width: 10px;
       height: 10px;
-      margin-left: auto;
-      border: 2px solid #4fc3f7;
+      border: 2px solid currentColor;
       border-top-color: transparent;
       border-radius: 50%;
       animation: layer-spin 0.8s linear infinite;
     }
-    @keyframes layer-spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes layer-spin { to { transform: rotate(360deg); } }
 
-    /* ───────── LLEGENDES ───────── */
+    /* Llegendes */
     .legend {
       position: absolute;
-      bottom: 80px;
-      right: 16px;
+      bottom: 78px;
+      right: 14px;
       z-index: 1000;
-      background: rgba(10, 14, 26, 0.8);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 10px;
-      padding: 8px 12px 10px 12px;
-      width: 140px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 9px 13px 11px 13px;
+      width: 150px;
       user-select: none;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      box-shadow: 0 10px 34px rgba(0,0,0,0.45);
       display: none;
     }
-    .legend-title { font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; color: #7a8ba8; font-weight: 600; margin: 0 0 3px 0; }
-    .legend-bar { height: 6px; border-radius: 3px; margin-bottom: 2px; }
-    .legend-labels { display: flex; justify-content: space-between; font-size: 7px; color: #7a8ba8; }
+    .legend + .legend { margin-bottom: 8px; }
+    .legend-title { font-size: 10px; color: var(--text-secondary); font-weight: 600; margin: 0 0 5px 0; }
+    .legend-bar { height: 7px; border-radius: 4px; margin-bottom: 4px; }
+    .legend-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
     #legend-ir .legend-bar { background: linear-gradient(to right, rgb(10,10,10) 0%, rgb(255,255,255) 40%, rgb(255,255,0) 55%, rgb(255,0,0) 70%, rgb(150,0,150) 85%, rgb(255,255,255) 100%); }
     #legend-alti .legend-bar { background: linear-gradient(to right, rgb(0,30,80) 0%, rgb(0,150,190) 25%, rgb(60,200,80) 45%, rgb(255,190,20) 65%, rgb(255,60,20) 80%, rgb(200,80,220) 100%); }
     #legend-precip .legend-bar { background: linear-gradient(to right, rgb(120,190,235) 0%, rgb(0,160,90) 25%, rgb(150,210,20) 45%, rgb(255,175,15) 65%, rgb(230,40,30) 85%, rgb(220,60,220) 100%); }
     #legend-lightning .legend-bar { background: linear-gradient(to right, rgb(255,255,120) 0%, rgb(255,175,15) 30%, rgb(235,60,15) 55%, rgb(170,10,90) 80%, rgb(255,255,255) 100%); }
+    #legend-radar .legend-bar { background: linear-gradient(to right, rgb(4,233,231) 0%, rgb(2,253,2) 20%, rgb(253,248,2) 45%, rgb(253,149,0) 65%, rgb(253,0,0) 80%, rgb(248,0,253) 92%, rgb(253,253,253) 100%); }
 
-    /* ───────── RESPONSIVE ───────── */
+    #legend-radar { bottom: 78px; }
+    .legend[data-stacked="true"] { bottom: 156px; }
+
+    /* Panell d'administracio */
+    #adminPanel {
+      position: absolute;
+      top: 120px;
+      right: 14px;
+      z-index: 1002;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      min-width: 240px;
+      box-shadow: 0 10px 34px rgba(0,0,0,0.5);
+      display: none;
+      max-height: calc(100vh - 160px);
+      overflow-y: auto;
+    }
+    #adminPanel h4 {
+      font-family: var(--font-display);
+      font-size: 14px;
+      margin: 0 0 10px 0;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #adminPanel label {
+      display: block;
+      font-size: 10px;
+      color: var(--text-secondary);
+      margin-bottom: 2px;
+    }
+    #adminPanel input, #adminPanel select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+      font-size: 12px;
+      margin-bottom: 8px;
+      font-family: var(--font-body);
+    }
+    #adminPanel input:focus, #adminPanel select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .admin-btns {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+    .admin-btns button {
+      flex: 1;
+      padding: 7px 10px;
+      border: none;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .admin-btns button:active { transform: scale(0.96); }
+    .btn-add { background: var(--accent); color: #0a0e17; }
+    .btn-add:hover { background: var(--accent-dim); }
+    .btn-clear { background: rgba(255,95,95,0.2); color: var(--danger); }
+    .btn-clear:hover { background: rgba(255,95,95,0.35); }
+    .btn-auth {
+      background: rgba(79,216,247,0.15);
+      color: var(--cyan);
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-auth:hover { background: rgba(79,216,247,0.25); }
+    .btn-auth.logged { background: rgba(79,216,247,0.08); color: var(--ok); }
+
+    #alertList {
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 11px;
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+      margin-top: 4px;
+    }
+    #alertList .empty {
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 10px;
+      padding: 10px 0;
+    }
+    .alert-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 11px;
+    }
+    .alert-item .msg { color: var(--text-primary); }
+    .alert-item .time { color: var(--text-muted); font-size: 9px; }
+    .alert-item .del {
+      background: none;
+      border: none;
+      color: var(--danger);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 4px;
+      opacity: 0.5;
+      transition: opacity 0.2s;
+    }
+    .alert-item .del:hover { opacity: 1; }
+
+    .admin-status {
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line-soft);
+      display: flex;
+      justify-content: space-between;
+    }
+    .admin-status .user { color: var(--ok); }
+
+    /* Boto toggle admin */
+    #toggleAdminBtn {
+      position: absolute;
+      bottom: 64px;
+      right: 14px;
+      z-index: 1001;
+      padding: 8px 14px;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 10px 34px rgba(0,0,0,0.4);
+      font-family: var(--font-body);
+    }
+    #toggleAdminBtn:hover { background: var(--accent-soft); border-color: rgba(255,157,61,0.3); }
+    #toggleAdminBtn.admin-active { color: var(--accent); border-color: rgba(255,157,61,0.3); }
+    #toggleAdminBtn .badge {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+    #toggleAdminBtn .badge.off { background: var(--text-muted); }
+    #toggleAdminBtn .badge.on { background: var(--ok); }
+
+    /* Responsive */
     @media (max-width: 768px) {
-      .hud {
-        top: 12px;
-        left: 12px;
-        padding: 6px 10px;
-        min-width: 80px;
-      }
-      .hud-title { font-size: 8px; }
-      .hud-time { font-size: 10px; }
-      .hud-status { font-size: 8px; }
+      .hud { top: 10px; left: 10px; padding: 8px 12px; min-width: 100px; }
+      .hud-title { font-size: 13px; }
+      .hud-time { font-size: 13px; }
+      .hud-status { font-size: 9px; }
 
-      .back-btn {
-        top: 12px;
-        right: 12px;
-        padding: 6px 10px;
-        font-size: 10px;
-        border-radius: 8px;
-      }
+      .back-btn { top: 10px; right: 10px; padding: 8px 12px; font-size: 11px; }
       .back-btn span { display: none; }
       .back-btn svg { width: 16px; height: 16px; }
 
-      .menu-toggle {
-        bottom: 70px;
-        left: 12px;
-        width: 38px;
-        height: 38px;
-        font-size: 18px;
-      }
+      .radar-panel { top: 60px; left: 10px; min-width: 130px; padding: 8px 10px; }
+      .radar-panel-text { font-size: 11px; }
+      .radar-panel-sub { display: none; }
 
-      .side-panel {
-        bottom: 115px;
-        left: 12px;
-        min-width: 130px;
-        max-width: 160px;
-        padding: 10px 8px;
-        border-radius: 12px;
-      }
-      .side-panel .layer-btn {
-        font-size: 8px;
-        padding: 6px 8px;
-      }
+      .layer-dock { bottom: 10px; padding: 4px; gap: 2px; }
+      .layer-btn { font-size: 11px; padding: 8px 12px; }
 
-      .legend {
-        width: 110px;
-        bottom: 70px;
-        right: 10px;
-        padding: 6px 10px 8px 10px;
-        border-radius: 8px;
-      }
-      .legend-title { font-size: 6px; }
-      .legend-labels { font-size: 6px; }
+      .legend { width: 120px; bottom: 66px; right: 10px; padding: 7px 10px 9px 10px; }
+      .legend[data-stacked="true"] { bottom: 136px; }
+      .legend-title { font-size: 9px; }
+      .legend-labels { font-size: 8px; }
+
+      #adminPanel { top: 60px; right: 10px; min-width: 180px; padding: 10px 12px; max-height: calc(100vh - 140px); }
+      #adminPanel h4 { font-size: 12px; }
+      #toggleAdminBtn { bottom: 56px; right: 10px; font-size: 10px; padding: 6px 10px; }
 
       .preloader-inner { max-width: 280px; gap: 20px; }
-      .preloader-ring { width: 38px; height: 38px; }
+      .preloader-title { font-size: 19px; }
     }
 
-    @media (max-width: 480px) {
-      .hud { top: 8px; left: 8px; padding: 5px 8px; min-width: 60px; }
-      .hud-title { font-size: 7px; }
-      .hud-time { font-size: 9px; }
-      .hud-status { font-size: 7px; }
-
-      .back-btn { top: 8px; right: 8px; padding: 4px 8px; }
-      .menu-toggle { bottom: 60px; left: 8px; width: 34px; height: 34px; font-size: 16px; }
-      .side-panel { bottom: 100px; left: 8px; min-width: 110px; max-width: 140px; padding: 8px 6px; }
-      .side-panel .layer-btn { font-size: 7px; padding: 5px 6px; }
-      .legend { width: 90px; bottom: 60px; right: 6px; padding: 4px 8px 6px 8px; }
+    @media (max-width: 400px) {
+      .radar-panel-text { font-size: 10px; }
+      .layer-btn { font-size: 10px; padding: 7px 10px; }
+      #adminPanel { min-width: 150px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- PANTALLA DE CÀRREGA -->
+  <!-- Pantalla de carrega -->
   <div id="preloader">
     <div class="preloader-inner">
       <div class="preloader-mark">
         <div class="preloader-ring"></div>
-      </div>
-      <div>
         <div class="preloader-title">Tempestes.cat</div>
       </div>
       <div class="preloader-progress-track">
         <div class="preloader-progress-fill" id="preloader-fill"></div>
       </div>
-      <div class="preloader-subtitle" id="preloader-subtitle">Connectant amb el satèl·lit...</div>
+      <div class="preloader-subtitle" id="preloader-subtitle">Connectant amb el satel·lit...</div>
       <div class="preloader-steps" id="preloader-steps">
-        <span class="preloader-step" data-step="image">Satèl·lit</span>
-        <span class="preloader-step" data-step="ir">Infraroig</span>
-        <span class="preloader-step" data-step="ctth_alti">Altura núvols</span>
-        <span class="preloader-step" data-step="precip">Precipitació</span>
+        <span class="preloader-step" data-step="image">Satel·lit</span>
+        <span class="preloader-step" data-step="ir">Temperatura</span>
+        <span class="preloader-step" data-step="ctth_alti">Altura nuvols</span>
+        <span class="preloader-step" data-step="precip">Pluja</span>
         <span class="preloader-step" data-step="lightning_acc">Llamps</span>
       </div>
     </div>
@@ -461,87 +561,352 @@
     </div>
   </div>
 
-  <!-- BOTÓ TORNAR -->
+  <!-- Botó tornar -->
   <a href="https://tempestes.cat/" class="back-btn" title="Tornar a Tempestes.cat">
-    <svg viewBox="0 0 24 24">
-      <path d="M19 12H5M12 19l-7-7 7-7"/>
-    </svg>
+    <svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
     <span>Tornar</span>
   </a>
 
-  <!-- BOTÓ MENÚ (3 punts) -->
-  <button class="menu-toggle" id="menuToggle" aria-label="Menú capes">⋯</button>
+  <!-- Toggle de radar -->
+  <div class="radar-panel">
+    <div class="radar-panel-row">
+      <div class="radar-panel-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="2"/>
+          <path d="M12 2a10 10 0 0 1 10 10M12 6a6 6 0 0 1 6 6M12 2v0"/>
+        </svg>
+        <span class="radar-panel-text">Radar de pluja</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="radar-toggle" />
+        <span class="switch-track"></span>
+      </label>
+    </div>
+    <div class="radar-panel-sub">Es superposa a qualsevol vista, en moviment</div>
+  </div>
 
-  <!-- PANELL LATERAL -->
-  <div class="side-panel" id="sidePanel">
-    <div class="panel-title">Capes disponibles</div>
-    <button class="layer-btn active" data-layer="image">Satèl·lit</button>
-    <button class="layer-btn" data-layer="ir">Infraroig</button>
-    <button class="layer-btn" data-layer="ctth_alti">Altura dels núvols</button>
-    <button class="layer-btn" data-layer="precip">Precipitació</button>
+  <!-- Barra de capes -->
+  <div class="layer-dock">
+    <button class="layer-btn active" data-layer="image">Satel·lit</button>
+    <button class="layer-btn" data-layer="ir">Temperatura</button>
+    <button class="layer-btn" data-layer="ctth_alti">Altura nuvols</button>
+    <button class="layer-btn" data-layer="precip">Pluja (satel·lit)</button>
     <button class="layer-btn" data-layer="lightning_acc">Llamps</button>
   </div>
 
-  <!-- LLEGENDES -->
+  <!-- Llegendes -->
   <div class="legend" id="legend-ir">
-    <p class="legend-title">Temperatura infraroja</p>
+    <p class="legend-title">Temperatura del nuvol</p>
     <div class="legend-bar"></div>
-    <div class="legend-labels"><span>-80 °C</span><span>-40 °C</span><span>50 °C</span></div>
+    <div class="legend-labels"><span>-80</span><span>-40</span><span>50</span></div>
   </div>
   <div class="legend" id="legend-alti">
-    <p class="legend-title">Altura dels núvols</p>
+    <p class="legend-title">Altura dels nuvols</p>
     <div class="legend-bar"></div>
-    <div class="legend-labels"><span>0 m</span><span>8.000 m</span><span>16.000 m</span></div>
+    <div class="legend-labels"><span>0 m</span><span>8000 m</span><span>16000 m</span></div>
   </div>
   <div class="legend" id="legend-precip">
-    <p class="legend-title">Precipitació</p>
+    <p class="legend-title">Precipitacio estimada</p>
     <div class="legend-bar"></div>
-    <div class="legend-labels"><span>0 mm/h</span><span>25 mm/h</span><span>50 mm/h</span></div>
+    <div class="legend-labels"><span>0</span><span>25</span><span>50 mm/h</span></div>
   </div>
   <div class="legend" id="legend-lightning">
     <p class="legend-title">Llamps acumulats</p>
     <div class="legend-bar"></div>
     <div class="legend-labels"><span>0</span><span>5</span><span>10+</span></div>
   </div>
+  <div class="legend" id="legend-radar" data-stacked="true">
+    <p class="legend-title">Radar (reflectivitat)</p>
+    <div class="legend-bar"></div>
+    <div class="legend-labels"><span>Feble</span><span>Moderat</span><span>Intens</span></div>
+  </div>
 
-  <script src="dades/towns_NE.js"></script>
+  <!-- Panell d'administracio -->
+  <div id="adminPanel">
+    <h4>Administracio d'alertes</h4>
+
+    <div id="authSection">
+      <button class="btn-auth" id="authBtn">Iniciar sessio amb Google</button>
+      <div class="admin-status" id="adminStatus" style="display:none;">
+        <span>Usuari: <span class="user" id="userEmail">-</span></span>
+        <span id="adminBadge" style="color:var(--danger);">Sense permisos</span>
+      </div>
+    </div>
+
+    <div id="adminControls" style="display:none; margin-top:10px;">
+      <label>Missatge</label>
+      <input id="alertMessage" type="text" placeholder="Alerta de tempesta..." />
+
+      <label>Tipus</label>
+      <select id="alertType">
+        <option value="warning">Avis</option>
+        <option value="danger">Perill</option>
+        <option value="info">Informacio</option>
+      </select>
+
+      <label>Color</label>
+      <input id="alertColor" type="color" value="#ff8800" style="height:30px; padding:2px;" />
+
+      <div class="admin-btns">
+        <button class="btn-add" id="addAlertBtn">Afegir alerta</button>
+        <button class="btn-clear" id="clearAlertsBtn">Netejar tot</button>
+      </div>
+
+      <div id="alertList">
+        <div class="empty">No hi ha alertes</div>
+      </div>
+
+      <div style="font-size:9px; color:var(--text-muted); margin-top:6px; padding-top:6px; border-top:1px solid var(--line-soft);">
+        Clica una alerta al mapa per eliminar-la
+      </div>
+    </div>
+  </div>
+
+  <!-- Boto toggle admin -->
+  <button id="toggleAdminBtn">
+    <span class="badge off" id="adminBadgeDot"></span>
+    Admin
+  </button>
+
+  <script src="js/radar_dbz.js"></script>
   <script src="js/mapasatelit.js"></script>
+  <script src="js/stormalert.js"></script>
 
   <script>
-    // ─── MENÚ LATERAL ───
-    (function() {
-      var menuToggle = document.getElementById('menuToggle');
-      var sidePanel = document.getElementById('sidePanel');
-      var isOpen = false;
+    // ─── Configuracio Firebase ───
+    const ADMIN_UID = 'zD8SlXoDNOQCboc0JQ3zCnFza9W2';
 
-      menuToggle.addEventListener('click', function(e) {
-        e.stopPropagation();
-        isOpen = !isOpen;
-        sidePanel.classList.toggle('open', isOpen);
-        menuToggle.classList.toggle('active', isOpen);
-      });
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
+      authDomain: "tempestescat.firebaseapp.com",
+      databaseURL: "https://tempestescat-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "tempestescat",
+      storageBucket: "tempestescat.firebasestorage.app",
+      messagingSenderId: "683240351775",
+      appId: "1:683240351775:web:bc65d73249537b9cc28d2a",
+      measurementId: "G-QDWCZ0Z9XF"
+    };
 
-      document.addEventListener('click', function(e) {
-        if (isOpen && !sidePanel.contains(e.target) && e.target !== menuToggle) {
-          isOpen = false;
-          sidePanel.classList.remove('open');
-          menuToggle.classList.remove('active');
+    // ─── Inicialitzar Firebase ───
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const auth = firebase.auth();
+    const database = firebase.database();
+
+    // ─── Estat ───
+    let currentUser = null;
+    let isAdmin = false;
+    let isAdminMode = false;
+
+    // ─── Elements DOM ───
+    const adminPanel = document.getElementById('adminPanel');
+    const toggleAdminBtn = document.getElementById('toggleAdminBtn');
+    const adminBadgeDot = document.getElementById('adminBadgeDot');
+    const authBtn = document.getElementById('authBtn');
+    const adminStatus = document.getElementById('adminStatus');
+    const userEmail = document.getElementById('userEmail');
+    const adminBadge = document.getElementById('adminBadge');
+    const adminControls = document.getElementById('adminControls');
+    const alertMessage = document.getElementById('alertMessage');
+    const alertType = document.getElementById('alertType');
+    const alertColor = document.getElementById('alertColor');
+    const addAlertBtn = document.getElementById('addAlertBtn');
+    const clearAlertsBtn = document.getElementById('clearAlertsBtn');
+
+    // ─── Referencia a la base de dades ───
+    // NOTA IMPORTANT: tota la gestio d'escoltar/pintar/afegir/
+    // eliminar alertes ara viu NOMES a stormalert.js. Aquest
+    // fitxer nomes crea la referencia i l'hi passa amb
+    // StormAlert.setAlertsRef(alertsRef). Abans hi havia un
+    // segon listener de clic al mapa i unes funcions
+    // listenAlerts()/updateAlertList() duplicades aqui, que
+    // competien amb stormalert.js i forçaven sempre shape:'circle'
+    // i color:'#ff8800' — per aixo la paleta (formes/colors) no
+    // feia res i "eliminar" fallava. S'ha tret tot aixo.
+    const alertsRef = database.ref('radar_alerts');
+
+    // ─── Autenticacio ───
+    auth.onAuthStateChanged((user) => {
+      console.log('Auth state changed:', user ? user.uid : 'no user');
+      if (user) {
+        currentUser = user;
+        userEmail.textContent = user.email || user.uid;
+        isAdmin = user.uid === ADMIN_UID;
+        adminBadge.textContent = isAdmin ? 'Permisos d\'administrador' : 'Sense permisos';
+        adminBadge.style.color = isAdmin ? 'var(--ok)' : 'var(--danger)';
+        authBtn.textContent = 'Tancar sessio';
+        authBtn.classList.add('logged');
+
+        adminStatus.style.display = 'flex';
+        adminControls.style.display = isAdmin ? 'block' : 'none';
+
+        if (isAdmin) {
+          if (window.StormAlert) {
+            window.StormAlert.setAdminMode(true);
+            window.StormAlert.setAlertsRef(alertsRef);
+          }
+        } else {
+          alertsRef.off();
+          if (window.StormAlert) {
+            window.StormAlert.setAdminMode(false);
+          }
         }
+
+        if (isAdminMode) {
+          adminBadgeDot.className = 'badge on';
+          toggleAdminBtn.classList.add('admin-active');
+        }
+      } else {
+        currentUser = null;
+        isAdmin = false;
+        userEmail.textContent = '-';
+        adminBadge.textContent = 'Sense permisos';
+        adminBadge.style.color = 'var(--danger)';
+        authBtn.textContent = 'Iniciar sessio amb Google';
+        authBtn.classList.remove('logged');
+        adminStatus.style.display = 'none';
+        adminControls.style.display = 'none';
+        alertsRef.off();
+        if (window.StormAlert) {
+          window.StormAlert.setAdminMode(false);
+          window.StormAlert._manualAlerts = [];
+          window.StormAlert._renderAll();
+        }
+
+        if (isAdminMode) {
+          isAdminMode = false;
+          adminPanel.style.display = 'none';
+          toggleAdminBtn.classList.remove('admin-active');
+          adminBadgeDot.className = 'badge off';
+        }
+      }
+    });
+
+    // ─── Iniciar sessio / tancar ───
+    authBtn.addEventListener('click', async () => {
+      console.log('Auth button clicked, currentUser:', currentUser);
+      if (currentUser) {
+        auth.signOut();
+      } else {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+          console.log('Attempting sign in...');
+          const result = await auth.signInWithPopup(provider);
+          console.log('Sign in successful:', result.user.uid);
+        } catch (err) {
+          console.error('Error d\'autenticacio:', err);
+          if (err.code === 'auth/popup-blocked') {
+            alert('El navegador ha bloquejat la finestra emergent. Permet les finestres emergents per aquest lloc.');
+          } else if (err.code === 'auth/popup-closed-by-user') {
+            // L'usuari ha tancat la finestra, no fem res
+          } else {
+            alert('Error en iniciar sessio: ' + err.message);
+          }
+        }
+      }
+    });
+
+    // ─── Toggle panell admin ───
+    toggleAdminBtn.addEventListener('click', () => {
+      if (!currentUser) {
+        // Si no hi ha usuari, obrim el panell pero mostrem el boto d'iniciar sessio
+        isAdminMode = !isAdminMode;
+        adminPanel.style.display = isAdminMode ? 'block' : 'none';
+        toggleAdminBtn.classList.toggle('admin-active', isAdminMode);
+        adminBadgeDot.className = 'badge ' + (isAdminMode ? 'on' : 'off');
+        // Assegurar que es veu la seccio d'autenticacio
+        if (isAdminMode) {
+          document.getElementById('authSection').style.display = 'block';
+        }
+        return;
+      }
+
+      if (!isAdmin) {
+        alert('No tens permisos d\'administrador per gestionar alertes.');
+        return;
+      }
+
+      isAdminMode = !isAdminMode;
+      adminPanel.style.display = isAdminMode ? 'block' : 'none';
+      toggleAdminBtn.classList.toggle('admin-active', isAdminMode);
+      adminBadgeDot.className = 'badge ' + (isAdminMode ? 'on' : 'off');
+
+      if (isAdminMode) {
+        if (window.StormAlert) {
+          window.StormAlert.setAdminMode(true);
+          window.StormAlert.setAlertsRef(alertsRef);
+        }
+      } else {
+        if (window.StormAlert) {
+          window.StormAlert.setAdminMode(false);
+        }
+        alertsRef.off();
+      }
+    });
+
+    // ─── Afegir alerta (des del panell lateral, sempre cercle) ───
+    addAlertBtn.addEventListener('click', () => {
+      if (!isAdmin || !isAdminMode) {
+        alert('Has d\'iniciar sessio com a administrador.');
+        return;
+      }
+      if (!window.StormAlert) return;
+
+      const msg = alertMessage.value.trim() || 'Alerta manual';
+      const type = alertType.value;
+      const color = alertColor.value;
+
+      const center = window.StormAlert._map?.getCenter() || { lat: 41.5, lng: 1.5 };
+
+      window.StormAlert.addManualAlert({
+        lat: center.lat,
+        lon: center.lng,
+        message: msg,
+        type: type,
+        color: color,
+        fillColor: color,
+        shape: 'circle',
+        radius: 10,
+        createdBy: currentUser?.email || 'admin'
       });
 
-      document.addEventListener('DOMContentLoaded', function() {
-        var panelBtns = sidePanel.querySelectorAll('.layer-btn');
-        panelBtns.forEach(function(btn) {
-          btn.addEventListener('click', function() {
-            if (window.innerWidth <= 768) {
-              isOpen = false;
-              sidePanel.classList.remove('open');
-              menuToggle.classList.remove('active');
-            }
-          });
+      alertMessage.value = '';
+    });
+
+    // ─── Netejar totes les alertes ───
+    clearAlertsBtn.addEventListener('click', () => {
+      if (!isAdmin || !isAdminMode) return;
+      if (!window.StormAlert) return;
+      if (confirm('Eliminar TOTES les alertes manuals?')) {
+        window.StormAlert.clearAllManualAlerts();
+      }
+    });
+
+    // ─── Gestionar llegendes ───
+    (function() {
+      var legendRadar = document.getElementById('legend-radar');
+      var otherLegendIds = ['legend-ir', 'legend-alti', 'legend-precip', 'legend-lightning'];
+
+      function anyOtherLegendVisible() {
+        return otherLegendIds.some(function(id) {
+          var el = document.getElementById(id);
+          return el && el.style.display === 'block';
         });
+      }
+
+      var observer = new MutationObserver(function() {
+        if (!legendRadar) return;
+        legendRadar.setAttribute('data-stacked', anyOtherLegendVisible() ? 'true' : 'false');
+      });
+
+      otherLegendIds.concat(['legend-radar']).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) observer.observe(el, { attributes: true, attributeFilter: ['style'] });
       });
     })();
+
+    console.log('Tempestes.cat - Panell d\'administracio carregat');
+    console.log('ID Admin esperat:', ADMIN_UID);
   </script>
 
 </body>

@@ -1,4 +1,4 @@
-name: Descarga Satèl·lit MTG
+name: Descarga Satèl·lit MTG + Radar
 
 on:
   workflow_dispatch: {}  # Execució manual (o cridat per un cron extern)
@@ -8,7 +8,8 @@ permissions:
 
 env:
   R2_BUCKET: tempestes-radar-data
-  R2_PREFIX: dades_sat/
+  R2_PREFIX_SAT: dades_sat/
+  R2_PREFIX_RAD: dades_rad/
   # Ruta REAL on sat.py escriu els fitxers: com que sat.py viu dins del
   # submòdul privat 'scripts-privats/', calcula el seu OUTPUT_DIR relatiu
   # a la seva pròpia ubicació (SCRIPT_DIR + 'radar/public/dades_sat'),
@@ -18,15 +19,28 @@ env:
   # fent que es pugessin sempre els fitxers antics que hi havia allà en
   # lloc dels que sat.py acabava de generar.
   DADES_SAT_DIR: scripts-privats/radar/public/dades_sat
+  # Mateix patró que sat.py: rad.py viu a scripts-privats/ i escriu a
+  # la carpeta germana radar/public/dades_rad (relatiu a rad.py, no a
+  # l'arrel del repo).
+  DADES_RAD_DIR: scripts-privats/radar/public/dades_rad
   # Fitxers .msgpack.gz que ha de generar sat.py per considerar el cicle vàlid.
   # Si en falta algun, NO es publica res a R2 per no deixar el mapa a mitges
   # (p.ex. imatge nova però altura vella, o a l'inrevés).
-  REQUIRED_FILES: >-
+  REQUIRED_FILES_SAT: >-
     meteosat_ne_spain.msgpack.gz
     meteosat_ne_spain_temp.msgpack.gz
     meteosat_ne_spain_ctth_alti.msgpack.gz
     meteosat_ne_spain_precip.msgpack.gz
     meteosat_ne_spain_lightning_acc.msgpack.gz
+  # Frames del radar (frame_1 = més recent ... frame_5 = més antic) +
+  # el fitxer de metadata que escriu rad.py.
+  REQUIRED_FILES_RAD: >-
+    meteorad_ne_spain_dbz_frame_1.msgpack.gz
+    meteorad_ne_spain_dbz_frame_2.msgpack.gz
+    meteorad_ne_spain_dbz_frame_3.msgpack.gz
+    meteorad_ne_spain_dbz_frame_4.msgpack.gz
+    meteorad_ne_spain_dbz_frame_5.msgpack.gz
+    meteorad_ne_spain_metadata.msgpack.gz
 
 jobs:
   satelite:
@@ -56,24 +70,8 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-
-          # --- DEBUG temporal: no exposa la clau, només mides i capçaleres ---
-          echo "Longitud del secret rebut (caràcters): ${#DEPLOY_KEY_B64}"
-          echo "Primers 15 caràcters del secret: ${DEPLOY_KEY_B64:0:15}"
-          echo "Últims 15 caràcters del secret: ${DEPLOY_KEY_B64: -15}"
-          # --------------------------------------------------------------
-
           echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
-          # --- DEBUG temporal: mida del fitxer decodificat i capçaleres ---
-          echo "Mida del fitxer decodificat (bytes): $(wc -c < ~/.ssh/deploy_key)"
-          echo "Primera línia del fitxer decodificat:"
-          head -n 1 ~/.ssh/deploy_key
-          echo "Última línia del fitxer decodificat:"
-          tail -n 1 ~/.ssh/deploy_key
-          # -----------------------------------------------------------------
-
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -T git@github.com || true
@@ -84,9 +82,6 @@ jobs:
           git submodule update --init --recursive --depth=1
         # Clona 'scripts-privats' (repo privat) fent servir la clau SSH
         # configurada al pas anterior.
-        # 'submodules: recursive' + 'ssh-key' clonen també scripts-privats
-        # (repo privat) fent servir la deploy key configurada com a secret
-        # SUBMODULE_DEPLOY_KEY (Settings > Secrets and variables > Actions).
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -136,7 +131,7 @@ jobs:
           ok="true"
           missing=""
 
-          for f in $REQUIRED_FILES; do
+          for f in $REQUIRED_FILES_SAT; do
             if [ ! -s "$f" ]; then
               ok="false"
               missing="$missing $f"
@@ -166,33 +161,160 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+      - name: Clonar repositori (sense submòduls)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+        # Mateix motiu que al job 'satelite': no passar la deploy key aquí,
+        # es clona el submòdul privat a part, més avall.
+
+      - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -T git@github.com || true
+
+      - name: Inicialitzar submòdul privat (scripts-privats)
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          # rad.py només necessita h5py per llegir HDF5 OPERA, pyproj per
+          # reprojectar coordenades, msgpack per serialitzar i requests per
+          # baixar de l'API de Meteofrance. Molt més lleuger que satpy.
+          pip install requests h5py numpy msgpack-python pyproj
+          pip check || true
+
+      - name: Executar rad.py
+        id: run_rad
+        env:
+          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python -X faulthandler scripts-privats/rad.py
+        # rad.py viu al submòdul privat 'scripts-privats/', igual que sat.py.
+        # S'executa des de l'arrel del repo perquè el seu OUTPUT_DIR es
+        # calcula relatiu a la seva pròpia ubicació (SCRIPT_DIR/../radar/
+        # public/dades_rad), no relatiu al directori de treball.
+        #
+        # No tallem el job si rad.py acaba amb error puntual: la comprovació
+        # real de "és publicable" la fa el pas 'verify' d'aquí sota.
+        continue-on-error: true
+
+      - name: Verificar que els fitxers generats són complets i vàlids
+        id: verify
+        run: |
+          set -euo pipefail
+          cd "$DADES_RAD_DIR"
+          ok="true"
+          missing=""
+
+          for f in $REQUIRED_FILES_RAD; do
+            if [ ! -s "$f" ]; then
+              ok="false"
+              missing="$missing $f"
+            fi
+          done
+
+          if [ "$ok" = "false" ]; then
+            echo "ERROR: Falten fitxers o estan buits:$missing"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "OK: tots els fitxers requerits presents i amb contingut"
+            echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Marcar job com a fallit si falten dades
+        if: steps.verify.outputs.files_ok != 'true'
+        run: |
+          echo "::error::Cicle de radar incomplet: no es publicarà a R2 per evitar dades a mitges."
+          exit 1
+
+      - name: Pujar resultat com a artifact (temporal, entre jobs)
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-radar
+          path: ${{ env.DADES_RAD_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
   publicar:
-    needs: [satelite]
-    if: needs.satelite.outputs.files_ok == 'true'
+    needs: [satelite, radar]
+    # Publica encara que un dels dos falli, sempre que l'ALTRE hagi anat bé:
+    # d'aquesta manera un problema puntual amb Meteofrance (radar) no
+    # bloqueja l'actualització del satèl·lit, i viceversa.
+    if: always() && (needs.satelite.outputs.files_ok == 'true' || needs.radar.outputs.files_ok == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     concurrency:
-      group: satelit-update
+      group: satelit-radar-update
       cancel-in-progress: false  # mai cancel·lar a mitges d'una pujada a R2
 
     steps:
       - name: Descarregar artifact satèl·lit
+        if: needs.satelite.outputs.files_ok == 'true'
         uses: actions/download-artifact@v4
         with:
           name: dades-satelit
           path: dades_sat/
 
+      - name: Descarregar artifact radar
+        if: needs.radar.outputs.files_ok == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-radar
+          path: dades_rad/
+
       - name: Verificar altre cop abans de publicar (defensa extra)
         run: |
           set -euo pipefail
-          cd dades_sat
-          for f in $REQUIRED_FILES; do
-            if [ ! -s "$f" ]; then
-              echo "::error::Fitxer $f absent o buit just abans de publicar. Avortant."
-              exit 1
-            fi
-          done
-          echo "OK: verificació prèvia a publicar correcta"
+          if [ -d dades_sat ]; then
+            cd dades_sat
+            for f in $REQUIRED_FILES_SAT; do
+              if [ ! -s "$f" ]; then
+                echo "::error::Fitxer $f absent o buit just abans de publicar. Avortant."
+                exit 1
+              fi
+            done
+            cd ..
+            echo "OK: verificació satèl·lit prèvia a publicar correcta"
+          fi
+          if [ -d dades_rad ]; then
+            cd dades_rad
+            for f in $REQUIRED_FILES_RAD; do
+              if [ ! -s "$f" ]; then
+                echo "::error::Fitxer $f absent o buit just abans de publicar. Avortant."
+                exit 1
+              fi
+            done
+            cd ..
+            echo "OK: verificació radar prèvia a publicar correcta"
+          fi
 
       - name: Pujar a R2 (únic lloc on viuen aquestes dades)
         env:
@@ -200,43 +322,59 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          cd dades_sat
 
           fail_count=0
 
           upload_one() {
             local f="$1"
             local ct="$2"
+            local dest="$3"
             local attempt=1
             local max_attempts=3
 
             while [ "$attempt" -le "$max_attempts" ]; do
-              echo "Pujant ($attempt/$max_attempts): $f"
-              if npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
+              echo "Pujant ($attempt/$max_attempts): $dest"
+              if npx wrangler r2 object put "$dest" \
                    --file="$f" --remote --content-type="$ct"; then
                 return 0
               fi
-              echo "Fallada pujant $f, reintentant..."
+              echo "Fallada pujant $dest, reintentant..."
               attempt=$((attempt + 1))
               sleep 3
             done
             return 1
           }
 
-          for f in *.msgpack.gz resumen_productos.txt; do
-            [ -f "$f" ] || continue
-            ct="application/octet-stream"
-            [[ "$f" == *.txt ]] && ct="text/plain"
+          if [ -d dades_sat ]; then
+            cd dades_sat
+            for f in *.msgpack.gz resumen_productos.txt; do
+              [ -f "$f" ] || continue
+              ct="application/octet-stream"
+              [[ "$f" == *.txt ]] && ct="text/plain"
+              if ! upload_one "$f" "$ct" "${R2_BUCKET}/${R2_PREFIX_SAT}$f"; then
+                echo "ERROR: no s'ha pogut pujar $f (satèl·lit) després de tots els intents"
+                fail_count=$((fail_count + 1))
+              fi
+            done
+            cd ..
+          fi
 
-            if ! upload_one "$f" "$ct"; then
-              echo "ERROR: no s'ha pogut pujar $f després de tots els intents"
-              fail_count=$((fail_count + 1))
-            fi
-          done
+          if [ -d dades_rad ]; then
+            cd dades_rad
+            for f in *.msgpack.gz; do
+              [ -f "$f" ] || continue
+              ct="application/octet-stream"
+              if ! upload_one "$f" "$ct" "${R2_BUCKET}/${R2_PREFIX_RAD}$f"; then
+                echo "ERROR: no s'ha pogut pujar $f (radar) després de tots els intents"
+                fail_count=$((fail_count + 1))
+              fi
+            done
+            cd ..
+          fi
 
           if [ "$fail_count" -gt 0 ]; then
             echo "::error::$fail_count fitxer(s) no s'han pogut pujar a R2"
             exit 1
           fi
 
-          echo "OK: dades del satèl·lit pujades a R2. No queda cap còpia al repositori."
+          echo "OK: dades pujades a R2. No queda cap còpia al repositori."

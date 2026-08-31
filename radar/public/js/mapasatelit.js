@@ -36,10 +36,6 @@ function lerpColor(c1, c2, f) {
   ];
 }
 
-// 1. IR Temperature - Escala tipo NOAA/GOES "IR4-Rainbow" (WV/convective enhancement).
-// Nubes cálidas/superficie en escala de grises, y a partir de los umbrales de
-// convección profunda entra la rampa de color (amarillo→verde→cian→azul→magenta)
-// típica de los productos operativos de la NOAA para resaltar tops fríos.
 const IR_COLOR_STOPS = [
   { temp: 50, color: [10, 10, 10] },
   { temp: 40, color: [30, 30, 30] },
@@ -51,7 +47,6 @@ const IR_COLOR_STOPS = [
   { temp: -20, color: [195, 195, 195] },
   { temp: -30, color: [225, 225, 225] },
   { temp: -40, color: [245, 245, 245] },
-  // A partir de aquí: rampa de color de convección (estilo NOAA IR-BD)
   { temp: -41, color: [255, 255, 0] },
   { temp: -45, color: [255, 200, 0] },
   { temp: -50, color: [255, 140, 0] },
@@ -86,28 +81,24 @@ function irToColor(tempC) {
   return [20, 20, 20, 255];
 }
 
-// 3. CTTH Altura de nubes - escala tipo NOAA "cloud-top-height" profesional.
-// Bajas (verde-azulado) → medias (amarillo-verde) → altas (naranja-rojo) →
-// muy altas/convección profunda (magenta-violeta), igual que los productos
-// GOES/EUMETSAT de altura de tope de nube.
 const ALTI_STOPS = [
-  { t: 0.000, color: [0, 30, 80] },      //   0 m  - niebla/estrato muy bajo
-  { t: 0.065, color: [0, 90, 160] },     // ~1 km
-  { t: 0.130, color: [0, 150, 190] },    // ~2 km
-  { t: 0.190, color: [0, 180, 140] },    // ~3 km
-  { t: 0.250, color: [60, 200, 80] },    // ~4 km
-  { t: 0.310, color: [160, 215, 40] },   // ~5 km
-  { t: 0.375, color: [230, 220, 30] },   // ~6 km
-  { t: 0.440, color: [255, 190, 20] },   // ~7 km
-  { t: 0.500, color: [255, 150, 15] },   // ~8 km
-  { t: 0.560, color: [255, 110, 15] },   // ~9 km
-  { t: 0.625, color: [255, 60, 20] },    // ~10 km
-  { t: 0.690, color: [225, 20, 20] },    // ~11 km
-  { t: 0.750, color: [180, 10, 40] },    // ~12 km
-  { t: 0.810, color: [150, 10, 90] },    // ~13 km - convección profunda
-  { t: 0.875, color: [160, 20, 160] },   // ~14 km
-  { t: 0.940, color: [200, 80, 220] },   // ~15 km
-  { t: 1.000, color: [235, 200, 250] },  // 16 km  - overshooting top
+  { t: 0.000, color: [0, 30, 80] },
+  { t: 0.065, color: [0, 90, 160] },
+  { t: 0.130, color: [0, 150, 190] },
+  { t: 0.190, color: [0, 180, 140] },
+  { t: 0.250, color: [60, 200, 80] },
+  { t: 0.310, color: [160, 215, 40] },
+  { t: 0.375, color: [230, 220, 30] },
+  { t: 0.440, color: [255, 190, 20] },
+  { t: 0.500, color: [255, 150, 15] },
+  { t: 0.560, color: [255, 110, 15] },
+  { t: 0.625, color: [255, 60, 20] },
+  { t: 0.690, color: [225, 20, 20] },
+  { t: 0.750, color: [180, 10, 40] },
+  { t: 0.810, color: [150, 10, 90] },
+  { t: 0.875, color: [160, 20, 160] },
+  { t: 0.940, color: [200, 80, 220] },
+  { t: 1.000, color: [235, 200, 250] },
 ];
 
 function altiToColor(altiM) {
@@ -128,22 +119,19 @@ function altiToColor(altiM) {
   return [...ALTI_STOPS[ALTI_STOPS.length - 1].color, 255];
 }
 
-// 4. Precipitación - escala tipo NOAA/NWS (similar a reflectividad de radar):
-// azul/cian para llovizna-débil, verde para moderada, amarillo-naranja para
-// fuerte, rojo-magenta para muy fuerte/torrencial.
 const PRECIP_STOPS = [
-  { t: 0.00, color: [120, 190, 235] },  //  0    mm/h - llovizna
-  { t: 0.06, color: [40, 130, 220] },   //  3    mm/h
-  { t: 0.12, color: [0, 90, 200] },     //  6    mm/h
-  { t: 0.20, color: [0, 160, 90] },     // 10    mm/h
-  { t: 0.30, color: [60, 190, 40] },    // 15    mm/h
-  { t: 0.40, color: [150, 210, 20] },   // 20    mm/h
-  { t: 0.50, color: [230, 220, 20] },   // 25    mm/h - moderada-fuerte
-  { t: 0.62, color: [255, 175, 15] },   // 31    mm/h
-  { t: 0.74, color: [255, 110, 15] },   // 37    mm/h
-  { t: 0.85, color: [230, 40, 30] },    // 42.5  mm/h - fuerte
-  { t: 0.93, color: [190, 15, 60] },    // 46.5  mm/h
-  { t: 1.00, color: [220, 60, 220] },   // 50    mm/h - torrencial/extrema
+  { t: 0.00, color: [120, 190, 235] },
+  { t: 0.06, color: [40, 130, 220] },
+  { t: 0.12, color: [0, 90, 200] },
+  { t: 0.20, color: [0, 160, 90] },
+  { t: 0.30, color: [60, 190, 40] },
+  { t: 0.40, color: [150, 210, 20] },
+  { t: 0.50, color: [230, 220, 20] },
+  { t: 0.62, color: [255, 175, 15] },
+  { t: 0.74, color: [255, 110, 15] },
+  { t: 0.85, color: [230, 40, 30] },
+  { t: 0.93, color: [190, 15, 60] },
+  { t: 1.00, color: [220, 60, 220] },
 ];
 
 function precipToColor(precipMmh) {
@@ -164,26 +152,21 @@ function precipToColor(precipMmh) {
   return [...PRECIP_STOPS[PRECIP_STOPS.length - 1].color, 255];
 }
 
-// 5. Lightning (densidad de rayos acumulados) - escala tipo NOAA GOES-GLM:
-// amarillo (baja densidad) → naranja → rojo → magenta/blanco (muy alta densidad),
-// con curva no lineal para que la actividad baja-moderada siga siendo visible.
 const LIGHTNING_STOPS = [
-  { t: 0.00, color: [255, 255, 120] },  // densidad muy baja
+  { t: 0.00, color: [255, 255, 120] },
   { t: 0.15, color: [255, 220, 40] },
   { t: 0.30, color: [255, 175, 15] },
   { t: 0.45, color: [255, 120, 10] },
   { t: 0.60, color: [235, 60, 15] },
   { t: 0.75, color: [200, 20, 30] },
   { t: 0.88, color: [170, 10, 90] },
-  { t: 1.00, color: [255, 255, 255] },  // densidad extrema (núcleo de la tormenta)
+  { t: 1.00, color: [255, 255, 255] },
 ];
 
 function lightningAccToColor(val) {
   if (val === null || val === undefined || Number.isNaN(val) || val <= 0) {
     return [0, 0, 0, 0];
   }
-  // Curva raíz cuadrada: da más contraste visual a densidades bajas/medias,
-  // que es donde suele estar la mayoría de la señal útil.
   const norm = Math.min(1, val / 10);
   const t = Math.sqrt(norm);
   for (let i = 0; i < LIGHTNING_STOPS.length - 1; i++) {
@@ -208,6 +191,7 @@ const dom = {
   legendAlti: null,
   legendPrecip: null,
   legendLightning: null,
+  legendRadar: null,
   preloader: null,
   preloaderFill: null,
   preloaderSubtitle: null,
@@ -226,14 +210,13 @@ let labelLayer = null;
 let todosLosTowns = [];
 let radioActual = 0;
 let popupMarker = null;
-let showLabels = true;  // Control de etiquetas
+let showLabels = true;
 
-let refreshTimer = null;       // setInterval del refresc automàtic
-let countdownTimer = null;     // setInterval del comptador visual (1s)
-let nextRefreshAt = 0;         // timestamp (ms) del proper refresc automàtic
-let isRefreshing = false;      // evita solapar dues càrregues alhora
+let refreshTimer = null;
+let countdownTimer = null;
+let nextRefreshAt = 0;
+let isRefreshing = false;
 
-// ✅ Estat de càrrega de cada capa (per saber si ja està carregada)
 let layerLoaded = {
   image: false,
   ir: false,
@@ -241,6 +224,12 @@ let layerLoaded = {
   precip: false,
   lightning_acc: false
 };
+
+// L'overlay de radar és independent de la capa de fons activa: es
+// pot mostrar/amagar per sobre de qualsevol capa (satèl·lit, IR,
+// altura, precipitació, llamps) amb un toggle, no és una capa mes
+// de la llista exclusiva.
+let radarOverlayEnabled = false;
 
 // ─── Cargar towns ───
 function cargarTowns() {
@@ -574,110 +563,31 @@ function getPixelInfoLines(lat, lng, layerKey) {
   return lines;
 }
 
-// ─── Inicialitzar mapa ───
-function initMap() {
-  map = L.map('map', {
-    center: CONFIG.initialCenter,
-    zoom: CONFIG.initialZoom,
-    zoomControl: true,
-    fadeAnimation: true,
-    attributionControl: true,
-    zoomSnap: 0.5,
-  });
-
-  var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
+// ─── setOverlay ───
+function setOverlay(key, dataUrl, bbox, opacity) {
+  var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, 
+      lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
   var bounds = [[lat_min, lon_min], [lat_max, lon_max]];
-
-  L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}.png',
-    { maxZoom: 13, minZoom: 1, attribution: 'Tiles © Esri', opacity: 0.9 }
-  ).addTo(map);
-
-  map.fitBounds(bounds, { padding: [10, 10] });
-
-  cargarGeoJSON().then(dibujarFronteras);
-  cargarTowns().then(function() { setTimeout(createLabelsFromTowns, 100); }).catch(function() { mostrarCapitalesPrincipales(); });
-
-  var timeoutLabels = null;
-  map.on('zoomend', function() {
-    clearTimeout(timeoutLabels);
-    timeoutLabels = setTimeout(function() {
-      if (todosLosTowns && todosLosTowns.length > 0 && showLabels) createLabelsFromTowns();
-    }, 200);
+  
+  if (overlays[key]) {
+    overlays[key].setUrl(dataUrl);
+    overlays[key].setBounds(bounds);
+    overlays[key].setOpacity(opacity);
+    return overlays[key];
+  }
+  
+  overlays[key] = L.imageOverlay(dataUrl, bounds, {
+    opacity: opacity,
+    interactive: false,
+    zIndex: 2,
   });
-  map.on('moveend', function() {
-    clearTimeout(timeoutLabels);
-    timeoutLabels = setTimeout(function() {
-      if (todosLosTowns && todosLosTowns.length > 0 && showLabels) createLabelsFromTowns();
-    }, 200);
-  });
+  return overlays[key];
+}
 
-  // ─── CLICK EN EL MAPA ───
-  map.on('click', function(e) {
-    var lat = e.latlng.lat;
-    var lng = e.latlng.lng;
-    var lines = getPixelInfoLines(lat, lng, activeLayer);
-
-    if (popupMarker) { map.removeLayer(popupMarker); popupMarker = null; }
-    if (window.popupTimeout) { clearTimeout(window.popupTimeout); window.popupTimeout = null; }
-
-    var popupId = 'pixel-popup-' + Date.now();
-    var linesHtml = lines.map(function(l) {
-      return '<div>' + l + '</div>';
-    }).join('');
-
-    var html =
-      '<div style="position:relative;background:rgba(10,14,26,0.92);backdrop-filter:blur(12px);' +
-      'border:1px solid rgba(79,195,247,0.25);border-radius:10px;padding:8px 26px 8px 14px;' +
-      'color:#e8edf5;font-size:12px;font-family:\'Segoe UI\',Arial,sans-serif;max-width:260px;' +
-      'text-align:center;box-shadow:0 4px 24px rgba(0,0,0,0.6);">' +
-        '<span id="' + popupId + '" style="position:absolute;top:2px;right:6px;cursor:pointer;' +
-        'color:#9fb3c8;font-weight:bold;font-size:14px;line-height:1;padding:2px 4px;">×</span>' +
-        linesHtml +
-      '</div>';
-
-    popupMarker = L.marker([lat, lng], {
-      icon: L.divIcon({
-        className: 'info-marker',
-        html: html,
-        iconSize: [260, 20 + lines.length * 16],
-        iconAnchor: [130, 10 + lines.length * 8],
-      }),
-      interactive: true,
-    }).addTo(map);
-
-    var markerEl = popupMarker.getElement();
-    var closeBtn = markerEl ? markerEl.querySelector('#' + popupId) : null;
-    if (closeBtn) {
-      closeBtn.addEventListener('click', function(evt) {
-        evt.stopPropagation();
-        if (popupMarker) { map.removeLayer(popupMarker); popupMarker = null; }
-        if (window.popupTimeout) { clearTimeout(window.popupTimeout); window.popupTimeout = null; }
-      }, { once: true });
-    }
-
-    window.popupTimeout = setTimeout(function() {
-      if (popupMarker) { map.removeLayer(popupMarker); popupMarker = null; }
-    }, 12000);
-  });
-
-  // ─── TECLA L ───
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'l' || e.key === 'L') {
-      e.preventDefault();
-      showLabels = !showLabels;
-      if (showLabels) {
-        createLabelsFromTowns();
-        console.log('Etiquetas activadas');
-      } else {
-        if (labelLayer) { map.removeLayer(labelLayer); labelLayer = null; }
-        console.log('Etiquetas desactivadas');
-      }
-    }
-  });
-
-  loadAllLayers(true);
-  return map;
+// ─── updateHudTime ───
+function updateHudTime(timestamp) {
+  if (!dom.hudTime) return;
+  dom.hudTime.textContent = formatHoraMadrid(timestamp);
 }
 
 // ─── fetchAndDecode ───
@@ -791,41 +701,12 @@ function buildCtthAltiDataUrl(p) { return buildValueGridDataUrl(p, altiToColor);
 function buildPrecipDataUrl(p) { return buildValueGridDataUrl(p, precipToColor); }
 function buildLightningAccDataUrl(p) { return buildValueGridDataUrl(p, lightningAccToColor); }
 
-// ─── setOverlay ───
-function setOverlay(key, dataUrl, bbox, opacity) {
-  var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, 
-      lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
-  var bounds = [[lat_min, lon_min], [lat_max, lon_max]];
-  
-  if (overlays[key]) {
-    overlays[key].setUrl(dataUrl);
-    overlays[key].setBounds(bounds);
-    overlays[key].setOpacity(opacity);
-    return overlays[key];
-  }
-  
-  overlays[key] = L.imageOverlay(dataUrl, bounds, {
-    opacity: opacity,
-    interactive: false,
-    zIndex: 2,
-  });
-  return overlays[key];
-}
-
-// ─── updateHudTime ───
-function updateHudTime(timestamp) {
-  if (!dom.hudTime) return;
-  dom.hudTime.textContent = formatHoraMadrid(timestamp);
-}
-
 async function loadLayer(key, url, buildFn) {
-  // Si ja està carregada, no la tornem a carregar
   if (layerLoaded[key]) {
     console.log('Capa ' + key + ' ja carregada, utilitzant cache');
     return true;
   }
   
-  // Noms amigables per a l'usuari
   var friendlyNames = {
     'image': 'imatge',
     'ir': 'infraroig',
@@ -864,14 +745,12 @@ function showActiveLayer() {
 }
 
 // ─── loadAllLayers ───
-// Ara només carrega la capa 'image' inicialment. La resta es carreguen sota demanda.
 async function loadAllLayers(isFirstLoad) {
   if (isFirstLoad === undefined) isFirstLoad = false;
   if (isRefreshing) return;
   isRefreshing = true;
   setRefreshBtnState('loading');
 
-  // 🔥 NOMÉS carreguem la capa 'image' inicialment
   var initialLayer = { key: 'image', url: CONFIG.dataUrl, build: buildImageDataUrl };
   var statuses = {};
   var errors = [];
@@ -900,10 +779,9 @@ async function loadAllLayers(isFirstLoad) {
     return;
   }
 
-  // Marcar la resta de capes com a "pendents" (no carregades)
   var otherLayers = ['ir', 'ctth_alti', 'precip', 'lightning_acc'];
   otherLayers.forEach(function(key) {
-    statuses[key] = false; // No carregades encara
+    statuses[key] = false;
     layerLoaded[key] = false;
     if (isFirstLoad) {
       preloaderMarkStep(key, 'pending');
@@ -937,13 +815,11 @@ function updateLayerButtonsAvailability(statuses) {
     var available = statuses[layer] || false;
     var isActive = layer === activeLayer && available;
     
-    // Si la capa no està carregada, el botó està actiu (per clicar-la)
-    btn.disabled = false; // Mai deshabilitem, perquè l'usuari pot clicar per carregar
+    btn.disabled = false;
     btn.classList.toggle('unavailable', !available && layer !== 'image');
     btn.classList.toggle('active', isActive);
     btn.classList.toggle('loading-layer', false);
     
-    // Si no està carregada, canviem el text
     if (!available && layer !== 'image') {
       btn.textContent = btn.textContent.replace(' Cargar', '') + ' Cargar';
     }
@@ -961,10 +837,8 @@ async function switchLayer(layerName) {
     return;
   }
 
-  // Si no està carregada, la carreguem ara
   console.log('🔄 Carregant capa sota demanda: ' + layerName);
   
-  // Marcar botó com a carregant
   dom.layerButtons.forEach(function(btn) {
     if (btn.dataset.layer === layerName) {
       btn.classList.add('loading-layer');
@@ -972,7 +846,6 @@ async function switchLayer(layerName) {
     }
   });
 
-  // Configuració de la capa
   var layerConfigs = {
     'ir': { url: CONFIG.irDataUrl, build: buildIrDataUrl },
     'ctth_alti': { url: CONFIG.ctthAltiDataUrl, build: buildCtthAltiDataUrl },
@@ -1000,7 +873,6 @@ async function switchLayer(layerName) {
     setStatus('error', 'Error carregant ' + layerName);
   }
 
-  // Restaurar botó
   dom.layerButtons.forEach(function(btn) {
     if (btn.dataset.layer === layerName) {
       btn.classList.remove('loading-layer');
@@ -1040,6 +912,53 @@ function updateLegendVisibility(layerName) {
 
   var legendKey = legendMap[layerName];
   if (legendKey && dom[legendKey]) dom[legendKey].style.display = 'block';
+
+  // La llegenda de radar és independent: es mostra sempre que
+  // l'overlay estigui actiu, sigui quina sigui la capa de fons.
+  if (dom.legendRadar) dom.legendRadar.style.display = radarOverlayEnabled ? 'block' : 'none';
+}
+
+async function toggleRadarOverlay(enabled) {
+  radarOverlayEnabled = enabled;
+
+  if (!enabled) {
+    if (window.RadarLayer) window.RadarLayer.detach();
+    if (dom.legendRadar) dom.legendRadar.style.display = 'none';
+    return;
+  }
+
+  if (window.RadarLayer.isLoaded()) {
+    window.RadarLayer.attach(map);
+    if (dom.legendRadar) dom.legendRadar.style.display = 'block';
+
+    // ← AQUÍ (rama: radar ya estaba cargado)
+    window.StormAlert.attach(map);
+    await window.StormAlert.refresh();
+
+    return;
+  }
+
+  if (dom.radarToggle) dom.radarToggle.disabled = true;
+  setStatus('loading', 'Carregant radar...');
+
+  var ok = await window.RadarLayer.load();
+
+  if (dom.radarToggle) dom.radarToggle.disabled = false;
+
+  if (!ok) {
+    setStatus('error', 'Error carregant radar');
+    radarOverlayEnabled = false;
+    if (dom.radarToggle) dom.radarToggle.checked = false;
+    return;
+  }
+
+  window.RadarLayer.attach(map);
+  if (dom.legendRadar) dom.legendRadar.style.display = 'block';
+  setStatus('', 'Radar actiu');
+
+  // ← Y AQUÍ (rama: radar se acaba de cargar por primera vez)
+  window.StormAlert.attach(map);
+  await window.StormAlert.refresh();
 }
 
 function bindLayerToggle() {
@@ -1049,7 +968,6 @@ function bindLayerToggle() {
       if (btn.disabled) return;
       var layer = btn.dataset.layer;
       
-      // Si és la capa activa i ja està carregada, no fem res
       if (layer === activeLayer && layerLoaded[layer]) return;
       
       dom.layerButtons.forEach(function(b) { b.classList.remove('active'); });
@@ -1135,7 +1053,6 @@ function injectRefreshButtonStyles() {
       gap: 0;
     }
 
-    /* Estils per als botons de capes en càrrega */
     .layer-btn.loading-layer {
       opacity: 0.7;
       cursor: wait;
@@ -1204,7 +1121,6 @@ function createRefreshButton() {
   btn.addEventListener('click', function() {
     if (isRefreshing) return;
     console.log('Actualització manual del satèl·lit...');
-    // Recarreguem només la capa activa
     refreshCurrentLayer();
   });
 }
@@ -1212,6 +1128,21 @@ function createRefreshButton() {
 // Funció per refrescar només la capa activa
 async function refreshCurrentLayer() {
   if (isRefreshing) return;
+
+  // Si l'overlay de radar està actiu, es refresca en paral·lel amb
+  // la capa de fons (són independents ara).
+  if (radarOverlayEnabled && window.RadarLayer) {
+    window.RadarLayer.detach();
+    window.RadarLayer._loaded = false;
+    window.RadarLayer.load().then(function(ok) {
+      if (ok) window.RadarLayer.attach(map);
+    });
+  }
+
+    if (radarOverlayEnabled && window.StormAlert) {
+    window.StormAlert.refresh();
+  }
+
   isRefreshing = true;
   setRefreshBtnState('loading');
 
@@ -1231,8 +1162,7 @@ async function refreshCurrentLayer() {
   }
 
   try {
-    // Recarreguem la capa activa
-    layerLoaded[activeLayer] = false; // Forcem recàrrega
+    layerLoaded[activeLayer] = false;
     await loadLayer(activeLayer, config.url, config.build);
     showActiveLayer();
     setStatus('', 'Capa ' + activeLayer + ' actualitzada');
@@ -1293,15 +1223,23 @@ function initApp() {
   dom.legendAlti = document.getElementById('legend-alti');
   dom.legendPrecip = document.getElementById('legend-precip');
   dom.legendLightning = document.getElementById('legend-lightning');
+  dom.legendRadar = document.getElementById('legend-radar');
   dom.preloader = document.getElementById('preloader');
   dom.preloaderFill = document.getElementById('preloader-fill');
   dom.preloaderSubtitle = document.getElementById('preloader-subtitle');
   dom.preloaderSteps = document.getElementById('preloader-steps');
+  dom.radarToggle = document.getElementById('radar-toggle');
 
   createRefreshButton();
 
   initMapFirstLoad();
   bindLayerToggle();
+
+  if (dom.radarToggle) {
+    dom.radarToggle.addEventListener('change', function() {
+      toggleRadarOverlay(dom.radarToggle.checked);
+    });
+  }
 
   console.log('Tempestes.cat - Meteosat MTG');
   console.log('Prem "L" per mostrar/ocultar etiquetes');
