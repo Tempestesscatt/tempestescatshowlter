@@ -13,7 +13,6 @@ const CONFIG = {
   lightningAccDataUrl: R2_BASE + 'meteosat_ne_spain_lightning_acc.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
- 
   bbox: {
     lon_min: -4.545066,
     lat_min: 35.901552,
@@ -235,6 +234,15 @@ let countdownTimer = null;     // setInterval del comptador visual (1s)
 let nextRefreshAt = 0;         // timestamp (ms) del proper refresc automàtic
 let isRefreshing = false;      // evita solapar dues càrregues alhora
 
+// ✅ Estat de càrrega de cada capa (per saber si ja està carregada)
+let layerLoaded = {
+  image: false,
+  ir: false,
+  ctth_alti: false,
+  precip: false,
+  lightning_acc: false
+};
+
 // ─── Cargar towns ───
 function cargarTowns() {
   return new Promise((resolve, reject) => {
@@ -277,7 +285,7 @@ function dibujarFronteras(geojsonData) {
   if (borderLayer) { map.removeLayer(borderLayer); borderLayer = null; }
   if (!geojsonData) return;
   borderLayer = L.geoJSON(geojsonData, {
-    style: { color: '#070707', weight: 1.2, opacity: 0.5, fill: false },
+    style: { color: '#494949', weight: 1.2, opacity: 0.5, fill: false },
     interactive: false,
     zIndex: 3,
   }).addTo(map);
@@ -444,9 +452,6 @@ function setStatus(state, message) {
 }
 
 // ─── PANTALLA DE CÀRREGA (preloader) ───
-// Tapa el mapa fins que totes les capes disponibles han acabat de carregar.
-// El progrés i els missatges reflecteixen l'estat real de cada capa, no un
-// temps fix, així la barra sempre correspon al que està passant de veritat.
 const PRELOADER_STEP_LABELS = {
   image: 'imatge natural color',
   ir: 'temperatura infraroja',
@@ -478,29 +483,21 @@ function preloaderMarkStep(layerKey, state) {
 function preloaderHide() {
   if (!dom.preloader) return;
   preloaderSetProgress(1);
-  // Pequeño respiro para que se vea la barra al 100% antes del fade,
-  // en vez de desaparecer de golpe justo al terminar la última capa.
   setTimeout(function() {
     dom.preloader.classList.add('hidden');
   }, 250);
 }
 
-// ─── Hora Madrid (robusta, con DST automático) ───
-// Convierte el timestamp (se asume UTC si no trae zona explícita) a hora
-// local de Madrid usando Intl, así que en invierno da UTC+1 y en verano UTC+2
-// sin tener que sumar horas a mano.
+// ─── Hora Madrid ───
 function formatHoraMadrid(timestamp) {
   if (!timestamp) return '--:--:--';
   try {
     var raw = String(timestamp);
-    // Si el string no trae info de zona (Z, +hh:mm, -hh:mm tras la hora),
-    // asumimos que es UTC y se lo indicamos explícitamente al parser.
     var tieneZona = /Z$|[+-]\d{2}:?\d{2}$/.test(raw.trim());
     var isoParaParsear = tieneZona ? raw : (raw.replace(' ', 'T') + 'Z');
 
     var dt = new Date(isoParaParsear);
     if (Number.isNaN(dt.getTime())) {
-      // Fallback: probar a parsear tal cual vino
       dt = new Date(raw);
     }
     if (Number.isNaN(dt.getTime())) return raw;
@@ -520,7 +517,7 @@ function formatHoraMadrid(timestamp) {
   }
 }
 
-// ─── POPUP: Obtener información del píxel para una capa concreta ───
+// ─── POPUP: Obtener información del píxel ───
 function getPixelValue(lat, lng, layerKey) {
   var payload = currentPayloads[layerKey];
   if (!payload) return null;
@@ -560,9 +557,6 @@ function formatPixelLine(layerKey, val) {
   }
 }
 
-// Construye las líneas de info a mostrar en el popup al clicar el mapa.
-// Cuando la capa activa es la imagen natural color, añadimos también la
-// altura de nubes (si hay dato ahí) para que se vea "de un vistazo".
 function getPixelInfoLines(lat, lng, layerKey) {
   var lines = [];
 
@@ -619,7 +613,7 @@ function initMap() {
     }, 200);
   });
 
-  // ─── CLICK EN EL MAPA: Mostrar info del píxel, con botón X para cerrar ───
+  // ─── CLICK EN EL MAPA ───
   map.on('click', function(e) {
     var lat = e.latlng.lat;
     var lng = e.latlng.lng;
@@ -653,9 +647,6 @@ function initMap() {
       interactive: true,
     }).addTo(map);
 
-    // Enlazar el cierre manual con la X. Usamos el elemento del propio marker
-    // (popupMarker.getElement()) en vez de buscar por id global: así no se
-    // acumulan referencias sueltas en el DOM entre clicks sucesivos.
     var markerEl = popupMarker.getElement();
     var closeBtn = markerEl ? markerEl.querySelector('#' + popupId) : null;
     if (closeBtn) {
@@ -666,13 +657,12 @@ function initMap() {
       }, { once: true });
     }
 
-    // Autocierre de cortesía tras 12s, pero el usuario puede cerrarlo antes con la X
     window.popupTimeout = setTimeout(function() {
       if (popupMarker) { map.removeLayer(popupMarker); popupMarker = null; }
     }, 12000);
   });
 
-  // ─── TECLA L: Mostrar/Ocultar etiquetas de pueblos ───
+  // ─── TECLA L ───
   document.addEventListener('keydown', function(e) {
     if (e.key === 'l' || e.key === 'L') {
       e.preventDefault();
@@ -687,16 +677,13 @@ function initMap() {
     }
   });
 
-  loadAllLayers();
+  loadAllLayers(true);
   return map;
 }
 
 // ─── fetchAndDecode ───
 async function fetchAndDecode(url) {
   setStatus('loading', 'Descarregant...');
-  // Cache-buster + no-store: així el navegador (i qualsevol CDN intermèdia)
-  // mai serveix una versió antiga en cachè, sempre va a buscar l'últim
-  // fitxer pujat a R2.
   var bustedUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 't=' + Date.now();
   var response = await fetch(bustedUrl, { cache: 'no-store' });
   if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -711,12 +698,6 @@ async function fetchAndDecode(url) {
 }
 
 // ─── buildImageDataUrl ───
-// Resolución de reescalado + filtro CSS de nitidez ligera para que el
-// "natural color" se vea lo más definido posible sin generar artefactos.
-// IMPORTANTE: el mapa se recarga solo cada 5-10 min, así que este factor
-// afecta directamente a memoria y transferencia por cada ciclo (el peso
-// crece de forma cuadrática con el factor). x4 ya da muy buena nitidez
-// visual sin el coste extra de x6.
 const UPSCALE_FACTOR = 4;
 
 function buildImageDataUrl(payload) {
@@ -739,8 +720,6 @@ function buildImageDataUrl(payload) {
   }
   sourceCtx.putImageData(imageData, 0, 0);
 
-  // Paso intermedio: reescalado suave en dos etapas para reducir el
-  // aspecto "borroso" del bilinear directo a factores grandes.
   var midFactor = Math.max(1, Math.round(UPSCALE_FACTOR / 2));
   var mid = document.createElement('canvas');
   mid.width = width * midFactor;
@@ -756,17 +735,12 @@ function buildImageDataUrl(payload) {
   var upscaledCtx = upscaled.getContext('2d');
   upscaledCtx.imageSmoothingEnabled = true;
   upscaledCtx.imageSmoothingQuality = 'high';
-  // Ligero realce de contraste/saturación para dar sensación de mayor
-  // nitidez "realista" sin tocar los datos originales del satélite.
   upscaledCtx.filter = 'contrast(1.06) saturate(1.08)';
   upscaledCtx.drawImage(mid, 0, 0, upscaled.width, upscaled.height);
   upscaledCtx.filter = 'none';
 
   var result = upscaled.toDataURL('image/png', 1.0);
 
-  // Liberar los buffers de los canvases intermedios cuanto antes: al recargar
-  // el satélite cada 5-10 min, estos canvases (hasta miles de px de lado)
-  // pueden acumularse en memoria si el GC del navegador tarda en pasar.
   source.width = 0; source.height = 0;
   mid.width = 0; mid.height = 0;
   upscaled.width = 0; upscaled.height = 0;
@@ -806,7 +780,6 @@ function buildValueGridDataUrl(payload, colorFn) {
   upscaledCtx.drawImage(canvas, 0, 0, upscaled.width, upscaled.height);
   var result = upscaled.toDataURL('image/png', 1.0);
 
-  // Liberar buffers cuanto antes (ver nota en buildImageDataUrl).
   canvas.width = 0; canvas.height = 0;
   upscaled.width = 0; upscaled.height = 0;
 
@@ -818,6 +791,8 @@ function buildIrDataUrl(p) { return buildValueGridDataUrl(p, irToColor); }
 function buildCtthAltiDataUrl(p) { return buildValueGridDataUrl(p, altiToColor); }
 function buildPrecipDataUrl(p) { return buildValueGridDataUrl(p, precipToColor); }
 function buildLightningAccDataUrl(p) { return buildValueGridDataUrl(p, lightningAccToColor); }
+
+// ─── setOverlay ───
 function setOverlay(key, dataUrl, bbox, opacity) {
   var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, 
       lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
@@ -826,7 +801,6 @@ function setOverlay(key, dataUrl, bbox, opacity) {
   if (overlays[key]) {
     overlays[key].setUrl(dataUrl);
     overlays[key].setBounds(bounds);
-    // ★ Aplicar opacidad también en actualizaciones
     overlays[key].setOpacity(opacity);
     return overlays[key];
   }
@@ -845,17 +819,28 @@ function updateHudTime(timestamp) {
   dom.hudTime.textContent = formatHoraMadrid(timestamp);
 }
 
-// ─── Funciones load para cada capa ───
+// ─── Cargar una capa individual (només si no està carregada) ───
 async function loadLayer(key, url, buildFn) {
-  var payload = await fetchAndDecode(url);
-  var dataUrl = buildFn(payload);
-  // Solo tras generar el dataURL sustituimos el payload viejo: así no se
-  // mantienen en memoria el payload anterior Y el nuevo simultáneamente
-  // más tiempo del necesario en cada ciclo de recarga (5-10 min).
-  currentPayloads[key] = payload;
-  setOverlay(key, dataUrl, payload.bbox, CONFIG.defaultOpacity);
-  updateHudTime(payload.timestamp);
-  return true;
+  // Si ja està carregada, no la tornem a carregar
+  if (layerLoaded[key]) {
+    console.log('Capa ' + key + ' ja carregada, utilitzant cache');
+    return true;
+  }
+  
+  try {
+    setStatus('loading', 'Carregant ' + key + '...');
+    var payload = await fetchAndDecode(url);
+    var dataUrl = buildFn(payload);
+    currentPayloads[key] = payload;
+    setOverlay(key, dataUrl, payload.bbox, CONFIG.defaultOpacity);
+    updateHudTime(payload.timestamp);
+    layerLoaded[key] = true;
+    console.log('✅ Capa ' + key + ' carregada correctament');
+    return true;
+  } catch (err) {
+    console.warn('Error carregant ' + key + ':', err.message);
+    return false;
+  }
 }
 
 // ─── showActiveLayer ───
@@ -871,78 +856,63 @@ function showActiveLayer() {
 }
 
 // ─── loadAllLayers ───
-// isFirstLoad = true -> mostra el preloader complet (primera càrrega de la pàgina)
-// isFirstLoad = false -> càrrega silenciosa en segon pla (auto-refresc / botó manual),
-// sense tapar el mapa ni canviar la capa activa que l'usuari hagi triat.
+// Ara només carrega la capa 'image' inicialment. La resta es carreguen sota demanda.
 async function loadAllLayers(isFirstLoad) {
   if (isFirstLoad === undefined) isFirstLoad = false;
-  if (isRefreshing) return; // evita solapar dues càrregues alhora
+  if (isRefreshing) return;
   isRefreshing = true;
   setRefreshBtnState('loading');
 
-  var layers = [
-    { key: 'image', url: CONFIG.dataUrl, build: buildImageDataUrl },
-    { key: 'ir', url: CONFIG.irDataUrl, build: buildIrDataUrl },
-    { key: 'ctth_alti', url: CONFIG.ctthAltiDataUrl, build: buildCtthAltiDataUrl },
-    { key: 'precip', url: CONFIG.precipDataUrl, build: buildPrecipDataUrl },
-    { key: 'lightning_acc', url: CONFIG.lightningAccDataUrl, build: buildLightningAccDataUrl },
-  ];
-
+  // 🔥 NOMÉS carreguem la capa 'image' inicialment
+  var initialLayer = { key: 'image', url: CONFIG.dataUrl, build: buildImageDataUrl };
   var statuses = {};
   var errors = [];
 
-  for (var i = 0; i < layers.length; i++) {
-    var layer = layers[i];
-    var label = PRELOADER_STEP_LABELS[layer.key] || layer.key;
-    try {
-      setStatus('loading', 'Carregant ' + layer.key + '...');
-      if (isFirstLoad) preloaderSetSubtitle('Carregant ' + label + '...');
-      await loadLayer(layer.key, layer.url, layer.build);
-      statuses[layer.key] = true;
-      if (isFirstLoad) preloaderMarkStep(layer.key, 'done');
-    } catch (err) {
-      console.warn('Error ' + layer.key + ':', err.message);
-      errors.push(layer.key);
-      statuses[layer.key] = false;
-      if (isFirstLoad) preloaderMarkStep(layer.key, 'failed');
-    }
-    if (isFirstLoad) preloaderSetProgress((i + 1) / layers.length);
+  try {
+    setStatus('loading', 'Carregant imatge...');
+    if (isFirstLoad) preloaderSetSubtitle('Carregant imatge natural color...');
+    await loadLayer(initialLayer.key, initialLayer.url, initialLayer.build);
+    statuses[initialLayer.key] = true;
+    if (isFirstLoad) preloaderMarkStep(initialLayer.key, 'done');
+  } catch (err) {
+    console.warn('Error carregant imatge:', err.message);
+    errors.push(initialLayer.key);
+    statuses[initialLayer.key] = false;
+    if (isFirstLoad) preloaderMarkStep(initialLayer.key, 'failed');
   }
 
-  var anyOk = false;
-  for (var key in statuses) {
-    if (statuses[key]) { anyOk = true; break; }
-  }
-  if (!anyOk) {
-    setStatus('error', 'Error: ' + errors.join(', '));
-    if (isFirstLoad) preloaderSetSubtitle('No s\'han pogut carregar les dades del satèl·lit');
+  if (isFirstLoad) preloaderSetProgress(1);
+
+  if (!statuses['image']) {
+    setStatus('error', 'Error: no s\'ha pogut carregar la imatge');
+    if (isFirstLoad) preloaderSetSubtitle('No s\'ha pogut carregar la imatge del satèl·lit');
     isRefreshing = false;
     setRefreshBtnState('error');
     scheduleNextAutoRefresh();
     return;
   }
 
+  // Marcar la resta de capes com a "pendents" (no carregades)
+  var otherLayers = ['ir', 'ctth_alti', 'precip', 'lightning_acc'];
+  otherLayers.forEach(function(key) {
+    statuses[key] = false; // No carregades encara
+    layerLoaded[key] = false;
+    if (isFirstLoad) {
+      preloaderMarkStep(key, 'pending');
+    }
+  });
+
   updateLayerButtonsAvailability(statuses);
 
-  // Només en la primera càrrega triem automàticament la primera capa
-  // disponible; en refrescs posteriors respectem la capa que l'usuari
-  // tingui seleccionada perquè no li saltem la vista cada 5 minuts.
   if (isFirstLoad) {
-    var order = ['image', 'ir', 'ctth_alti', 'precip', 'lightning_acc'];
-    for (var j = 0; j < order.length; j++) {
-      if (statuses[order[j]]) {
-        activeLayer = order[j];
-        break;
-      }
-    }
+    activeLayer = 'image';
   }
 
   showActiveLayer();
-  setStatus(errors.length > 0 ? 'loading' : '',
-            errors.length > 0 ? 'Parcial: ' + errors.join(', ') : 'Totes bé actualitzat en la hora que veus amunt!');
+  setStatus('', 'Imatge carregada. Clica altres capes per carregar-les.');
 
   if (isFirstLoad) {
-    preloaderSetSubtitle(errors.length > 0 ? 'Mapa llest (alguna capa no disponible)' : 'Mapa llest');
+    preloaderSetSubtitle('Mapa llest! Clica les altres capes per carregar-les.');
     preloaderHide();
   }
 
@@ -957,16 +927,99 @@ function updateLayerButtonsAvailability(statuses) {
   dom.layerButtons.forEach(function(btn) {
     var layer = btn.dataset.layer;
     var available = statuses[layer] || false;
-    btn.disabled = !available;
-    btn.classList.toggle('unavailable', !available);
-    btn.classList.toggle('active', layer === activeLayer && available);
+    var isActive = layer === activeLayer && available;
+    
+    // Si la capa no està carregada, el botó està actiu (per clicar-la)
+    btn.disabled = false; // Mai deshabilitem, perquè l'usuari pot clicar per carregar
+    btn.classList.toggle('unavailable', !available && layer !== 'image');
+    btn.classList.toggle('active', isActive);
+    btn.classList.toggle('loading-layer', false);
+    
+    // Si no està carregada, canviem el text
+    if (!available && layer !== 'image') {
+      btn.textContent = btn.textContent.replace(' Cargar', '') + ' Cargar';
+    }
   });
 }
 
-function switchLayer(layerName) {
-  activeLayer = layerName;
-  showActiveLayer();
+// ─── switchLayer amb càrrega sota demanda ───
+async function switchLayer(layerName) {
+  // Si la capa ja està carregada, simplement canviem
+  if (layerLoaded[layerName]) {
+    activeLayer = layerName;
+    showActiveLayer();
+    updateLayerButtonsUI();
+    updateLegendVisibility(layerName);
+    return;
+  }
 
+  // Si no està carregada, la carreguem ara
+  console.log('🔄 Carregant capa sota demanda: ' + layerName);
+  
+  // Marcar botó com a carregant
+  dom.layerButtons.forEach(function(btn) {
+    if (btn.dataset.layer === layerName) {
+      btn.classList.add('loading-layer');
+      btn.textContent = '⏳ Carregant...';
+    }
+  });
+
+  // Configuració de la capa
+  var layerConfigs = {
+    'ir': { url: CONFIG.irDataUrl, build: buildIrDataUrl },
+    'ctth_alti': { url: CONFIG.ctthAltiDataUrl, build: buildCtthAltiDataUrl },
+    'precip': { url: CONFIG.precipDataUrl, build: buildPrecipDataUrl },
+    'lightning_acc': { url: CONFIG.lightningAccDataUrl, build: buildLightningAccDataUrl }
+  };
+
+  var config = layerConfigs[layerName];
+  if (!config) return;
+
+  try {
+    var success = await loadLayer(layerName, config.url, config.build);
+    
+    if (success) {
+      activeLayer = layerName;
+      showActiveLayer();
+      updateLayerButtonsUI();
+      updateLegendVisibility(layerName);
+      setStatus('', 'Capa ' + layerName + ' carregada');
+    } else {
+      setStatus('error', 'Error carregant ' + layerName);
+    }
+  } catch (err) {
+    console.error('Error carregant capa:', err);
+    setStatus('error', 'Error carregant ' + layerName);
+  }
+
+  // Restaurar botó
+  dom.layerButtons.forEach(function(btn) {
+    if (btn.dataset.layer === layerName) {
+      btn.classList.remove('loading-layer');
+      var label = {
+        'ir': 'IR Temperatura',
+        'ctth_alti': 'Altura núvols',
+        'precip': 'Precipitació',
+        'lightning_acc': 'Llamps'
+      }[layerName] || layerName;
+      btn.textContent = label;
+    }
+  });
+}
+
+function updateLayerButtonsUI() {
+  if (!dom.layerButtons) return;
+  dom.layerButtons.forEach(function(btn) {
+    var layer = btn.dataset.layer;
+    var isActive = layer === activeLayer && layerLoaded[layer];
+    btn.classList.toggle('active', isActive);
+    if (layerLoaded[layer]) {
+      btn.classList.remove('unavailable');
+    }
+  });
+}
+
+function updateLegendVisibility(layerName) {
   var legendMap = {
     'ir': 'legendIr',
     'ctth_alti': 'legendAlti',
@@ -986,9 +1039,15 @@ function bindLayerToggle() {
   dom.layerButtons.forEach(function(btn) {
     btn.addEventListener('click', function() {
       if (btn.disabled) return;
+      var layer = btn.dataset.layer;
+      
+      // Si és la capa activa i ja està carregada, no fem res
+      if (layer === activeLayer && layerLoaded[layer]) return;
+      
       dom.layerButtons.forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      switchLayer(btn.dataset.layer);
+      
+      switchLayer(layer);
     });
   });
 }
@@ -997,8 +1056,6 @@ function bindLayerToggle() {
 // BOTÓ DE REFRESC + COMPTADOR ENRERE (5 min)
 // ═════════════════════════════════════════════════════════════
 
-// Injectem el CSS del botó des del JS perquè no calgui tocar l'HTML/CSS
-// existents. S'insereix un sol cop.
 function injectRefreshButtonStyles() {
   if (document.getElementById('refresh-btn-styles')) return;
   var style = document.createElement('style');
@@ -1069,11 +1126,34 @@ function injectRefreshButtonStyles() {
       align-items: center;
       gap: 0;
     }
+
+    /* Estils per als botons de capes en càrrega */
+    .layer-btn.loading-layer {
+      opacity: 0.7;
+      cursor: wait;
+    }
+    .layer-btn.loading-layer::after {
+      content: '';
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-left: 6px;
+      border: 2px solid #4fc3f7;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: layer-spin 0.8s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes layer-spin {
+      to { transform: rotate(360deg); }
+    }
+    .layer-btn.unavailable {
+      opacity: 0.5;
+    }
   `;
   document.head.appendChild(style);
 }
 
-// Crea i insereix el botó dins del HUD existent (a la dreta de l'hora).
 function createRefreshButton() {
   injectRefreshButtonStyles();
 
@@ -1116,8 +1196,46 @@ function createRefreshButton() {
   btn.addEventListener('click', function() {
     if (isRefreshing) return;
     console.log('Actualització manual del satèl·lit...');
-    loadAllLayers(false);
+    // Recarreguem només la capa activa
+    refreshCurrentLayer();
   });
+}
+
+// Funció per refrescar només la capa activa
+async function refreshCurrentLayer() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  setRefreshBtnState('loading');
+
+  var layerConfigs = {
+    'image': { url: CONFIG.dataUrl, build: buildImageDataUrl },
+    'ir': { url: CONFIG.irDataUrl, build: buildIrDataUrl },
+    'ctth_alti': { url: CONFIG.ctthAltiDataUrl, build: buildCtthAltiDataUrl },
+    'precip': { url: CONFIG.precipDataUrl, build: buildPrecipDataUrl },
+    'lightning_acc': { url: CONFIG.lightningAccDataUrl, build: buildLightningAccDataUrl }
+  };
+
+  var config = layerConfigs[activeLayer];
+  if (!config) {
+    isRefreshing = false;
+    setRefreshBtnState('idle');
+    return;
+  }
+
+  try {
+    // Recarreguem la capa activa
+    layerLoaded[activeLayer] = false; // Forcem recàrrega
+    await loadLayer(activeLayer, config.url, config.build);
+    showActiveLayer();
+    setStatus('', 'Capa ' + activeLayer + ' actualitzada');
+  } catch (err) {
+    console.error('Error refrescant capa:', err);
+    setStatus('error', 'Error actualitzant');
+  }
+
+  isRefreshing = false;
+  setRefreshBtnState('idle');
+  scheduleNextAutoRefresh();
 }
 
 function setRefreshBtnState(state) {
@@ -1136,14 +1254,12 @@ function updateCountdownDisplay() {
   dom.refreshCountdown.textContent = mm + ':' + (ss < 10 ? '0' : '') + ss;
 
   if (dom.refreshRing) {
-    var circumference = 81.68; // 2 * PI * r(13)
+    var circumference = 81.68;
     var fraction = 1 - Math.min(1, Math.max(0, remainingMs / AUTO_REFRESH_MS));
     dom.refreshRing.setAttribute('stroke-dashoffset', String(circumference * fraction));
   }
 }
 
-// Programa el proper refresc automàtic (es crida cada vegada que una càrrega
-// acaba, tant si és automàtica com manual, per reiniciar el comptador de 5 min).
 function scheduleNextAutoRefresh() {
   if (refreshTimer) clearTimeout(refreshTimer);
   if (countdownTimer) clearInterval(countdownTimer);
@@ -1155,7 +1271,7 @@ function scheduleNextAutoRefresh() {
 
   refreshTimer = setTimeout(function() {
     console.log('Actualitzant dades del satèl·lit (auto)...');
-    loadAllLayers(false);
+    refreshCurrentLayer();
   }, AUTO_REFRESH_MS);
 }
 
@@ -1181,10 +1297,9 @@ function initApp() {
 
   console.log('Tempestes.cat - Meteosat MTG');
   console.log('Prem "L" per mostrar/ocultar etiquetes');
+  console.log('📡 Càrrega sota demanda: només es carrega la capa que es veu');
 }
 
-// Wrapper perquè la primera càrrega (des de initMap) faci servir el preloader,
-// i totes les següents (auto-refresc / botó manual) siguin silencioses.
 function initMapFirstLoad() {
   map = L.map('map', {
     center: CONFIG.initialCenter,
@@ -1284,7 +1399,7 @@ function initMapFirstLoad() {
     }
   });
 
-  loadAllLayers(true); // primera càrrega -> amb preloader
+  loadAllLayers(true);
   return map;
 }
 
