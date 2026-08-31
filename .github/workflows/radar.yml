@@ -42,22 +42,31 @@ jobs:
 
       - name: Configurar clau SSH per al submòdul privat
         env:
-          DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          # Escrivim la clau amb printf des d'una variable d'entorn (no amb
-          # echo interpolant el secret directament al YAML): així evitem que
-          # GitHub Actions interpreti o retalli els salts de línia del
-          # secret, que és la causa més habitual de "Permission denied" tot
-          # i tenir la deploy key ben configurada.
-          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+
+          # --- DEBUG temporal: no exposa la clau, només mides i capçaleres ---
+          echo "Longitud del secret rebut (caràcters): ${#DEPLOY_KEY_B64}"
+          echo "Primers 15 caràcters del secret: ${DEPLOY_KEY_B64:0:15}"
+          echo "Últims 15 caràcters del secret: ${DEPLOY_KEY_B64: -15}"
+          # --------------------------------------------------------------
+
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+
+          # --- DEBUG temporal: mida del fitxer decodificat i capçaleres ---
+          echo "Mida del fitxer decodificat (bytes): $(wc -c < ~/.ssh/deploy_key)"
+          echo "Primera línia del fitxer decodificat:"
+          head -n 1 ~/.ssh/deploy_key
+          echo "Última línia del fitxer decodificat:"
+          tail -n 1 ~/.ssh/deploy_key
+          # -----------------------------------------------------------------
+
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
-          # Comprovació immediata: si la clau és invàlida o no té accés,
-          # ho veurem aquí abans d'arribar al submodule update.
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -T git@github.com || true
 
       - name: Inicialitzar submòdul privat (scripts-privats)
