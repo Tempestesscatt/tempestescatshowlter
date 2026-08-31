@@ -9,6 +9,15 @@ permissions:
 env:
   R2_BUCKET: tempestes-radar-data
   R2_PREFIX: dades_sat/
+  # Ruta REAL on sat.py escriu els fitxers: com que sat.py viu dins del
+  # submòdul privat 'scripts-privats/', calcula el seu OUTPUT_DIR relatiu
+  # a la seva pròpia ubicació (SCRIPT_DIR + 'radar/public/dades_sat'),
+  # NO relatiu a l'arrel del repo principal. Abans aquest workflow feia
+  # servir 'radar/public/dades_sat' (sense el prefix 'scripts-privats/'),
+  # que apuntava a una carpeta DIFERENT (i buida/vella) del repo principal,
+  # fent que es pugessin sempre els fitxers antics que hi havia allà en
+  # lloc dels que sat.py acabava de generar.
+  DADES_SAT_DIR: scripts-privats/radar/public/dades_sat
   # Fitxers .msgpack.gz que ha de generar sat.py per considerar el cicle vàlid.
   # Si en falta algun, NO es publica res a R2 per no deixar el mapa a mitges
   # (p.ex. imatge nova però altura vella, o a l'inrevés).
@@ -123,7 +132,7 @@ jobs:
         id: verify
         run: |
           set -euo pipefail
-          cd radar/public/dades_sat
+          cd "$DADES_SAT_DIR"
           ok="true"
           missing=""
 
@@ -153,7 +162,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dades-satelit
-          path: radar/public/dades_sat/
+          path: ${{ env.DADES_SAT_DIR }}/
           retention-days: 1
           if-no-files-found: error
 
