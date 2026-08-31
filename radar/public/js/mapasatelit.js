@@ -22,7 +22,7 @@ const CONFIG = {
 
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
-  defaultOpacity: 1.0,  // Opacidad máxima para mejor visualización
+  defaultOpacity: 75,  // Opacidad máxima para mejor visualización
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts
