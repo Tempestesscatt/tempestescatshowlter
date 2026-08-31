@@ -1,0 +1,3 @@
+[submodule "scripts-privats"]
+	path = scripts-privats
+	url = git@github.com:Tempestesscatt/radar-privat.git

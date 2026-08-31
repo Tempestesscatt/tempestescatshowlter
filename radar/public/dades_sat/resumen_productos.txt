@@ -1,0 +1,43 @@
+================================================================================
+  📊 RESUMEN DE DESCARGA DE PRODUCTOS MTG
+================================================================================
+  📁 Salida: C:\Users\simob\Desktop\tempestaprova\mapbox-gl-js\tempestes.cat\tempestescatshowlter\tempestescatshowlter\tempestescatshowlter\radar\public\dades_sat
+  🌍 BBOX: (-4.5, 36.0, 5.0, 45.5)
+  📅 Fecha: 31/08/2026 01:19 UTC (más reciente)
+  📅 Hora Madrid: 31/08/2026 03:19
+================================================================================
+
+
+📡 FCI: 3 productos encontrados
+
+  🖼️  PROCESANDO FCI (0662)
+     ✅ meteosat_ne_spain.msgpack.gz (0.00 MB)
+     ✅ meteosat_ne_spain_temp.msgpack.gz (9.73 MB)
+
+📡 CTTH Altura: 2 productos encontrados
+
+  📏  PROCESANDO CTTH ALTURA (0681)
+     ✅ meteosat_ne_spain_ctth_alti.msgpack.gz (1.44 MB)
+
+📡 Precip Instantània: 2 productos encontrados
+
+  🌧️  PROCESANDO Precipitació Instantània
+     ✅ meteosat_ne_spain_precip.msgpack.gz (0.03 MB)
+
+📡 Lightning Accumulated: 4 productos encontrados
+
+  ⚡  PROCESANDO LIGHTNING ACCUMULATED (0686)
+     ℹ️ Puntos de rayos: 280767
+     ℹ️ Puntos dentro del BBOX: 0
+     ✅ meteosat_ne_spain_lightning_acc.msgpack.gz (0.03 MB)
+
+================================================================================
+  📊 RESUMEN FINAL
+================================================================================
+  🖼️  FCI: ✅ OK
+  📏  CTTH Altura: ✅ OK
+  🌧️  Precip Instantània: ✅ OK
+  ⚡  Lightning Accumulated: ✅ OK
+
+  ✅ 4/4 productos completados
+================================================================================

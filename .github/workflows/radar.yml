@@ -1,0 +1,193 @@
+name: Descarga Satèl·lit MTG
+
+on:
+  workflow_dispatch: {}  # Execució manual (o cridat per un cron extern)
+
+permissions:
+  contents: read  # ja no cal 'write': no tornem a commitejar res al repo
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX: dades_sat/
+  # Fitxers .msgpack.gz que ha de generar sat.py per considerar el cicle vàlid.
+  # Si en falta algun, NO es publica res a R2 per no deixar el mapa a mitges
+  # (p.ex. imatge nova però altura vella, o a l'inrevés).
+  REQUIRED_FILES: >-
+    meteosat_ne_spain.msgpack.gz
+    meteosat_ne_spain_temp.msgpack.gz
+    meteosat_ne_spain_ctth_alti.msgpack.gz
+    meteosat_ne_spain_precip.msgpack.gz
+    meteosat_ne_spain_lightning_acc.msgpack.gz
+
+jobs:
+  satelite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+      - name: Clonar repositori
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          ssh-key: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        # Nota: com que ja no commitegem dades, aquest checkout es manté
+        # lleuger sempre (no acumula history de fitxers binaris).
+        # 'submodules: recursive' + 'ssh-key' clonen també scripts-privats
+        # (repo privat) fent servir la deploy key configurada com a secret
+        # SUBMODULE_DEPLOY_KEY (Settings > Secrets and variables > Actions).
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y libhdf5-dev
+          # netCDF4 i h5netcdf són IMPRESCINDIBLES: satpy (readers fci_l1c_nc /
+          # fci_l2_nc) i xarray.open_dataset() els necessiten per poder llegir
+          # els fitxers .nc de FCI, CTTH, precipitació i lightning. Sense
+          # aquests dos paquets, TOTS els productes fallen amb
+          # "No module named 'netCDF4'" o "found the following matches...".
+          # numpy fixat per sota de 2.3: numpy 2.4.x és molt recent i algunes
+          # dependències natives de satpy (pykdtree, pyresample) es poden haver
+          # compilat contra una ABI de numpy diferent, provocant segfaults en
+          # temps d'execució en lloc d'un error net de Python.
+          pip install eumdac satpy pyresample scipy "numpy<2.3" xarray msgpack-python pyproj netCDF4 h5netcdf
+          pip check || true
+
+      - name: Executar sat.py
+        id: run_sat
+        env:
+          EUMETSAT_CONSUMER_KEY: ${{ secrets.EUMETSAT_CONSUMER_KEY }}
+          EUMETSAT_CONSUMER_SECRET: ${{ secrets.EUMETSAT_CONSUMER_SECRET }}
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python -X faulthandler scripts-privats/sat.py
+        # sat.py (i els mòduls que importa: estacions.py, llamps.py, mapa.py,
+        # rad.py, radar.py) viuen ara al submòdul privat 'scripts-privats/'.
+        # S'executa des de l'arrel del repo perquè les rutes relatives que fa
+        # servir sat.py (p.ex. radar/public/dades_sat/...) segueixen essent
+        # relatives a l'arrel, no a la carpeta del submòdul.
+        #
+        # No tallem el job si sat.py acaba amb error puntual d'algun producte:
+        # la comprovació real de "és publicable" la fa el pas 'verify' d'aquí sota.
+        continue-on-error: true
+
+      - name: Verificar que els fitxers generats són complets i vàlids
+        id: verify
+        run: |
+          set -euo pipefail
+          cd radar/public/dades_sat
+          ok="true"
+          missing=""
+
+          for f in $REQUIRED_FILES; do
+            if [ ! -s "$f" ]; then
+              ok="false"
+              missing="$missing $f"
+            fi
+          done
+
+          if [ "$ok" = "false" ]; then
+            echo "ERROR: Falten fitxers o estan buits:$missing"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "OK: tots els fitxers requerits presents i amb contingut"
+            echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Marcar job com a fallit si falten dades
+        if: steps.verify.outputs.files_ok != 'true'
+        run: |
+          echo "::error::Cicle incomplet: no es publicarà a R2 per evitar dades a mitges."
+          exit 1
+
+      - name: Pujar resultat com a artifact (temporal, entre jobs)
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-satelit
+          path: radar/public/dades_sat/
+          retention-days: 1
+          if-no-files-found: error
+
+  publicar:
+    needs: [satelite]
+    if: needs.satelite.outputs.files_ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: satelit-update
+      cancel-in-progress: false  # mai cancel·lar a mitges d'una pujada a R2
+
+    steps:
+      - name: Descarregar artifact satèl·lit
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-satelit
+          path: dades_sat/
+
+      - name: Verificar altre cop abans de publicar (defensa extra)
+        run: |
+          set -euo pipefail
+          cd dades_sat
+          for f in $REQUIRED_FILES; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Fitxer $f absent o buit just abans de publicar. Avortant."
+              exit 1
+            fi
+          done
+          echo "OK: verificació prèvia a publicar correcta"
+
+      - name: Pujar a R2 (únic lloc on viuen aquestes dades)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          cd dades_sat
+
+          fail_count=0
+
+          upload_one() {
+            local f="$1"
+            local ct="$2"
+            local attempt=1
+            local max_attempts=3
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              echo "Pujant ($attempt/$max_attempts): $f"
+              if npx wrangler r2 object put "${R2_BUCKET}/${R2_PREFIX}$f" \
+                   --file="$f" --remote --content-type="$ct"; then
+                return 0
+              fi
+              echo "Fallada pujant $f, reintentant..."
+              attempt=$((attempt + 1))
+              sleep 3
+            done
+            return 1
+          }
+
+          for f in *.msgpack.gz resumen_productos.txt; do
+            [ -f "$f" ] || continue
+            ct="application/octet-stream"
+            [[ "$f" == *.txt ]] && ct="text/plain"
+
+            if ! upload_one "$f" "$ct"; then
+              echo "ERROR: no s'ha pogut pujar $f després de tots els intents"
+              fail_count=$((fail_count + 1))
+            fi
+          done
+
+          if [ "$fail_count" -gt 0 ]; then
+            echo "::error::$fail_count fitxer(s) no s'han pogut pujar a R2"
+            exit 1
+          fi
+
+          echo "OK: dades del satèl·lit pujades a R2. No queda cap còpia al repositori."

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tempestes.cat — Meteosat</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/msgpack-lite/0.1.26/msgpack.min.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; background: #0a0e1a; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
+    #map { position: absolute; inset: 0; z-index: 0; }
+
+    /* ───────── PANTALLA DE CÀRREGA ───────── */
+    #preloader {
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      background: #0a0e1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+    }
+    #preloader.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    #preloader::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 22% 28%, rgba(79,195,247,0.10) 0%, transparent 55%),
+        radial-gradient(circle at 78% 72%, rgba(79,195,247,0.06) 0%, transparent 55%);
+      pointer-events: none;
+    }
+    .preloader-inner {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 26px;
+      padding: 0 24px;
+      width: 100%;
+      max-width: 340px;
+    }
+
+    .preloader-mark {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .preloader-ring {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(79,195,247,0.15);
+      border-top-color: #4fc3f7;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .preloader-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #e8edf5;
+    }
+    .preloader-subtitle {
+      font-size: 11px;
+      font-weight: 400;
+      color: #7a8ba8;
+      letter-spacing: 0.02em;
+      min-height: 14px;
+      text-align: center;
+      transition: opacity 0.25s ease;
+    }
+
+    .preloader-progress-track {
+      width: 100%;
+      height: 2px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+    .preloader-progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #4fc3f7, #81d4fa);
+      transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .preloader-steps {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .preloader-step {
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #4a5a75;
+      padding: 3px 8px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: color 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+    }
+    .preloader-step.done {
+      color: #4fc3f7;
+      border-color: rgba(79,195,247,0.3);
+      background: rgba(79,195,247,0.06);
+    }
+    .preloader-step.failed {
+      color: #ef5350;
+      border-color: rgba(239,83,80,0.3);
+      background: rgba(239,83,80,0.06);
+      text-decoration: line-through;
+    }
+
+    /* ───────── HUD ───────── */
+    .hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 1000;
+      background: rgba(10, 14, 26, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 8px 14px;
+      min-width: 120px;
+      user-select: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+    .hud-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .hud-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #4fc3f7; opacity: 0.8; }
+    .hud-time { font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; color: #e8edf5; white-space: nowrap; }
+    .hud-status { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 9px; color: #7a8ba8; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; background: #4fc3f7; flex-shrink: 0; transition: background 0.3s; }
+    .dot.loading { background: #ffb74d; animation: pulse 1.4s ease-in-out infinite; }
+    .dot.error { background: #ef5350; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.8)} }
+
+    .layer-toggle {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(10, 14, 26, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 5px 8px;
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 95%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    .layer-btn {
+      background: transparent;
+      border: none;
+      color: #7a8ba8;
+      font-size: 7px;
+      font-weight: 500;
+      font-family: inherit;
+      padding: 4px 7px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .layer-btn:hover { color: #e8edf5; background: rgba(255,255,255,0.04); }
+    .layer-btn.active { background: #4fc3f7; color: #0a0e1a; }
+    .layer-btn.unavailable { opacity: 0.2; cursor: not-allowed; text-decoration: line-through; }
+
+    .legend {
+      position: absolute;
+      bottom: 80px;
+      right: 16px;
+      z-index: 1000;
+      background: rgba(10, 14, 26, 0.8);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 8px 12px 10px 12px;
+      width: 140px;
+      user-select: none;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      display: none;
+    }
+    .legend-title { font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; color: #7a8ba8; font-weight: 600; margin: 0 0 3px 0; }
+    .legend-bar { height: 6px; border-radius: 3px; margin-bottom: 2px; }
+    .legend-labels { display: flex; justify-content: space-between; font-size: 7px; color: #7a8ba8; }
+
+    #legend-ir .legend-bar { background: linear-gradient(to right, rgb(255,0,0) 0%, rgb(255,100,0) 15%, rgb(255,200,0) 30%, rgb(200,255,0) 45%, rgb(0,200,200) 60%, rgb(0,100,255) 75%, rgb(100,50,200) 85%, rgb(50,50,50) 100%); }
+    #legend-temp .legend-bar { background: linear-gradient(to right, #ffffff 0%, #000000 100%); }
+    #legend-alti .legend-bar { background: linear-gradient(to right, rgb(30,60,150) 0%, rgb(30,160,200) 25%, rgb(60,200,90) 50%, rgb(240,220,50) 70%, rgb(240,120,30) 85%, rgb(200,30,180) 100%); }
+    #legend-cloudtype .legend-bar { background: linear-gradient(to right, rgb(0,80,0) 0%, rgb(0,150,200) 15%, rgb(100,200,255) 30%, rgb(255,255,255) 45%, rgb(255,200,0) 60%, rgb(255,0,0) 75%, rgb(150,150,150) 90%, rgb(200,200,200) 100%); }
+    #legend-precip .legend-bar { background: linear-gradient(to right, rgb(0,0,255) 0%, rgb(0,100,255) 10%, rgb(0,200,200) 30%, rgb(0,255,0) 50%, rgb(255,255,0) 70%, rgb(255,100,0) 85%, rgb(255,0,0) 100%); }
+    #legend-oca .legend-bar { background: linear-gradient(to right, rgb(50,50,50) 0%, rgb(0,100,255) 25%, rgb(255,255,255) 50%, rgb(100,200,100) 75%, rgb(200,100,200) 100%); }
+    #legend-olr .legend-bar { background: linear-gradient(to right, rgb(255,50,0) 0%, rgb(150,50,150) 50%, rgb(0,50,255) 100%); }
+    #legend-lightning .legend-bar { background: linear-gradient(to right, rgb(0,0,0) 0%, rgb(255,255,0) 50%, rgb(255,0,0) 100%); }
+
+    @media (max-width: 768px) {
+      .layer-toggle { bottom: 14px; padding: 4px 6px; max-width: 98%; }
+      .layer-btn { font-size: 6px; padding: 3px 5px; }
+      .legend { width: 110px; bottom: 70px; right: 10px; padding: 6px 10px 8px 10px; }
+      .legend-title { font-size: 6px; }
+      .legend-labels { font-size: 6px; }
+      .preloader-inner { max-width: 280px; gap: 20px; }
+      .preloader-ring { width: 38px; height: 38px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- PANTALLA DE CÀRREGA: tapa el mapa fins que totes les capes estan llestes -->
+  <div id="preloader">
+    <div class="preloader-inner">
+      <div class="preloader-mark">
+        <div class="preloader-ring"></div>
+      </div>
+      <div>
+        <div class="preloader-title">Tempestes.cat</div>
+      </div>
+      <div class="preloader-progress-track">
+        <div class="preloader-progress-fill" id="preloader-fill"></div>
+      </div>
+      <div class="preloader-subtitle" id="preloader-subtitle">Connectant amb el satèl·lit...</div>
+      <div class="preloader-steps" id="preloader-steps">
+        <span class="preloader-step" data-step="image">Satèl·lit</span>
+        <span class="preloader-step" data-step="ir">IR</span>
+        <span class="preloader-step" data-step="ctth_alti">Altura</span>
+        <span class="preloader-step" data-step="precip">Precipitació</span>
+        <span class="preloader-step" data-step="lightning_acc">Llamps</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- HUD -->
+  <div class="hud">
+    <div class="hud-row">
+      <span class="hud-title">Tempestes.cat</span>
+      <span class="hud-time" id="hud-time">--:--</span>
+    </div>
+    <div class="hud-status">
+      <span class="dot loading" id="status-dot"></span>
+      <span id="status-text">Carregant...</span>
+    </div>
+  </div>
+
+  <!-- BOTONS -->
+  <div class="layer-toggle">
+    <button class="layer-btn active" data-layer="image">Satèl·lit</button>
+    <button class="layer-btn" data-layer="ir">Satèl·lit IR</button>
+    <button class="layer-btn" data-layer="ctth_alti">Altura dels núvols</button>
+    <button class="layer-btn" data-layer="precip">Força de la precipitació mm/h</button>
+    <button class="layer-btn" data-layer="lightning_acc">Llamps</button>
+  </div>
+
+  <!-- LLEGENDES -->
+  <div class="legend" id="legend-ir"><p class="legend-title">Temperatura IR</p><div class="legend-bar"></div><div class="legend-labels"><span>-80°C</span><span>0°C</span><span>50°C</span></div></div>
+  <div class="legend" id="legend-temp"><p class="legend-title">CTTH Temperatura</p><div class="legend-bar"></div><div class="legend-labels"><span>-80°C</span><span>0°C</span><span>50°C</span></div></div>
+  <div class="legend" id="legend-alti"><p class="legend-title">CTTH Altura</p><div class="legend-bar"></div><div class="legend-labels"><span>0 m</span><span>8.000 m</span><span>16.000 m</span></div></div>
+  <div class="legend" id="legend-cloudtype"><p class="legend-title">Cloud Type</p><div class="legend-bar"></div><div class="legend-labels"><span>Clear</span><span>Storm</span></div></div>
+  <div class="legend" id="legend-precip"><p class="legend-title">Precipitació</p><div class="legend-bar"></div><div class="legend-labels"><span>0</span><span>25</span><span>50 mm/h</span></div></div>
+  <div class="legend" id="legend-oca"><p class="legend-title">OCA</p><div class="legend-bar"></div><div class="legend-labels"><span>Phase</span><span>COT</span><span>CER</span></div></div>
+  <div class="legend" id="legend-olr"><p class="legend-title">OLR</p><div class="legend-bar"></div><div class="legend-labels"><span>100</span><span>225</span><span>350</span></div></div>
+  <div class="legend" id="legend-lightning"><p class="legend-title">Llamps acumulats</p><div class="legend-bar"></div><div class="legend-labels"><span>0</span><span>5</span><span>10+</span></div></div>
+
+  <script src="dades/towns_NE.js"></script>
+  <script src="js/mapasatelit.js"></script>
+
+</body>
+</html>
