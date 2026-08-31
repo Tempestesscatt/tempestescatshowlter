@@ -28,6 +28,14 @@ jobs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
 
     steps:
+      - name: Configurar Git per submòduls SSH
+        run: |
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
+        # El runner de GitHub Actions reescriu per defecte les URLs SSH cap a
+        # HTTPS durant el checkout, cosa que trenca l'ús de la deploy key SSH
+        # per al submòdul privat. Aquest pas ho evita: força que qualsevol URL
+        # "https://github.com/..." es tracti com "git@github.com:...".
+
       - name: Clonar repositori
         uses: actions/checkout@v4
         with:
