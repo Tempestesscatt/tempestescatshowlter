@@ -128,6 +128,10 @@
       background: rgba(239,83,80,0.06);
       text-decoration: line-through;
     }
+    .preloader-step.pending {
+      color: #4a5a75;
+      border-color: rgba(255,255,255,0.06);
+    }
 
     /* ───────── HUD ───────── */
     .hud {
@@ -207,7 +211,8 @@
       backdrop-filter: blur(16px);
       border: 1px solid rgba(255,255,255,0.08);
       color: #e8edf5;
-      font-size: 22px;
+      font-size: 20px;
+      font-weight: 300;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -215,6 +220,7 @@
       transition: all 0.3s ease;
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
       user-select: none;
+      letter-spacing: 2px;
     }
     .menu-toggle:hover {
       background: rgba(79,195,247,0.15);
@@ -243,7 +249,7 @@
       transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 2px;
     }
     .side-panel.open {
       transform: translateX(0);
@@ -433,10 +439,10 @@
       <div class="preloader-subtitle" id="preloader-subtitle">Connectant amb el satèl·lit...</div>
       <div class="preloader-steps" id="preloader-steps">
         <span class="preloader-step" data-step="image">Satèl·lit</span>
-        <span class="preloader-step" data-step="ir">IR</span>
-        <span class="preloader-step" data-step="ctth_alti">Altura</span>
+        <span class="preloader-step" data-step="ir">Infraroig</span>
+        <span class="preloader-step" data-step="ctth_alti">Altura núvols</span>
         <span class="preloader-step" data-step="precip">Precipitació</span>
-
+        <span class="preloader-step" data-step="lightning_acc">Llamps</span>
       </div>
     </div>
   </div>
@@ -460,27 +466,43 @@
     <svg viewBox="0 0 24 24">
       <path d="M19 12H5M12 19l-7-7 7-7"/>
     </svg>
-    <span>Tornar a Tempestes.cat</span>
+    <span>Tornar</span>
   </a>
 
   <!-- BOTÓ MENÚ (3 punts) -->
-  <button class="menu-toggle" id="menuToggle" aria-label="Menú capes">⋮</button>
+  <button class="menu-toggle" id="menuToggle" aria-label="Menú capes">⋯</button>
 
   <!-- PANELL LATERAL -->
   <div class="side-panel" id="sidePanel">
     <div class="panel-title">Capes disponibles</div>
     <button class="layer-btn active" data-layer="image">Satèl·lit</button>
-    <button class="layer-btn" data-layer="ir">IR Temperatura</button>
-    <button class="layer-btn" data-layer="ctth_alti">Altura núvols</button>
+    <button class="layer-btn" data-layer="ir">Infraroig</button>
+    <button class="layer-btn" data-layer="ctth_alti">Altura dels núvols</button>
     <button class="layer-btn" data-layer="precip">Precipitació</button>
-    
+    <button class="layer-btn" data-layer="lightning_acc">Llamps</button>
   </div>
 
   <!-- LLEGENDES -->
-  <div class="legend" id="legend-ir"><p class="legend-title">Temperatura IR</p><div class="legend-bar"></div><div class="legend-labels"><span>-80°C</span><span>-40°C</span><span>50°C</span></div></div>
-  <div class="legend" id="legend-alti"><p class="legend-title">Altura núvols</p><div class="legend-bar"></div><div class="legend-labels"><span>0 m</span><span>8.000 m</span><span>16.000 m</span></div></div>
-  <div class="legend" id="legend-precip"><p class="legend-title">Precipitació</p><div class="legend-bar"></div><div class="legend-labels"><span>0</span><span>25</span><span>50 mm/h</span></div></div>
-  <div class="legend" id="legend-lightning"><p class="legend-title">Llamps acumulats</p><div class="legend-bar"></div><div class="legend-labels"><span>0</span><span>5</span><span>10+</span></div></div>
+  <div class="legend" id="legend-ir">
+    <p class="legend-title">Temperatura infraroja</p>
+    <div class="legend-bar"></div>
+    <div class="legend-labels"><span>-80 °C</span><span>-40 °C</span><span>50 °C</span></div>
+  </div>
+  <div class="legend" id="legend-alti">
+    <p class="legend-title">Altura dels núvols</p>
+    <div class="legend-bar"></div>
+    <div class="legend-labels"><span>0 m</span><span>8.000 m</span><span>16.000 m</span></div>
+  </div>
+  <div class="legend" id="legend-precip">
+    <p class="legend-title">Precipitació</p>
+    <div class="legend-bar"></div>
+    <div class="legend-labels"><span>0 mm/h</span><span>25 mm/h</span><span>50 mm/h</span></div>
+  </div>
+  <div class="legend" id="legend-lightning">
+    <p class="legend-title">Llamps acumulats</p>
+    <div class="legend-bar"></div>
+    <div class="legend-labels"><span>0</span><span>5</span><span>10+</span></div>
+  </div>
 
   <script src="dades/towns_NE.js"></script>
   <script src="js/mapasatelit.js"></script>
@@ -488,9 +510,9 @@
   <script>
     // ─── MENÚ LATERAL ───
     (function() {
-      const menuToggle = document.getElementById('menuToggle');
-      const sidePanel = document.getElementById('sidePanel');
-      let isOpen = false;
+      var menuToggle = document.getElementById('menuToggle');
+      var sidePanel = document.getElementById('sidePanel');
+      var isOpen = false;
 
       menuToggle.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -499,7 +521,6 @@
         menuToggle.classList.toggle('active', isOpen);
       });
 
-      // Tancar al fer clic fora
       document.addEventListener('click', function(e) {
         if (isOpen && !sidePanel.contains(e.target) && e.target !== menuToggle) {
           isOpen = false;
@@ -508,12 +529,10 @@
         }
       });
 
-      // Sincronitzar botons del panell amb els del JS
       document.addEventListener('DOMContentLoaded', function() {
-        const panelBtns = sidePanel.querySelectorAll('.layer-btn');
+        var panelBtns = sidePanel.querySelectorAll('.layer-btn');
         panelBtns.forEach(function(btn) {
           btn.addEventListener('click', function() {
-            // Tancar el menú en mòbils
             if (window.innerWidth <= 768) {
               isOpen = false;
               sidePanel.classList.remove('open');
@@ -521,12 +540,6 @@
             }
           });
         });
-
-        // Observar canvis de classe activa des del JS principal
-        const observer = new MutationObserver(function() {
-          // No cal fer res, el JS principal ja gestiona les classes
-        });
-        observer.observe(sidePanel, { attributes: true, attributeFilter: ['class'] });
       });
     })();
   </script>
