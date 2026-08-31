@@ -818,7 +818,6 @@ function updateHudTime(timestamp) {
   dom.hudTime.textContent = formatHoraMadrid(timestamp);
 }
 
-// ─── Cargar una capa individual (només si no està carregada) ───
 async function loadLayer(key, url, buildFn) {
   // Si ja està carregada, no la tornem a carregar
   if (layerLoaded[key]) {
@@ -826,15 +825,25 @@ async function loadLayer(key, url, buildFn) {
     return true;
   }
   
+  // Noms amigables per a l'usuari
+  var friendlyNames = {
+    'image': 'imatge',
+    'ir': 'infraroig',
+    'ctth_alti': 'altura dels núvols',
+    'precip': 'precipitació',
+    'lightning_acc': 'llamps'
+  };
+  var displayName = friendlyNames[key] || key;
+  
   try {
-    setStatus('loading', 'Carregant ' + key + '...');
+    setStatus('loading', 'Carregant ' + displayName + '...');
     var payload = await fetchAndDecode(url);
     var dataUrl = buildFn(payload);
     currentPayloads[key] = payload;
     setOverlay(key, dataUrl, payload.bbox, CONFIG.defaultOpacity);
     updateHudTime(payload.timestamp);
     layerLoaded[key] = true;
-    console.log('✅ Capa ' + key + ' carregada correctament');
+    console.log('Capa ' + key + ' carregada correctament');
     return true;
   } catch (err) {
     console.warn('Error carregant ' + key + ':', err.message);
