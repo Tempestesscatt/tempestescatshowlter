@@ -2,7 +2,7 @@
 <html lang="ca">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Tempestes.cat — Meteosat</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -152,43 +152,174 @@
     .dot.error { background: #ef5350; }
     @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.3;transform:scale(0.8)} }
 
-    .layer-toggle {
+    /* ───────── BOTÓ TORNAR ───────── */
+    .back-btn {
       position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 1000;
+      top: 16px;
+      right: 16px;
+      z-index: 1001;
+      background: rgba(10, 14, 26, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 8px 14px;
+      color: #e8edf5;
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      text-decoration: none;
+    }
+    .back-btn:hover {
+      background: rgba(79,195,247,0.15);
+      border-color: rgba(79,195,247,0.3);
+      transform: translateY(-1px);
+    }
+    .back-btn:active {
+      transform: scale(0.95);
+    }
+    .back-btn svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* ───────── MENÚ LATERAL (3 punts) ───────── */
+    .menu-toggle {
+      position: absolute;
+      bottom: 80px;
+      left: 16px;
+      z-index: 1001;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
       background: rgba(10, 14, 26, 0.85);
       backdrop-filter: blur(16px);
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 12px;
-      padding: 5px 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #e8edf5;
+      font-size: 22px;
+      cursor: pointer;
       display: flex;
-      gap: 3px;
-      flex-wrap: wrap;
+      align-items: center;
       justify-content: center;
-      max-width: 95%;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      user-select: none;
     }
-    .layer-btn {
+    .menu-toggle:hover {
+      background: rgba(79,195,247,0.15);
+      border-color: rgba(79,195,247,0.3);
+    }
+    .menu-toggle.active {
+      background: rgba(79,195,247,0.2);
+      border-color: #4fc3f7;
+    }
+
+    /* ───────── PANELL LATERAL ───────── */
+    .side-panel {
+      position: absolute;
+      bottom: 130px;
+      left: 16px;
+      z-index: 1000;
+      background: rgba(10, 14, 26, 0.92);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 12px 10px;
+      min-width: 160px;
+      max-width: 200px;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+      transform: translateX(-110%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .side-panel.open {
+      transform: translateX(0);
+    }
+    .side-panel .panel-title {
+      font-size: 8px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #4a5a75;
+      padding: 0 4px 6px 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      margin-bottom: 3px;
+    }
+    .side-panel .layer-btn {
       background: transparent;
       border: none;
       color: #7a8ba8;
-      font-size: 7px;
+      font-size: 9px;
       font-weight: 500;
       font-family: inherit;
-      padding: 4px 7px;
-      border-radius: 5px;
+      padding: 8px 10px;
+      border-radius: 8px;
       cursor: pointer;
       transition: all 0.2s ease;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      text-align: left;
       white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .layer-btn:hover { color: #e8edf5; background: rgba(255,255,255,0.04); }
-    .layer-btn.active { background: #4fc3f7; color: #0a0e1a; }
-    .layer-btn.unavailable { opacity: 0.2; cursor: not-allowed; text-decoration: line-through; }
+    .side-panel .layer-btn::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #4a5a75;
+      transition: background 0.3s ease;
+      flex-shrink: 0;
+    }
+    .side-panel .layer-btn:hover {
+      color: #e8edf5;
+      background: rgba(255,255,255,0.04);
+    }
+    .side-panel .layer-btn.active {
+      color: #4fc3f7;
+      background: rgba(79,195,247,0.08);
+    }
+    .side-panel .layer-btn.active::before {
+      background: #4fc3f7;
+      box-shadow: 0 0 12px rgba(79,195,247,0.3);
+    }
+    .side-panel .layer-btn.unavailable {
+      opacity: 0.2;
+      cursor: not-allowed;
+      text-decoration: line-through;
+    }
+    .side-panel .layer-btn.loading-layer {
+      opacity: 0.7;
+      cursor: wait;
+    }
+    .side-panel .layer-btn.loading-layer::after {
+      content: '';
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-left: auto;
+      border: 2px solid #4fc3f7;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: layer-spin 0.8s linear infinite;
+    }
+    @keyframes layer-spin {
+      to { transform: rotate(360deg); }
+    }
 
+    /* ───────── LLEGENDES ───────── */
     .legend {
       position: absolute;
       bottom: 80px;
@@ -208,29 +339,85 @@
     .legend-bar { height: 6px; border-radius: 3px; margin-bottom: 2px; }
     .legend-labels { display: flex; justify-content: space-between; font-size: 7px; color: #7a8ba8; }
 
-    #legend-ir .legend-bar { background: linear-gradient(to right, rgb(255,0,0) 0%, rgb(255,100,0) 15%, rgb(255,200,0) 30%, rgb(200,255,0) 45%, rgb(0,200,200) 60%, rgb(0,100,255) 75%, rgb(100,50,200) 85%, rgb(50,50,50) 100%); }
-    #legend-temp .legend-bar { background: linear-gradient(to right, #ffffff 0%, #000000 100%); }
-    #legend-alti .legend-bar { background: linear-gradient(to right, rgb(30,60,150) 0%, rgb(30,160,200) 25%, rgb(60,200,90) 50%, rgb(240,220,50) 70%, rgb(240,120,30) 85%, rgb(200,30,180) 100%); }
-    #legend-cloudtype .legend-bar { background: linear-gradient(to right, rgb(0,80,0) 0%, rgb(0,150,200) 15%, rgb(100,200,255) 30%, rgb(255,255,255) 45%, rgb(255,200,0) 60%, rgb(255,0,0) 75%, rgb(150,150,150) 90%, rgb(200,200,200) 100%); }
-    #legend-precip .legend-bar { background: linear-gradient(to right, rgb(0,0,255) 0%, rgb(0,100,255) 10%, rgb(0,200,200) 30%, rgb(0,255,0) 50%, rgb(255,255,0) 70%, rgb(255,100,0) 85%, rgb(255,0,0) 100%); }
-    #legend-oca .legend-bar { background: linear-gradient(to right, rgb(50,50,50) 0%, rgb(0,100,255) 25%, rgb(255,255,255) 50%, rgb(100,200,100) 75%, rgb(200,100,200) 100%); }
-    #legend-olr .legend-bar { background: linear-gradient(to right, rgb(255,50,0) 0%, rgb(150,50,150) 50%, rgb(0,50,255) 100%); }
-    #legend-lightning .legend-bar { background: linear-gradient(to right, rgb(0,0,0) 0%, rgb(255,255,0) 50%, rgb(255,0,0) 100%); }
+    #legend-ir .legend-bar { background: linear-gradient(to right, rgb(10,10,10) 0%, rgb(255,255,255) 40%, rgb(255,255,0) 55%, rgb(255,0,0) 70%, rgb(150,0,150) 85%, rgb(255,255,255) 100%); }
+    #legend-alti .legend-bar { background: linear-gradient(to right, rgb(0,30,80) 0%, rgb(0,150,190) 25%, rgb(60,200,80) 45%, rgb(255,190,20) 65%, rgb(255,60,20) 80%, rgb(200,80,220) 100%); }
+    #legend-precip .legend-bar { background: linear-gradient(to right, rgb(120,190,235) 0%, rgb(0,160,90) 25%, rgb(150,210,20) 45%, rgb(255,175,15) 65%, rgb(230,40,30) 85%, rgb(220,60,220) 100%); }
+    #legend-lightning .legend-bar { background: linear-gradient(to right, rgb(255,255,120) 0%, rgb(255,175,15) 30%, rgb(235,60,15) 55%, rgb(170,10,90) 80%, rgb(255,255,255) 100%); }
 
+    /* ───────── RESPONSIVE ───────── */
     @media (max-width: 768px) {
-      .layer-toggle { bottom: 14px; padding: 4px 6px; max-width: 98%; }
-      .layer-btn { font-size: 6px; padding: 3px 5px; }
-      .legend { width: 110px; bottom: 70px; right: 10px; padding: 6px 10px 8px 10px; }
+      .hud {
+        top: 12px;
+        left: 12px;
+        padding: 6px 10px;
+        min-width: 80px;
+      }
+      .hud-title { font-size: 8px; }
+      .hud-time { font-size: 10px; }
+      .hud-status { font-size: 8px; }
+
+      .back-btn {
+        top: 12px;
+        right: 12px;
+        padding: 6px 10px;
+        font-size: 10px;
+        border-radius: 8px;
+      }
+      .back-btn span { display: none; }
+      .back-btn svg { width: 16px; height: 16px; }
+
+      .menu-toggle {
+        bottom: 70px;
+        left: 12px;
+        width: 38px;
+        height: 38px;
+        font-size: 18px;
+      }
+
+      .side-panel {
+        bottom: 115px;
+        left: 12px;
+        min-width: 130px;
+        max-width: 160px;
+        padding: 10px 8px;
+        border-radius: 12px;
+      }
+      .side-panel .layer-btn {
+        font-size: 8px;
+        padding: 6px 8px;
+      }
+
+      .legend {
+        width: 110px;
+        bottom: 70px;
+        right: 10px;
+        padding: 6px 10px 8px 10px;
+        border-radius: 8px;
+      }
       .legend-title { font-size: 6px; }
       .legend-labels { font-size: 6px; }
+
       .preloader-inner { max-width: 280px; gap: 20px; }
       .preloader-ring { width: 38px; height: 38px; }
+    }
+
+    @media (max-width: 480px) {
+      .hud { top: 8px; left: 8px; padding: 5px 8px; min-width: 60px; }
+      .hud-title { font-size: 7px; }
+      .hud-time { font-size: 9px; }
+      .hud-status { font-size: 7px; }
+
+      .back-btn { top: 8px; right: 8px; padding: 4px 8px; }
+      .menu-toggle { bottom: 60px; left: 8px; width: 34px; height: 34px; font-size: 16px; }
+      .side-panel { bottom: 100px; left: 8px; min-width: 110px; max-width: 140px; padding: 8px 6px; }
+      .side-panel .layer-btn { font-size: 7px; padding: 5px 6px; }
+      .legend { width: 90px; bottom: 60px; right: 6px; padding: 4px 8px 6px 8px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- PANTALLA DE CÀRREGA: tapa el mapa fins que totes les capes estan llestes -->
+  <!-- PANTALLA DE CÀRREGA -->
   <div id="preloader">
     <div class="preloader-inner">
       <div class="preloader-mark">
@@ -267,27 +454,81 @@
     </div>
   </div>
 
-  <!-- BOTONS -->
-  <div class="layer-toggle">
-    <button class="layer-btn active" data-layer="image">Satèl·lit</button>
-    <button class="layer-btn" data-layer="ir">Satèl·lit IR</button>
-    <button class="layer-btn" data-layer="ctth_alti">Altura dels núvols</button>
-    <button class="layer-btn" data-layer="precip">Força de la precipitació mm/h</button>
-    <button class="layer-btn" data-layer="lightning_acc">Llamps</button>
+  <!-- BOTÓ TORNAR -->
+  <a href="https://tempestes.cat/" class="back-btn" title="Tornar a Tempestes.cat">
+    <svg viewBox="0 0 24 24">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+    <span>Tornar</span>
+  </a>
+
+  <!-- BOTÓ MENÚ (3 punts) -->
+  <button class="menu-toggle" id="menuToggle" aria-label="Menú capes">⋮</button>
+
+  <!-- PANELL LATERAL -->
+  <div class="side-panel" id="sidePanel">
+    <div class="panel-title">Capes disponibles</div>
+    <button class="layer-btn active" data-layer="image">📡 Satèl·lit</button>
+    <button class="layer-btn" data-layer="ir">🌡️ IR Temperatura</button>
+    <button class="layer-btn" data-layer="ctth_alti">☁️ Altura núvols</button>
+    <button class="layer-btn" data-layer="precip">🌧️ Precipitació</button>
+    <button class="layer-btn" data-layer="lightning_acc">⚡ Llamps</button>
   </div>
 
   <!-- LLEGENDES -->
-  <div class="legend" id="legend-ir"><p class="legend-title">Temperatura IR</p><div class="legend-bar"></div><div class="legend-labels"><span>-80°C</span><span>0°C</span><span>50°C</span></div></div>
-  <div class="legend" id="legend-temp"><p class="legend-title">CTTH Temperatura</p><div class="legend-bar"></div><div class="legend-labels"><span>-80°C</span><span>0°C</span><span>50°C</span></div></div>
-  <div class="legend" id="legend-alti"><p class="legend-title">CTTH Altura</p><div class="legend-bar"></div><div class="legend-labels"><span>0 m</span><span>8.000 m</span><span>16.000 m</span></div></div>
-  <div class="legend" id="legend-cloudtype"><p class="legend-title">Cloud Type</p><div class="legend-bar"></div><div class="legend-labels"><span>Clear</span><span>Storm</span></div></div>
+  <div class="legend" id="legend-ir"><p class="legend-title">Temperatura IR</p><div class="legend-bar"></div><div class="legend-labels"><span>-80°C</span><span>-40°C</span><span>50°C</span></div></div>
+  <div class="legend" id="legend-alti"><p class="legend-title">Altura núvols</p><div class="legend-bar"></div><div class="legend-labels"><span>0 m</span><span>8.000 m</span><span>16.000 m</span></div></div>
   <div class="legend" id="legend-precip"><p class="legend-title">Precipitació</p><div class="legend-bar"></div><div class="legend-labels"><span>0</span><span>25</span><span>50 mm/h</span></div></div>
-  <div class="legend" id="legend-oca"><p class="legend-title">OCA</p><div class="legend-bar"></div><div class="legend-labels"><span>Phase</span><span>COT</span><span>CER</span></div></div>
-  <div class="legend" id="legend-olr"><p class="legend-title">OLR</p><div class="legend-bar"></div><div class="legend-labels"><span>100</span><span>225</span><span>350</span></div></div>
   <div class="legend" id="legend-lightning"><p class="legend-title">Llamps acumulats</p><div class="legend-bar"></div><div class="legend-labels"><span>0</span><span>5</span><span>10+</span></div></div>
 
   <script src="dades/towns_NE.js"></script>
   <script src="js/mapasatelit.js"></script>
+
+  <script>
+    // ─── MENÚ LATERAL ───
+    (function() {
+      const menuToggle = document.getElementById('menuToggle');
+      const sidePanel = document.getElementById('sidePanel');
+      let isOpen = false;
+
+      menuToggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        isOpen = !isOpen;
+        sidePanel.classList.toggle('open', isOpen);
+        menuToggle.classList.toggle('active', isOpen);
+      });
+
+      // Tancar al fer clic fora
+      document.addEventListener('click', function(e) {
+        if (isOpen && !sidePanel.contains(e.target) && e.target !== menuToggle) {
+          isOpen = false;
+          sidePanel.classList.remove('open');
+          menuToggle.classList.remove('active');
+        }
+      });
+
+      // Sincronitzar botons del panell amb els del JS
+      document.addEventListener('DOMContentLoaded', function() {
+        const panelBtns = sidePanel.querySelectorAll('.layer-btn');
+        panelBtns.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            // Tancar el menú en mòbils
+            if (window.innerWidth <= 768) {
+              isOpen = false;
+              sidePanel.classList.remove('open');
+              menuToggle.classList.remove('active');
+            }
+          });
+        });
+
+        // Observar canvis de classe activa des del JS principal
+        const observer = new MutationObserver(function() {
+          // No cal fer res, el JS principal ja gestiona les classes
+        });
+        observer.observe(sidePanel, { attributes: true, attributeFilter: ['class'] });
+      });
+    })();
+  </script>
 
 </body>
 </html>
