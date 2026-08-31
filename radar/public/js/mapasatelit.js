@@ -285,7 +285,7 @@ function dibujarFronteras(geojsonData) {
   if (borderLayer) { map.removeLayer(borderLayer); borderLayer = null; }
   if (!geojsonData) return;
   borderLayer = L.geoJSON(geojsonData, {
-    style: { color: '#494949', weight: 1.2, opacity: 0.5, fill: false },
+    style: { color: '#2b2a2a', weight: 1.2, opacity: 0.5, fill: false },
     interactive: false,
     zIndex: 3,
   }).addTo(map);
