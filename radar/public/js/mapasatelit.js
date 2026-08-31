@@ -10,7 +10,6 @@ const CONFIG = {
   irDataUrl: R2_BASE + 'meteosat_ne_spain_temp.msgpack.gz',
   ctthAltiDataUrl: R2_BASE + 'meteosat_ne_spain_ctth_alti.msgpack.gz',
   precipDataUrl: R2_BASE + 'meteosat_ne_spain_precip.msgpack.gz',
-  lightningAccDataUrl: R2_BASE + 'meteosat_ne_spain_lightning_acc.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
   bbox: {
