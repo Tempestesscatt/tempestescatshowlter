@@ -28,21 +28,36 @@ jobs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
 
     steps:
-      - name: Configurar Git per submòduls SSH
-        run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
-        # El runner de GitHub Actions reescriu per defecte les URLs SSH cap a
-        # HTTPS durant el checkout, cosa que trenca l'ús de la deploy key SSH
-        # per al submòdul privat. Aquest pas ho evita: força que qualsevol URL
-        # "https://github.com/..." es tracti com "git@github.com:...".
-
-      - name: Clonar repositori
+      - name: Clonar repositori (sense submòduls)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          ssh-key: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+          submodules: false
         # Nota: com que ja no commitegem dades, aquest checkout es manté
         # lleuger sempre (no acumula history de fitxers binaris).
+        # IMPORTANT: no passem 'ssh-key' aquí. Si li passéssim la deploy key
+        # del submòdul privat, actions/checkout l'aplicaria també per clonar
+        # AQUEST repo (el públic), i com que la deploy key només té permisos
+        # sobre 'radar-privat', el checkout del repo principal fallaria amb
+        # "Permission denied". Per això el submòdul es clona a part, més avall.
+
+      - name: Configurar clau SSH per al submòdul privat
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SUBMODULE_DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes"
+        # Aquesta clau (deploy key, només lectura) s'aplica ara a QUALSEVOL
+        # clonatge SSH posterior en aquest job, incloent el submòdul d'aquí
+        # sota. Com que el checkout del repo principal ja s'ha fet abans
+        # (pas anterior), no hi ha conflicte.
+
+      - name: Inicialitzar submòdul privat (scripts-privats)
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+        # Clona 'scripts-privats' (repo privat) fent servir la clau SSH
+        # configurada al pas anterior.
         # 'submodules: recursive' + 'ssh-key' clonen també scripts-privats
         # (repo privat) fent servir la deploy key configurada com a secret
         # SUBMODULE_DEPLOY_KEY (Settings > Secrets and variables > Actions).
