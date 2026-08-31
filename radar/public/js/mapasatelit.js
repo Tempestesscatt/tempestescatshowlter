@@ -5,6 +5,7 @@
 
 const R2_BASE = 'https://radar-data.tempestes.cat/dades_sat/';
 
+// ─── CONFIG ───
 const CONFIG = {
   dataUrl: R2_BASE + 'meteosat_ne_spain.msgpack.gz',
   irDataUrl: R2_BASE + 'meteosat_ne_spain_temp.msgpack.gz',
@@ -22,7 +23,7 @@ const CONFIG = {
 
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
-  defaultOpacity: 75,  
+  defaultOpacity: 0.75,  // ← 75% de opacidad (valor 0-1)
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts
@@ -817,18 +818,21 @@ function buildIrDataUrl(p) { return buildValueGridDataUrl(p, irToColor); }
 function buildCtthAltiDataUrl(p) { return buildValueGridDataUrl(p, altiToColor); }
 function buildPrecipDataUrl(p) { return buildValueGridDataUrl(p, precipToColor); }
 function buildLightningAccDataUrl(p) { return buildValueGridDataUrl(p, lightningAccToColor); }
-
-// ─── setOverlay ───
 function setOverlay(key, dataUrl, bbox, opacity) {
-  var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
+  var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, 
+      lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
   var bounds = [[lat_min, lon_min], [lat_max, lon_max]];
+  
   if (overlays[key]) {
     overlays[key].setUrl(dataUrl);
     overlays[key].setBounds(bounds);
+    // ★ Aplicar opacidad también en actualizaciones
+    overlays[key].setOpacity(opacity);
     return overlays[key];
   }
+  
   overlays[key] = L.imageOverlay(dataUrl, bounds, {
-    opacity: CONFIG.defaultOpacity,
+    opacity: opacity,
     interactive: false,
     zIndex: 2,
   });
