@@ -41,16 +41,24 @@ jobs:
         # "Permission denied". Per això el submòdul es clona a part, més avall.
 
       - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          echo "${{ secrets.SUBMODULE_DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 700 ~/.ssh
+          # Escrivim la clau amb printf des d'una variable d'entorn (no amb
+          # echo dins de ${{ }} directament al YAML): així evitem que GitHub
+          # Actions interpreti o retalli els salts de línia del secret, que
+          # és la causa més habitual de "Permission denied" tot i tenir la
+          # deploy key ben configurada.
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes"
-        # Aquesta clau (deploy key, només lectura) s'aplica ara a QUALSEVOL
-        # clonatge SSH posterior en aquest job, incloent el submòdul d'aquí
-        # sota. Com que el checkout del repo principal ja s'ha fet abans
-        # (pas anterior), no hi ha conflicte.
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+          # Comprovació immediata: si la clau és invàlida o no té accés,
+          # ho veurem aquí abans d'arribar al submodule update.
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -T git@github.com || true
 
       - name: Inicialitzar submòdul privat (scripts-privats)
         run: |
