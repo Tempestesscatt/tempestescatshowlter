@@ -199,6 +199,8 @@
     _map: null,
     _onFrameChange: null,  // callback opcional (per actualitzar HUD hora)
     _timeEl: null,         // element HTML on es mostra l'hora del frame actual
+    _isPlaying: false,     // si l'animacio automatica esta en marxa
+    _onPlayStateChange: null, // callback opcional (per actualitzar boto play/pause)
 
     isLoaded() {
       return this._loaded;
@@ -268,22 +270,69 @@
       this._onFrameChange = onFrameChange || null;
       if (!this._loaded || this._frames.length === 0) return;
 
-      // Comença sempre mostrant l'instant mes recent (ultim del
-      // array, ja que _frames va d'antic a nou) i engega l'animacio
-      // tot seguit en automatic, sense esperar cap clic ni fletxa.
+      // Comença mostrant l'instant mes recent (ultim del array, ja
+      // que _frames va d'antic a nou), en ESTATIC. No s'anima fins
+      // que l'usuari premi play o una fletxa manualment.
       this._animIndex = this._frames.length - 1;
       this._showFrame(this._animIndex);
-      this._startAnimation();
     },
 
     // Treu l'overlay del mapa i atura l'animacio (pero manté les
     // dades en cache per si es torna a activar la capa).
     detach() {
       this._stopAnimation();
+      this._isPlaying = false;
+      if (this._onPlayStateChange) this._onPlayStateChange(false);
       if (this._overlay && this._map && this._map.hasLayer(this._overlay)) {
         this._map.removeLayer(this._overlay);
       }
       if (this._timeEl) this._timeEl.textContent = '';
+    },
+
+    // ─── Controls manuals (fletxes + play/pause) ───
+
+    // Avança un frame cap al mes nou (cronologicament endavant).
+    // Fa wrap: des del mes nou torna al mes antic.
+    stepForward() {
+      if (!this._loaded || this._frames.length === 0) return;
+      this._animIndex = (this._animIndex + 1) % this._frames.length;
+      this._showFrame(this._animIndex);
+    },
+
+    // Retrocedeix un frame cap al mes antic (cronologicament enrere).
+    // Fa wrap: des del mes antic salta al mes nou.
+    stepBackward() {
+      if (!this._loaded || this._frames.length === 0) return;
+      this._animIndex = (this._animIndex - 1 + this._frames.length) % this._frames.length;
+      this._showFrame(this._animIndex);
+    },
+
+    isPlaying() {
+      return this._isPlaying;
+    },
+
+    // Vincula un callback opcional que s'avisa quan l'estat play/
+    // pause canvia (per exemple, per commutar la icona del boto).
+    setPlayStateCallback(cb) {
+      this._onPlayStateChange = cb || null;
+    },
+
+    play() {
+      if (!this._loaded || this._frames.length === 0) return;
+      this._isPlaying = true;
+      if (this._onPlayStateChange) this._onPlayStateChange(true);
+      this._startAnimation();
+    },
+
+    pause() {
+      this._isPlaying = false;
+      if (this._onPlayStateChange) this._onPlayStateChange(false);
+      this._stopAnimation();
+    },
+
+    togglePlay() {
+      if (this._isPlaying) this.pause();
+      else this.play();
     },
 
     _showFrame(index) {

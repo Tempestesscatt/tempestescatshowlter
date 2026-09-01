@@ -255,6 +255,40 @@
 
     .radar-panel-sub { font-size: 9px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
 
+    /* Controls manuals d'animacio del radar (fletxes + play/pause).
+       Nomes es mostren quan el radar esta actiu; s'afegeixen/treuen
+       via JS (display none/flex) des de mapasatelit.js. */
+    .radar-controls {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line-soft);
+    }
+    .radar-ctrl-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      color: var(--text-primary);
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .radar-ctrl-btn:hover { background: rgba(79,216,247,0.15); border-color: rgba(79,216,247,0.3); }
+    .radar-ctrl-btn:active { transform: scale(0.92); }
+    .radar-ctrl-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    .radar-ctrl-btn.play-btn { color: var(--cyan); }
+    .radar-ctrl-btn.play-btn.is-playing { background: rgba(79,216,247,0.2); border-color: rgba(79,216,247,0.4); }
+    .radar-ctrl-btn.play-btn .icon-pause { display: none; }
+    .radar-ctrl-btn.play-btn.is-playing .icon-play { display: none; }
+    .radar-ctrl-btn.play-btn.is-playing .icon-pause { display: flex; }
+
     /* Barra de capes */
     .layer-dock {
       position: absolute;
@@ -599,6 +633,18 @@
       </label>
     </div>
     <div class="radar-panel-sub">Es superposa a qualsevol vista, en moviment</div>
+    <div class="radar-controls" id="radar-controls">
+      <button type="button" class="radar-ctrl-btn" id="radar-prev-btn" title="Frame anterior">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button type="button" class="radar-ctrl-btn play-btn" id="radar-play-btn" title="Animar / pausar">
+        <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="display:none;"><rect x="5" y="3" width="5" height="18"/><rect x="14" y="3" width="5" height="18"/></svg>
+      </button>
+      <button type="button" class="radar-ctrl-btn" id="radar-next-btn" title="Frame seguent">
+        <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
   </div>
 
   <!-- Barra de capes -->

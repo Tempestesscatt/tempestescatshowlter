@@ -201,6 +201,10 @@ const dom = {
   refreshCountdown: null,
   radarToggle: null,
   radarTime: null,
+  radarControls: null,
+  radarPrevBtn: null,
+  radarNextBtn: null,
+  radarPlayBtn: null,
 };
 
 let map = null;
@@ -926,12 +930,14 @@ async function toggleRadarOverlay(enabled) {
   if (!enabled) {
     if (window.RadarLayer) window.RadarLayer.detach();
     if (dom.legendRadar) dom.legendRadar.style.display = 'none';
+    if (dom.radarControls) dom.radarControls.style.display = 'none';
     return;
   }
 
   if (window.RadarLayer.isLoaded()) {
     window.RadarLayer.attach(map);
     if (dom.legendRadar) dom.legendRadar.style.display = 'block';
+    if (dom.radarControls) dom.radarControls.style.display = 'flex';
 
     // ← AQUÍ (rama: radar ya estaba cargado)
     window.StormAlert.attach(map);
@@ -956,6 +962,7 @@ async function toggleRadarOverlay(enabled) {
 
   window.RadarLayer.attach(map);
   if (dom.legendRadar) dom.legendRadar.style.display = 'block';
+  if (dom.radarControls) dom.radarControls.style.display = 'flex';
   setStatus('', 'Radar actiu');
 
   // ← Y AQUÍ (rama: radar se acaba de cargar por primera vez)
@@ -1136,10 +1143,17 @@ async function refreshCurrentLayer() {
   // load() perque cada refresc (manual o automatic) torni a
   // descarregar els 5 frames des de R2 sense fer servir cap dada
   // en cache (anticache massiu: mai es reutilitzen frames vells).
+  // Es respecta si l'usuari tenia l'animacio en marxa o en pausa:
+  // nomes es torna a engegar l'animacio si ja estava reproduint-se.
   if (radarOverlayEnabled && window.RadarLayer) {
+    var radarWasPlaying = window.RadarLayer.isPlaying();
     window.RadarLayer.detach();
     window.RadarLayer.load(true).then(function(ok) {
-      if (ok) window.RadarLayer.attach(map);
+      if (ok) {
+        window.RadarLayer.attach(map);
+        if (dom.radarControls) dom.radarControls.style.display = 'flex';
+        if (radarWasPlaying) window.RadarLayer.play();
+      }
     });
   }
 
@@ -1234,11 +1248,45 @@ function initApp() {
   dom.preloaderSteps = document.getElementById('preloader-steps');
   dom.radarToggle = document.getElementById('radar-toggle');
   dom.radarTime = document.getElementById('radar-time');
+  dom.radarControls = document.getElementById('radar-controls');
+  dom.radarPrevBtn = document.getElementById('radar-prev-btn');
+  dom.radarNextBtn = document.getElementById('radar-next-btn');
+  dom.radarPlayBtn = document.getElementById('radar-play-btn');
 
   // Vincula l'element on RadarLayer escriura l'hora de cada frame
   // mentre s'anima (al costat del toggle "Radar de pluja").
   if (window.RadarLayer && dom.radarTime) {
     window.RadarLayer.setTimeElement(dom.radarTime);
+  }
+
+  // Commuta la icona play/pause quan l'estat d'animacio canvia,
+  // tant si el canvi ve del boto com d'una fletxa manual.
+  if (window.RadarLayer && dom.radarPlayBtn) {
+    window.RadarLayer.setPlayStateCallback(function(isPlaying) {
+      dom.radarPlayBtn.classList.toggle('is-playing', isPlaying);
+    });
+  }
+
+  if (dom.radarPrevBtn) {
+    dom.radarPrevBtn.addEventListener('click', function() {
+      if (window.RadarLayer) {
+        window.RadarLayer.pause();
+        window.RadarLayer.stepBackward();
+      }
+    });
+  }
+  if (dom.radarNextBtn) {
+    dom.radarNextBtn.addEventListener('click', function() {
+      if (window.RadarLayer) {
+        window.RadarLayer.pause();
+        window.RadarLayer.stepForward();
+      }
+    });
+  }
+  if (dom.radarPlayBtn) {
+    dom.radarPlayBtn.addEventListener('click', function() {
+      if (window.RadarLayer) window.RadarLayer.togglePlay();
+    });
   }
 
   createRefreshButton();
