@@ -198,6 +198,7 @@
     _overlay: null,
     _map: null,
     _onFrameChange: null,  // callback opcional (per actualitzar HUD hora)
+    _timeEl: null,         // element HTML on es mostra l'hora del frame actual
 
     isLoaded() {
       return this._loaded;
@@ -209,9 +210,17 @@
 
     // Descarrega i processa els 5 frames. Nomes es fa la primera
     // vegada que s'activa la capa (com IR/precip a mapasatelit.js).
-    async load() {
-      if (this._loaded || this._loading) return this._loaded;
+    // Passar force=true ignora el cache intern i torna a descarregar
+    // els 5 frames encara que ja estiguessin carregats (anticache
+    // massiu: cada refresc obté dades noves de R2, mai les antigues).
+    async load(force) {
+      if (this._loading) return this._loaded;
+      if (this._loaded && !force) return true;
       this._loading = true;
+      if (force) {
+        this._loaded = false;
+        this._frames = [];
+      }
 
       const results = [];
       for (let n = 1; n <= RADAR_CONFIG.totalFrames; n++) {
@@ -266,6 +275,7 @@
       if (this._overlay && this._map && this._map.hasLayer(this._overlay)) {
         this._map.removeLayer(this._overlay);
       }
+      if (this._timeEl) this._timeEl.textContent = '';
     },
 
     _showFrame(index) {
@@ -294,6 +304,36 @@
       }
 
       if (this._onFrameChange) this._onFrameChange(frame.timestamp, index, this._frames.length);
+      this._updateTimeLabel(frame.timestamp);
+    },
+
+    // Escriu l'hora del frame actual a l'element HTML del costat del
+    // toggle (si existeix). Format Europe/Madrid, igual que la resta
+    // de l'app (formatHoraMadrid a mapasatelit.js).
+    _updateTimeLabel(timestamp) {
+      if (!this._timeEl || !timestamp) return;
+      try {
+        var raw = String(timestamp);
+        var tieneZona = /Z$|[+-]\d{2}:?\d{2}$/.test(raw.trim());
+        var iso = tieneZona ? raw : (raw.replace(' ', 'T') + 'Z');
+        var dt = new Date(iso);
+        if (Number.isNaN(dt.getTime())) dt = new Date(raw);
+        if (Number.isNaN(dt.getTime())) { this._timeEl.textContent = raw; return; }
+        var formatted = new Intl.DateTimeFormat('ca-ES', {
+          timeZone: 'Europe/Madrid',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(dt);
+        this._timeEl.textContent = formatted;
+      } catch (err) {
+        this._timeEl.textContent = timestamp;
+      }
+    },
+
+    // Vincula l'element HTML on es mostrarà l'hora de cada frame
+    // (cridat una vegada des de mapasatelit.js, al costat del toggle).
+    setTimeElement(el) {
+      this._timeEl = el || null;
     },
 
     _startAnimation() {

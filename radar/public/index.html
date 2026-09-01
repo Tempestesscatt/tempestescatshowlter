@@ -210,6 +210,19 @@
     .radar-panel-label svg { width: 15px; height: 15px; color: var(--cyan); flex-shrink: 0; }
     .radar-panel-text { font-size: 12px; font-weight: 600; color: var(--text-primary); }
 
+    /* Hora del frame de radar actiu, sota el text del toggle.
+       Nomes te contingut quan RadarLayer esta actiu i animant
+       (el JS l'omple/buida via setTimeElement a mapasatelit.js). */
+    .radar-panel-time {
+      display: block;
+      font-size: 9px;
+      color: var(--cyan);
+      font-variant-numeric: tabular-nums;
+      margin-top: 1px;
+      min-height: 11px;
+      line-height: 1.3;
+    }
+
     .switch {
       position: relative;
       width: 38px;
@@ -575,7 +588,10 @@
           <circle cx="12" cy="12" r="2"/>
           <path d="M12 2a10 10 0 0 1 10 10M12 6a6 6 0 0 1 6 6M12 2v0"/>
         </svg>
-        <span class="radar-panel-text">Radar de pluja</span>
+        <div>
+          <span class="radar-panel-text">Radar de pluja</span>
+          <span class="radar-panel-time" id="radar-time"></span>
+        </div>
       </div>
       <label class="switch">
         <input type="checkbox" id="radar-toggle" />
