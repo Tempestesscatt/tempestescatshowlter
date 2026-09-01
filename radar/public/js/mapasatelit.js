@@ -633,14 +633,13 @@ async function fetchAndDecode(url) {
 
 // ─── buildImageDataUrl ───
 const UPSCALE_FACTOR = 4;
-
 function buildImageDataUrl(payload) {
   var width = payload.width, height = payload.height, pixels = payload.pixels;
   if (!width || !height || !pixels) throw new Error('Payload invàlid');
   var rgbBytes = new Uint8Array(pixels);
   var expectedLength = width * height * 3;
   if (rgbBytes.length !== expectedLength) throw new Error('Mida incorrecta');
-
+ 
   var source = document.createElement('canvas');
   source.width = width;
   source.height = height;
@@ -653,72 +652,48 @@ function buildImageDataUrl(payload) {
     imageData.data[j + 3] = 255;
   }
   sourceCtx.putImageData(imageData, 0, 0);
-
-  var midFactor = Math.max(1, Math.round(UPSCALE_FACTOR / 2));
-  var mid = document.createElement('canvas');
-  mid.width = width * midFactor;
-  mid.height = height * midFactor;
-  var midCtx = mid.getContext('2d');
-  midCtx.imageSmoothingEnabled = true;
-  midCtx.imageSmoothingQuality = 'high';
-  midCtx.drawImage(source, 0, 0, mid.width, mid.height);
-
-  var upscaled = document.createElement('canvas');
-  upscaled.width = width * UPSCALE_FACTOR;
-  upscaled.height = height * UPSCALE_FACTOR;
-  var upscaledCtx = upscaled.getContext('2d');
-  upscaledCtx.imageSmoothingEnabled = true;
-  upscaledCtx.imageSmoothingQuality = 'high';
-  upscaledCtx.filter = 'contrast(1.06) saturate(1.08)';
-  upscaledCtx.drawImage(mid, 0, 0, upscaled.width, upscaled.height);
-  upscaledCtx.filter = 'none';
-
-  var result = upscaled.toDataURL('image/png', 1.0);
-
-  source.width = 0; source.height = 0;
-  mid.width = 0; mid.height = 0;
-  upscaled.width = 0; upscaled.height = 0;
-
-  return result;
-}
-
-function buildValueGridDataUrl(payload, colorFn) {
-  var width = payload.width, height = payload.height, values = payload.values;
-  if (!width || !height || !values) throw new Error('Payload invàlid');
-
-  var canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  var ctx = canvas.getContext('2d');
-  var imageData = ctx.createImageData(width, height);
-
-  for (var row = 0; row < height; row++) {
-    for (var col = 0; col < width; col++) {
-      var val = values[row]?.[col];
-      var color = colorFn(val);
-      var idx = (row * width + col) * 4;
-      imageData.data[idx] = color[0];
-      imageData.data[idx + 1] = color[1];
-      imageData.data[idx + 2] = color[2];
-      imageData.data[idx + 3] = color[3];
-    }
+ 
+  // ── NOU: usa HDEnhance si està disponible, sinó cau al mètode antic ──
+  var upscaled;
+  if (window.HDEnhance) {
+    upscaled = window.HDEnhance.upscaleWithSharpen(source, UPSCALE_FACTOR, {
+      amount: 0.9,
+      threshold: 2,
+      cssFilter: 'contrast(1.04) saturate(1.06)', // una mica més suau que abans
+                                                    // perquè el sharpen ja aporta contrast
+    });
+  } else {
+    // fallback: comportament original sense hd.js
+    var midFactor = Math.max(1, Math.round(UPSCALE_FACTOR / 2));
+    var mid = document.createElement('canvas');
+    mid.width = width * midFactor;
+    mid.height = height * midFactor;
+    var midCtx = mid.getContext('2d');
+    midCtx.imageSmoothingEnabled = true;
+    midCtx.imageSmoothingQuality = 'high';
+    midCtx.drawImage(source, 0, 0, mid.width, mid.height);
+ 
+    upscaled = document.createElement('canvas');
+    upscaled.width = width * UPSCALE_FACTOR;
+    upscaled.height = height * UPSCALE_FACTOR;
+    var upscaledCtx = upscaled.getContext('2d');
+    upscaledCtx.imageSmoothingEnabled = true;
+    upscaledCtx.imageSmoothingQuality = 'high';
+    upscaledCtx.filter = 'contrast(1.06) saturate(1.08)';
+    upscaledCtx.drawImage(mid, 0, 0, upscaled.width, upscaled.height);
+    upscaledCtx.filter = 'none';
+    mid.width = 0; mid.height = 0;
   }
-
-  ctx.putImageData(imageData, 0, 0);
-  var upscaled = document.createElement('canvas');
-  upscaled.width = width * UPSCALE_FACTOR;
-  upscaled.height = height * UPSCALE_FACTOR;
-  var upscaledCtx = upscaled.getContext('2d');
-  upscaledCtx.imageSmoothingEnabled = true;
-  upscaledCtx.imageSmoothingQuality = 'high';
-  upscaledCtx.drawImage(canvas, 0, 0, upscaled.width, upscaled.height);
+ 
   var result = upscaled.toDataURL('image/png', 1.0);
-
-  canvas.width = 0; canvas.height = 0;
+ 
+  source.width = 0; source.height = 0;
   upscaled.width = 0; upscaled.height = 0;
-
+ 
   return result;
 }
+
+
 
 // ─── Funciones build para cada capa ───
 function buildIrDataUrl(p) { return buildValueGridDataUrl(p, irToColor); }
