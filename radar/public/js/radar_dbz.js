@@ -15,11 +15,10 @@
 
 (function (global) {
 
-  // Mentre no estigui pujat a R2, es llegeix en local des de la
-  // carpeta germana radar/public/dades_rad/. Quan es mogui a R2,
-  // nomes cal canviar aquesta constant pel domini corresponent
-  // (igual que R2_BASE a mapasatelit.js).
-  const RADAR_BASE = '/radar/public/dades_rad/';
+  // Dades servides des de R2 (mateix bucket/domini que fa servir
+  // mapasatelit.js per al satelit, pero amb prefix dades_rad/ en
+  // lloc de dades_sat/).
+  const RADAR_BASE = 'https://radar-data.tempestes.cat/dades_rad/';
 
   const RADAR_CONFIG = {
     framePattern: RADAR_BASE + 'meteorad_ne_spain_dbz_frame_{n}.msgpack.gz',
