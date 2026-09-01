@@ -12,12 +12,12 @@ const CONFIG = {
   precipDataUrl: R2_BASE + 'meteosat_ne_spain_precip.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
-  bbox: {
-    lon_min: -4.545066,
+bbox: {
+    lon_min: -4.554099,
     lat_min: 35.901552,
-    lon_max: 5.012116,
+    lon_max: 5.003083,
     lat_max: 45.302098,
-  },
+},
 
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
@@ -205,6 +205,7 @@ const dom = {
   radarPrevBtn: null,
   radarNextBtn: null,
   radarPlayBtn: null,
+  radarOnlyBtn: null,
 };
 
 let map = null;
@@ -236,6 +237,24 @@ let layerLoaded = {
 // altura, precipitació, llamps) amb un toggle, no és una capa mes
 // de la llista exclusiva.
 let radarOverlayEnabled = false;
+
+// Quan "Nomes radar" es activat, posa a 0 l'opacitat de la capa de
+// fons activa (satelit/IR/altura/precip/llamps) perque nomes es
+// vegi el radar per sobre del mapa base (hillshade + fronteres).
+// Es manté sincronitzat si l'usuari canvia de capa o refresca
+// mentre l'opcio esta activa.
+let onlyRadarEnabled = false;
+
+function applyOnlyRadarOpacity() {
+  if (!overlays[activeLayer]) return;
+  overlays[activeLayer].setOpacity(onlyRadarEnabled ? 0 : CONFIG.defaultOpacity);
+}
+
+function toggleOnlyRadar(enabled) {
+  onlyRadarEnabled = enabled;
+  if (dom.radarOnlyBtn) dom.radarOnlyBtn.classList.toggle('is-active', enabled);
+  applyOnlyRadarOpacity();
+}
 
 // ─── Cargar towns ───
 function cargarTowns() {
@@ -748,6 +767,7 @@ function showActiveLayer() {
     borderLayer.addTo(map);
     borderLayer.setZIndex(3);
   }
+  applyOnlyRadarOpacity();
 }
 
 // ─── loadAllLayers ───
@@ -931,6 +951,7 @@ async function toggleRadarOverlay(enabled) {
     if (window.RadarLayer) window.RadarLayer.detach();
     if (dom.legendRadar) dom.legendRadar.style.display = 'none';
     if (dom.radarControls) dom.radarControls.style.display = 'none';
+    if (onlyRadarEnabled) toggleOnlyRadar(false);
     return;
   }
 
@@ -1252,6 +1273,7 @@ function initApp() {
   dom.radarPrevBtn = document.getElementById('radar-prev-btn');
   dom.radarNextBtn = document.getElementById('radar-next-btn');
   dom.radarPlayBtn = document.getElementById('radar-play-btn');
+  dom.radarOnlyBtn = document.getElementById('radar-only-btn');
 
   // Vincula l'element on RadarLayer escriura l'hora de cada frame
   // mentre s'anima (al costat del toggle "Radar de pluja").
@@ -1286,6 +1308,11 @@ function initApp() {
   if (dom.radarPlayBtn) {
     dom.radarPlayBtn.addEventListener('click', function() {
       if (window.RadarLayer) window.RadarLayer.togglePlay();
+    });
+  }
+  if (dom.radarOnlyBtn) {
+    dom.radarOnlyBtn.addEventListener('click', function() {
+      toggleOnlyRadar(!onlyRadarEnabled);
     });
   }
 
