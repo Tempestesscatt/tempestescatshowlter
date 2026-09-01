@@ -248,7 +248,12 @@
         return false;
       }
 
-      this._frames = results;
+      // results ve ordenat frame_1 (mes nou) ... frame_5 (mes antic).
+      // Es capgira perque l'animacio flueixi cronologicament: index 0
+      // = mes antic, ultim index = mes nou. Aixi l'animacio avança
+      // "cap endavant en el temps" i acaba sempre a l'instant mes
+      // recent abans de tornar a començar pel mes antic.
+      this._frames = results.reverse();
       this._loaded = true;
       this._loading = false;
       return true;
@@ -263,7 +268,10 @@
       this._onFrameChange = onFrameChange || null;
       if (!this._loaded || this._frames.length === 0) return;
 
-      this._animIndex = 0;
+      // Comença sempre mostrant l'instant mes recent (ultim del
+      // array, ja que _frames va d'antic a nou) i engega l'animacio
+      // tot seguit en automatic, sense esperar cap clic ni fletxa.
+      this._animIndex = this._frames.length - 1;
       this._showFrame(this._animIndex);
       this._startAnimation();
     },
@@ -339,8 +347,10 @@
     _startAnimation() {
       this._stopAnimation();
       this._animTimer = setInterval(() => {
-        // Animacio cap enrere en el temps (index 0 = mes recent) i
-        // despres torna a l'inici: 1(nou)->2->3->4->5(vell)->1...
+        // Animacio cap endavant en el temps: com _frames va d'antic
+        // (index 0) a nou (ultim index), sumar 1 avança cronologi-
+        // cament. Quan arriba al mes nou, fa wrap al mes antic i
+        // torna a començar: antic->...->nou->antic->...
         this._animIndex = (this._animIndex + 1) % this._frames.length;
         this._showFrame(this._animIndex);
       }, RADAR_CONFIG.animIntervalMs);
