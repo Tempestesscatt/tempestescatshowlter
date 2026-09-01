@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-// mapasatelit.js - VERSIÓN BETA LIMPIA
-// Tempestes.cat - Meteosat MTG
+// mapasatelit.js - VERSIÓ AMB LLAMPS INTEGRATS
+// Tempestes.cat - Meteosat MTG + Blitzortung
 // ─────────────────────────────────────────────────────────────
 
 const R2_BASE = 'https://radar-data.tempestes.cat/dades_sat/';
@@ -21,7 +21,7 @@ bbox: {
 
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
-  defaultOpacity: 0.75,
+  defaultOpacity: 0.9,
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts
@@ -632,7 +632,7 @@ async function fetchAndDecode(url) {
 }
 
 // ─── buildImageDataUrl ───
-const UPSCALE_FACTOR = 4;
+const UPSCALE_FACTOR = 2;
 function buildImageDataUrl(payload) {
   var width = payload.width, height = payload.height, pixels = payload.pixels;
   if (!width || !height || !pixels) throw new Error('Payload invàlid');
@@ -645,25 +645,148 @@ function buildImageDataUrl(payload) {
   source.height = height;
   var sourceCtx = source.getContext('2d');
   var imageData = sourceCtx.createImageData(width, height);
-  for (var i = 0, j = 0; i < rgbBytes.length; i += 3, j += 4) {
-    imageData.data[j] = rgbBytes[i];
-    imageData.data[j + 1] = rgbBytes[i + 1];
-    imageData.data[j + 2] = rgbBytes[i + 2];
-    imageData.data[j + 3] = 255;
+  
+  // ================================================================
+  // AJUSTOS DE COLOR - CONFIGURACIÓ ACTUAL
+  // ================================================================
+  //   Brillo: 2.15          | Contraste: 0.82
+  //   Saturación: 1.29      | Tono (Hue): 17°
+  //   Gamma: 0.96           | Exposición: -0.80
+  //   Sombras: 0.14         | Luces: 0.15
+  //   Vibrancia: 0.88       | Blanco/negro: 0.00
+  //   Opacidad: 222         | Desenfoque: 0.7px
+  //   Contraste CSS: 1.19   | Saturación CSS: 0.81
+  // ================================================================
+  
+  // ─── FUNCIONS D'AJUT ──────────────────────────────────────
+  function clamp(val) { return Math.max(0, Math.min(255, val)); }
+  
+  function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b);
+    var h, s, v = max;
+    var d = max - min;
+    s = max === 0 ? 0 : d / max;
+    if (max === min) { h = 0; }
+    else {
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h /= 6;
+    }
+    return { h: h, s: s, v: v };
   }
+  
+  function hsvToRgb(h, s, v) {
+    var r, g, b;
+    var i = Math.floor(h * 6);
+    var f = h * 6 - i;
+    var p = v * (1 - s);
+    var q = v * (1 - f * s);
+    var t = v * (1 - (1 - f) * s);
+    switch (i % 6) {
+      case 0: r = v; g = t; b = p; break;
+      case 1: r = q; g = v; b = p; break;
+      case 2: r = p; g = v; b = t; break;
+      case 3: r = p; g = q; b = v; break;
+      case 4: r = t; g = p; b = v; break;
+      case 5: r = v; g = p; b = q; break;
+    }
+    return { r: r * 255, g: g * 255, b: b * 255 };
+  }
+  
+  // ─── PROCESSAMENT DE PÍXELS ─────────────────────────────
+  for (var i = 0, j = 0; i < rgbBytes.length; i += 3, j += 4) {
+    var r = rgbBytes[i];
+    var g = rgbBytes[i + 1];
+    var b = rgbBytes[i + 2];
+    
+    // ─── 1. EXPOSICIÓ (-0.80) ───
+    var exposureFactor = Math.pow(2, -0.80);
+    r = r * exposureFactor;
+    g = g * exposureFactor;
+    b = b * exposureFactor;
+    
+    // ─── 2. GAMMA (0.96) ───
+    var gammaInv = 1 / 0.96;
+    r = Math.pow(Math.min(1, r / 255), gammaInv) * 255;
+    g = Math.pow(Math.min(1, g / 255), gammaInv) * 255;
+    b = Math.pow(Math.min(1, b / 255), gammaInv) * 255;
+    
+    // ─── 3. BRIGHTNESS (2.15) ───
+    r = r * 2.15;
+    g = g * 2.15;
+    b = b * 2.15;
+    
+    // ─── 4. CONTRAST (0.82) ───
+    var contrastVal = 0.82;
+    r = ((r / 255 - 0.5) * contrastVal + 0.5) * 255;
+    g = ((g / 255 - 0.5) * contrastVal + 0.5) * 255;
+    b = ((b / 255 - 0.5) * contrastVal + 0.5) * 255;
+    
+    // ─── 5. SATURATION (1.29) ───
+    var gray = (r + g + b) / 3;
+    var satVal = 1.29;
+    r = gray + (r - gray) * satVal;
+    g = gray + (g - gray) * satVal;
+    b = gray + (b - gray) * satVal;
+    
+    // ─── 6. VIBRANCE (0.88) ───
+    var vibVal = 0.88;
+    var avg = (r + g + b) / 3;
+    r = avg + (r - avg) * vibVal;
+    g = avg + (g - avg) * vibVal;
+    b = avg + (b - avg) * vibVal;
+    
+    // ─── 7. HUE (17°) ───
+    var hsv = rgbToHsv(r, g, b);
+    hsv.h = (hsv.h + 17/360) % 1;
+    var rgb2 = hsvToRgb(hsv.h, hsv.s, hsv.v);
+    r = rgb2.r; g = rgb2.g; b = rgb2.b;
+    
+    // ─── 8. SHADOWS (0.14) ───
+    var shVal = 0.14;
+    if (r < 128) r = r + (128 - r) * shVal * (1 - r/128);
+    if (g < 128) g = g + (128 - g) * shVal * (1 - g/128);
+    if (b < 128) b = b + (128 - b) * shVal * (1 - b/128);
+    
+    // ─── 9. HIGHLIGHTS (0.15) ───
+    var hlVal = 0.15;
+    if (r > 128) r = r + (255 - r) * hlVal * ((r-128)/127);
+    if (g > 128) g = g + (255 - g) * hlVal * ((g-128)/127);
+    if (b > 128) b = b + (255 - b) * hlVal * ((b-128)/127);
+    
+    // ─── 10. GRAYSCALE (0.00) ───
+    var gray2 = (r + g + b) / 3;
+    var gsVal = 0.00;
+    r = r + (gray2 - r) * gsVal;
+    g = g + (gray2 - g) * gsVal;
+    b = b + (gray2 - b) * gsVal;
+    
+    // ─── 11. CLAMP ───
+    r = clamp(r);
+    g = clamp(g);
+    b = clamp(b);
+    
+    // ─── 12. OPACITAT (222) ───
+    imageData.data[j] = Math.round(r);
+    imageData.data[j + 1] = Math.round(g);
+    imageData.data[j + 2] = Math.round(b);
+    imageData.data[j + 3] = 222;
+  }
+  
   sourceCtx.putImageData(imageData, 0, 0);
  
-  // ── NOU: usa HDEnhance si està disponible, sinó cau al mètode antic ──
+  // ─── UPSCALING ────────────────────────────────────────────
   var upscaled;
   if (window.HDEnhance) {
     upscaled = window.HDEnhance.upscaleWithSharpen(source, UPSCALE_FACTOR, {
       amount: 0.9,
-      threshold: 2,
-      cssFilter: 'contrast(1.04) saturate(1.06)', // una mica més suau que abans
-                                                    // perquè el sharpen ja aporta contrast
+      threshold: 1,
+      cssFilter: 'contrast(1.19) saturate(0.81) blur(0.7px)',
     });
   } else {
-    // fallback: comportament original sense hd.js
+    // Fallback sense HDEnhance
     var midFactor = Math.max(1, Math.round(UPSCALE_FACTOR / 2));
     var mid = document.createElement('canvas');
     mid.width = width * midFactor;
@@ -679,7 +802,7 @@ function buildImageDataUrl(payload) {
     var upscaledCtx = upscaled.getContext('2d');
     upscaledCtx.imageSmoothingEnabled = true;
     upscaledCtx.imageSmoothingQuality = 'high';
-    upscaledCtx.filter = 'contrast(1.06) saturate(1.08)';
+    upscaledCtx.filter = 'contrast(1.19) saturate(0.81) blur(0.7px)';
     upscaledCtx.drawImage(mid, 0, 0, upscaled.width, upscaled.height);
     upscaledCtx.filter = 'none';
     mid.width = 0; mid.height = 0;
@@ -692,7 +815,6 @@ function buildImageDataUrl(payload) {
  
   return result;
 }
-
 
 
 // ─── Funciones build para cada capa ───
@@ -843,7 +965,7 @@ async function switchLayer(layerName) {
   dom.layerButtons.forEach(function(btn) {
     if (btn.dataset.layer === layerName) {
       btn.classList.add('loading-layer');
-      btn.textContent = '⏳ Carregant...';
+      btn.textContent = ' Carregant...';
     }
   });
 
@@ -1227,6 +1349,101 @@ function scheduleNextAutoRefresh() {
   }, AUTO_REFRESH_MS);
 }
 
+// ═════════════════════════════════════════════════════════════
+// INTEGRACIÓ DE LLAMPS (Blitzortung) - VERSIÓ FINAL
+// ═════════════════════════════════════════════════════════════
+
+// Funció per carregar lightning.js dinàmicament
+function carregarLlamps() {
+  // Comprovar si ja està carregat
+  if (document.getElementById('lightning-script')) {
+    console.log('⚡ Llamps ja carregats');
+    return;
+  }
+  
+  // Comprovar que el mapa existeix i és vàlid
+  if (!window.map) {
+    console.log('⏳ Esperant mapa per carregar llamps...');
+    setTimeout(carregarLlamps, 500);
+    return;
+  }
+  
+  // Comprovar que el mapa té el mètode createPane
+  if (typeof window.map.createPane !== 'function') {
+    console.log('⏳ Esperant que el mapa estigui completament inicialitzat...');
+    setTimeout(carregarLlamps, 500);
+    return;
+  }
+  
+  // Comprovar que el contenidor del mapa existeix
+  if (!document.getElementById('map')) {
+    console.log('⏳ Esperant contenidor del mapa...');
+    setTimeout(carregarLlamps, 500);
+    return;
+  }
+  
+  // Crear l'script
+  var script = document.createElement('script');
+  script.id = 'lightning-script';
+  script.src = 'js/lightning.js';
+  script.async = true;
+  
+  script.onload = function() {
+    console.log('✅ Mòdul de llamps carregat correctament');
+    
+    // Disparar l'esdeveniment perquè lightning.js s'iniciï
+    var event = new Event('auth:autoritzat');
+    document.dispatchEvent(event);
+    
+    // Intentar inicialitzar manualment si no s'ha iniciat
+    setTimeout(function() {
+      if (typeof window.llamps !== 'undefined') {
+        console.log('⚡ Llamps disponibles. Utilitza llamps.toggle() per activar');
+      } else {
+        console.log('⚠️ El mòdul llamps no s\'ha inicialitzat. Intentant de nou...');
+        // Forçar inicialització
+        var event2 = new Event('auth:autoritzat');
+        document.dispatchEvent(event2);
+      }
+    }, 1000);
+  };
+  
+  script.onerror = function() {
+    console.warn('⚠️ No s\'ha pogut carregar lightning.js');
+    console.log('💡 Assegura\'t que el fitxer js/lightning.js existeix');
+  };
+  
+  document.head.appendChild(script);
+  console.log('⚡ Carregant mòdul de llamps...');
+}
+
+// Funció per verificar que el mapa està completament llest
+function verificarMapaPerLlamps() {
+  // Comprovar que el mapa existeix
+  if (!window.map) {
+    console.log('⏳ Esperant window.map...');
+    setTimeout(verificarMapaPerLlamps, 500);
+    return;
+  }
+  
+  // Comprovar que el mapa té el mètode createPane
+  if (typeof window.map.createPane !== 'function') {
+    console.log('⏳ Esperant que map.createPane estigui disponible...');
+    setTimeout(verificarMapaPerLlamps, 500);
+    return;
+  }
+  
+  // Comprovar que el contenidor del mapa existeix
+  if (!document.getElementById('map')) {
+    console.log('⏳ Esperant contenidor del mapa...');
+    setTimeout(verificarMapaPerLlamps, 500);
+    return;
+  }
+  
+  console.log('✅ Mapa completament llest! Carregant llamps...');
+  carregarLlamps();
+}
+
 // ─── Inici ───
 function initApp() {
   dom.statusDot = document.getElementById('status-dot');
@@ -1302,13 +1519,31 @@ function initApp() {
     });
   }
 
-  console.log('Tempestes.cat - Meteosat MTG');
+  // ═══ CARREGAR LLAMPS ═══
+  // Esperar que el mapa estigui llest abans de carregar llamps
+  setTimeout(function() {
+    if (window.map) {
+      carregarLlamps();
+    } else {
+      console.log('⏳ Esperant mapa per carregar llamps...');
+      var checkMap = setInterval(function() {
+        if (window.map) {
+          clearInterval(checkMap);
+          carregarLlamps();
+        }
+      }, 500);
+    }
+  }, 1000);
+
+  console.log('Tempestes.cat - Meteosat MTG + Llamps');
   console.log('Prem "L" per mostrar/ocultar etiquetes');
+  console.log('⚡ Activa els llamps des de la barra inferior');
   console.log('📡 Càrrega sota demanda: només es carrega la capa que es veu');
 }
 
 function initMapFirstLoad() {
-  map = L.map('map', {
+  // ─── PRIMER: Assignar window.map ───
+  window.map = L.map('map', {
     center: CONFIG.initialCenter,
     zoom: CONFIG.initialZoom,
     zoomControl: true,
@@ -1316,6 +1551,9 @@ function initMapFirstLoad() {
     attributionControl: true,
     zoomSnap: 0.5,
   });
+  
+  // ─── Assignar també a la variable local ───
+  map = window.map;
 
   var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
   var bounds = [[lat_min, lon_min], [lat_max, lon_max]];
@@ -1327,8 +1565,23 @@ function initMapFirstLoad() {
 
   map.fitBounds(bounds, { padding: [10, 10] });
 
+  // ═══ CREAR PANE PER LLAMPS (ara que el mapa ja existeix) ═══
+  try {
+    map.createPane('paneLlamps');
+    var paneLlamps = map.getPane('paneLlamps');
+    if (paneLlamps) {
+      paneLlamps.style.zIndex = 700;
+      paneLlamps.style.pointerEvents = 'none';
+    }
+    console.log('✅ Pane per llamps creat');
+  } catch (e) {
+    console.warn('⚠️ No s\'ha pogut crear pane per llamps:', e.message);
+  }
+
   cargarGeoJSON().then(dibujarFronteras);
   cargarTowns().then(function() { setTimeout(createLabelsFromTowns, 100); }).catch(function() { mostrarCapitalesPrincipales(); });
+
+
 
   var timeoutLabels = null;
   map.on('zoomend', function() {
@@ -1410,4 +1663,16 @@ function initMapFirstLoad() {
   return map;
 }
 
+// Iniciar quan el DOM estigui llest
 document.addEventListener('DOMContentLoaded', initApp);
+
+// Exposar funcions per la consola
+window.carregarLlamps = carregarLlamps;
+window.toggleLlamps = function() {
+  if (typeof toggleActiu !== 'undefined') {
+    toggleActiu();
+  } else {
+    console.log('⚠️ El mòdul de llamps no està carregat');
+    carregarLlamps();
+  }
+};

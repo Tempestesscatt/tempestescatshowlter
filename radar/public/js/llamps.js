@@ -1,7 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════
-//  lightning.js — LLAMPS EN DIRECTE (Blitzortung)
-//  Cada llamp dura 5 min a pantalla i es va esvaint fins desapareixer.
-//  Pensat per conviure amb radar.js: mateix estil de panes, bottombar, etc.
+//  llamps.js — LLAMPS EN DIRECTE (Blitzortung)
+//  Versió única. Connecta per WebSocket, filtra pel bbox del mapa
+//  (mateix bbox que CONFIG.bbox de mapasatelit.js) i cada llamp
+//  dura 5 min a pantalla, esvaint-se fins desaparèixer.
 // ═══════════════════════════════════════════════════════════════════════
 
 (function() {
@@ -15,8 +16,9 @@
     const RECONNECT_BASE_MS = 2000;
     const RECONNECT_MAX_MS = 20000;
 
-    // Zona de cobertura: Europa central (ampliada des del NE d'Espanya)
-    const BOUNDS = { latMin: 38.5, latMax: 45.0, lonMin: -2.0, lonMax: 5.0 };
+    // Bbox: mateixa zona que el mapa de satèl·lit (CONFIG.bbox a
+    // mapasatelit.js). Si aquell bbox canvia, actualitza aquí també.
+    const BOUNDS = { latMin: 35.901552, latMax: 45.302098, lonMin: -4.554099, lonMax: 5.003083 };
 
     let actiu = false;
     let map = null;
@@ -30,7 +32,7 @@
     let soundOn = true;
     let audioCtx = null;
 
-    console.log('[Llamps] Modul carregat');
+    console.log('[Llamps] Mòdul carregat');
 
     // ═══════════════════════════════════════════════════════════════════
     //  DECODIFICACIO LZW (format Blitzortung)
@@ -133,8 +135,8 @@
         const icon = L.divIcon({
             className: 'lg-strike-icon',
             html: html,
-            iconSize: [26, 26],
-            iconAnchor: [13, 13]
+            iconSize: [15, 15],
+            iconAnchor: [7, 7]
         });
 
         const marker = L.marker([lat, lon], {
@@ -236,7 +238,7 @@
         };
 
         ws.onerror = function() {
-            setStatusLlamps('Error de connexio');
+            setStatusLlamps('Error de connexió');
         };
     }
 
@@ -260,26 +262,26 @@
     // ═══════════════════════════════════════════════════════════════════
     //  ON / OFF
     // ═══════════════════════════════════════════════════════════════════
-function activar() {
-    actiu = true;
-    reconnectDelay = RECONNECT_BASE_MS;
-    connectWs();
-    actualitzarBotons();
-    // ═══ MOSTRAR ATRIBUCIÓ CC BY-SA 4.0 ═══
-    const attr = document.getElementById('lightningAttr');
-    if (attr) attr.classList.add('visible');
-}
+    function activar() {
+        actiu = true;
+        reconnectDelay = RECONNECT_BASE_MS;
+        connectWs();
+        actualitzarBotons();
+        const attr = document.getElementById('lightningAttr');
+        if (attr) attr.classList.add('visible');
+        const statusEl = document.getElementById('lgStatus');
+        if (statusEl) statusEl.style.display = 'block';
+    }
 
-function desactivar() {
-    actiu = false;
-    disconnectWs();
-    netejarTot();
-    setStatusLlamps('Llamps desactivats');
-    actualitzarBotons();
-    // ═══ AMAGAR ATRIBUCIÓ ═══
-    const attr = document.getElementById('lightningAttr');
-    if (attr) attr.classList.remove('visible');
-}
+    function desactivar() {
+        actiu = false;
+        disconnectWs();
+        netejarTot();
+        setStatusLlamps('Llamps desactivats');
+        actualitzarBotons();
+        const attr = document.getElementById('lightningAttr');
+        if (attr) attr.classList.remove('visible');
+    }
 
     function toggleActiu() {
         desbloquejarAudio();
@@ -293,14 +295,14 @@ function desactivar() {
     function toggleSo() {
         soundOn = !soundOn;
         const btn = document.getElementById('btnLlampsSo');
-        if (btn) btn.textContent = soundOn ? '🔊' : '🔇';
+        if (btn) btn.textContent = soundOn ? 'Amb so' : 'Sense so';
     }
 
     function actualitzarBotons() {
         const btnMode = document.getElementById('btnLlamps');
         const btnSo = document.getElementById('btnLlampsSo');
         if (btnMode) {
-            btnMode.textContent = actiu ? 'Llamps: ON' : 'Llamps: OFF';
+            btnMode.textContent = actiu ? ' Llamps: ON' : 'Llamps: OFF';
             btnMode.classList.toggle('active', actiu);
         }
         if (btnSo) {
@@ -335,31 +337,31 @@ function desactivar() {
         document.head.appendChild(style);
     }
 
-function crearIndicadorEstat() {
-    if (document.getElementById('lgStatus')) return;
-    const el = document.createElement('div');
-    el.id = 'lgStatus';
-    el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
-    
-    // ═══ ATRIBUCIÓ OBLIGATÒRIA CC BY-SA 4.0 ═══
-    const attr = document.createElement('div');
-    attr.id = 'lgAttribution';
-    attr.style.cssText = 'margin-top:6px;font-size:9px;color:#8b949e;line-height:1.3;';
-    attr.innerHTML = 'Dades: <a href="https://www.blitzortung.org" target="_blank" style="color:#8b949e;">Blitzortung.org</a> i col·laboradors · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" style="color:#8b949e;">CC BY-SA 4.0</a>';
-    el.appendChild(attr);
-    
-    const mapEl = document.getElementById('map');
-    (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
-    (mapEl || document.body).appendChild(el);
-}
+    function crearIndicadorEstat() {
+        if (document.getElementById('lgStatus')) return;
+        const el = document.createElement('div');
+        el.id = 'lgStatus';
+        el.innerHTML = '<span id="lgStatusText">Llamps desactivats</span>';
+
+        // Atribució CC BY-SA 4.0 (obligatòria per Blitzortung)
+        const attr = document.createElement('div');
+        attr.id = 'lgAttribution';
+        attr.style.cssText = 'margin-top:6px;font-size:9px;color:#8b949e;line-height:1.3;';
+        attr.innerHTML = 'Dades: <a href="https://www.blitzortung.org" target="_blank" style="color:#8b949e;">Blitzortung.org</a> i col·laboradors · <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" style="color:#8b949e;">CC BY-SA 4.0</a>';
+        el.appendChild(attr);
+
+        const mapEl = document.getElementById('map');
+        (mapEl ? mapEl.parentElement : document.body).style.position = 'relative';
+        (mapEl || document.body).appendChild(el);
+    }
 
     function initUI() {
-        const bb = document.getElementById('bottombar');
+        const bb = document.querySelector('.layer-dock') || document.getElementById('bottombar');
         if (!bb || document.getElementById('btnLlamps')) return;
 
         const btnMode = document.createElement('button');
         btnMode.id = 'btnLlamps';
-        btnMode.className = 'primary';
+        btnMode.className = 'layer-btn';
         btnMode.title = 'Activa/desactiva els llamps en directe (cada un dura 5 min)';
         btnMode.textContent = 'Llamps: OFF';
         btnMode.addEventListener('click', toggleActiu);
@@ -367,8 +369,9 @@ function crearIndicadorEstat() {
 
         const btnSo = document.createElement('button');
         btnSo.id = 'btnLlampsSo';
+        btnSo.className = 'layer-btn';
         btnSo.title = 'So de tro';
-        btnSo.textContent = '🔊';
+        btnSo.textContent = 'So';
         btnSo.style.display = 'none';
         btnSo.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -377,29 +380,76 @@ function crearIndicadorEstat() {
         bb.appendChild(btnSo);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    //  INICI
+    // ═══════════════════════════════════════════════════════════════════
+    var intentsInici = 0;
+    var maxIntentsInici = 20;
+
     function iniciar() {
-        map = window.map; // el mapa Leaflet ja creat per radar.js
-        if (!map) {
-            console.log('[Llamps] No trobo window.map, esperant...');
-            setTimeout(iniciar, 500);
+        intentsInici++;
+        if (!window.map) {
+            if (intentsInici < maxIntentsInici) setTimeout(iniciar, 500);
             return;
         }
-        map.createPane('paneLlamps');
-        map.getPane('paneLlamps').style.zIndex = 620;
-        map.getPane('paneLlamps').style.pointerEvents = 'auto';
+        map = window.map;
+        if (typeof map.createPane !== 'function') {
+            if (intentsInici < maxIntentsInici) setTimeout(iniciar, 500);
+            return;
+        }
 
-        injectarEstils();
-        crearIndicadorEstat();
-        initUI();
-
-        console.log('[Llamps] Inicialitzat');
+        try {
+            if (!map.getPane('paneLlamps')) {
+                map.createPane('paneLlamps');
+                var paneLlamps = map.getPane('paneLlamps');
+                if (paneLlamps) {
+                    paneLlamps.style.zIndex = 700;
+                    paneLlamps.style.pointerEvents = 'auto';
+                }
+            }
+            injectarEstils();
+            crearIndicadorEstat();
+            initUI();
+            console.log('[Llamps] ✅ Inicialitzat');
+        } catch (err) {
+            console.warn('[Llamps] Error:', err.message);
+            if (intentsInici < maxIntentsInici) setTimeout(iniciar, 1000);
+        }
     }
 
-    // S'inicia quan l'app ja esta autoritzada (mateix event que radar.js)
-    document.addEventListener('auth:autoritzat', iniciar);
+    // Múltiples estratègies d'inici (per conviure amb mapasatelit.js)
+    document.addEventListener('auth:autoritzat', function() { setTimeout(iniciar, 500); });
+    document.addEventListener('DOMContentLoaded', function() { setTimeout(iniciar, 1000); });
+    window.addEventListener('load', function() { setTimeout(iniciar, 500); });
 
-    window.addEventListener('beforeunload', function() {
-        disconnectWs();
-    });
+    if (document.readyState === 'complete') setTimeout(iniciar, 1000);
 
-})();    
+    var intentTimer = setInterval(function() {
+        if (window.map && typeof window.map.createPane === 'function') {
+            clearInterval(intentTimer);
+            iniciar();
+        }
+    }, 1000);
+
+    setTimeout(function() { clearInterval(intentTimer); }, 15000);
+
+    window.addEventListener('beforeunload', function() { disconnectWs(); });
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  EXPOSAR
+    // ═══════════════════════════════════════════════════════════════════
+    window.llamps = {
+        activar: activar,
+        desactivar: desactivar,
+        toggle: toggleActiu,
+        toggleSo: toggleSo,
+        estat: function() { return { actiu: actiu, soundOn: soundOn, strikes: strikes.length }; },
+        reiniciar: function() {
+            desactivar();
+            setTimeout(function() { activar(); }, 500);
+        },
+        _strikes: strikes
+    };
+
+    console.log('[Llamps] Llest! ⚡ llamps.toggle() per activar');
+})();
