@@ -199,6 +199,8 @@ const dom = {
   refreshBtn: null,
   refreshRing: null,
   refreshCountdown: null,
+  radarToggle: null,
+  radarTime: null,
 };
 
 let map = null;
@@ -1130,11 +1132,13 @@ async function refreshCurrentLayer() {
   if (isRefreshing) return;
 
   // Si l'overlay de radar està actiu, es refresca en paral·lel amb
-  // la capa de fons (són independents ara).
+  // la capa de fons (són independents ara). Es passa force=true a
+  // load() perque cada refresc (manual o automatic) torni a
+  // descarregar els 5 frames des de R2 sense fer servir cap dada
+  // en cache (anticache massiu: mai es reutilitzen frames vells).
   if (radarOverlayEnabled && window.RadarLayer) {
     window.RadarLayer.detach();
-    window.RadarLayer._loaded = false;
-    window.RadarLayer.load().then(function(ok) {
+    window.RadarLayer.load(true).then(function(ok) {
       if (ok) window.RadarLayer.attach(map);
     });
   }
@@ -1229,6 +1233,13 @@ function initApp() {
   dom.preloaderSubtitle = document.getElementById('preloader-subtitle');
   dom.preloaderSteps = document.getElementById('preloader-steps');
   dom.radarToggle = document.getElementById('radar-toggle');
+  dom.radarTime = document.getElementById('radar-time');
+
+  // Vincula l'element on RadarLayer escriura l'hora de cada frame
+  // mentre s'anima (al costat del toggle "Radar de pluja").
+  if (window.RadarLayer && dom.radarTime) {
+    window.RadarLayer.setTimeElement(dom.radarTime);
+  }
 
   createRefreshButton();
 
