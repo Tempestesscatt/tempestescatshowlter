@@ -203,46 +203,7 @@
         `<button type="button" class="sa-color-btn${c === this._currentColor ? ' active' : ''}" data-color="${c}" style="background:${c};"></button>`
       ).join('');
 
-      const palette = document.createElement('div');
-      palette.id = 'drawPalette';
-      palette.innerHTML = `
-        <div id="paletteHeader" class="sa-header">
-          <span>EINES DE DIBUIX</span>
-          <button type="button" id="closePaletteBtn" class="sa-icon-btn" title="Tancar">&times;</button>
-        </div>
-        <div class="sa-body">
-
-          <div class="sa-section-label">Forma</div>
-          <div class="sa-shape-grid">${shapeButtons}</div>
-
-          <div class="sa-section-label">Color</div>
-          <div class="sa-color-row">${colorButtons}</div>
-
-          <div class="sa-section-label">Missatge</div>
-          <input type="text" id="msgInputPalette" class="sa-text-input" placeholder="TEXT ALERTA" value="${this._currentMessage}" maxlength="40" />
-
-          <div class="sa-hint" id="drawStatusPalette">Selecciona una forma i clica al mapa per col·locar-la.</div>
-
-          <div class="sa-divider"></div>
-
-          <div class="sa-section-label">Alertes actives</div>
-          <div id="alertListPalette" class="sa-alert-list"><div class="sa-empty">Cap alerta</div></div>
-
-          <button type="button" id="clearAlertsPalette" class="sa-btn sa-btn-danger sa-btn-block">Eliminar totes les alertes</button>
-        </div>
-
-        <div id="editToolbar" class="sa-edit-toolbar" style="display:none;">
-          <div class="sa-edit-title">EDITANT FORMA</div>
-          <div class="sa-edit-hint">Arrossega el centre per moure-la, l'ansa lateral per rotar, l'ansa d'escala per canviar la mida, o cada vertex individualment.</div>
-          <div class="sa-edit-row">
-            <button type="button" id="confirmEditBtn" class="sa-btn sa-btn-primary">Confirmar</button>
-            <button type="button" id="cancelEditBtn" class="sa-btn sa-btn-secondary">Cancel·lar</button>
-          </div>
-          <div class="sa-edit-row" id="freeformRow" style="display:none;">
-            <button type="button" id="closeFreeformBtn" class="sa-btn sa-btn-secondary sa-btn-block">Tancar traçat</button>
-          </div>
-        </div>
-      `;
+      
 
       document.body.appendChild(palette);
       this._injectStyles();
