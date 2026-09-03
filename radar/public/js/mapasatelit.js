@@ -14,10 +14,10 @@ const CONFIG = {
   geojsonUrl: 'geo/spain.geojson',
 
 bbox: {
-    lon_min: -4.554099,
-    lat_min: 35.901552,
-    lon_max: 5.003083,
-    lat_max: 45.302098,
+    lon_min: -4.561660,
+    lat_min: 35.749154,
+    lon_max: 4.995522,
+    lat_max: 45.149700,
 },
 
   initialCenter: [40.5, 0.0],
