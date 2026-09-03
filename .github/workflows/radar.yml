@@ -45,7 +45,7 @@ env:
 jobs:
   satelite:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
 
     outputs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
