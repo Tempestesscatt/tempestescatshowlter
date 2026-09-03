@@ -374,6 +374,25 @@
     #legend-radar { bottom: 78px; }
     .legend[data-stacked="true"] { bottom: 156px; }
 
+    /* Atribucio EUMETSAT (obligatoria per llicencia Meteosat) */
+    .eumetsat-attribution {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      z-index: 999;
+      background: var(--bg-panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 5px 10px;
+      font-size: 9px;
+      color: var(--text-muted);
+      user-select: none;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+      line-height: 1.3;
+      pointer-events: none;
+    }
+
     /* Panell d'administracio */
     #adminPanel {
       position: absolute;
@@ -557,6 +576,8 @@
       .legend-title { font-size: 9px; }
       .legend-labels { font-size: 8px; }
 
+      .eumetsat-attribution { bottom: 10px; left: 10px; font-size: 8px; padding: 4px 8px; max-width: 130px; }
+
       #adminPanel { top: 60px; right: 10px; min-width: 180px; padding: 10px 12px; max-height: calc(100vh - 140px); }
       #adminPanel h4 { font-size: 12px; }
       #toggleAdminBtn { bottom: 56px; right: 10px; font-size: 10px; padding: 6px 10px; }
@@ -683,6 +704,11 @@
     <div class="legend-labels"><span>Feble</span><span>Moderat</span><span>Intens</span></div>
   </div>
 
+  <!-- Atribucio EUMETSAT (obligatoria segons llicencia Meteosat < 1h) -->
+  <div class="eumetsat-attribution" id="eumetsatAttribution">
+    This service is based on EUMETSAT Meteosat data <span id="eumetsatYear"></span>
+  </div>
+
   <!-- Panell d'administracio -->
   <div id="adminPanel">
     <h4>Administracio d'alertes</h4>
@@ -742,6 +768,9 @@
 
 
   <script>
+    // ─── Atribucio EUMETSAT: any dinamic ───
+    document.getElementById('eumetsatYear').textContent = new Date().getFullYear();
+
     // ─── Configuracio Firebase ───
     const ADMIN_UID = 'zD8SlXoDNOQCboc0JQ3zCnFza9W2';
 
