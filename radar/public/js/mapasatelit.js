@@ -13,13 +13,12 @@ const CONFIG = {
   lightningAccDataUrl: R2_BASE + 'meteosat_ne_spain_lightning_acc.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
-bbox: {
+  bbox: {
     lon_min: -4.561660,
     lat_min: 35.749154,
     lon_max: 4.995522,
     lat_max: 45.149700,
 },
-
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
   defaultOpacity: 0.9,
@@ -84,25 +83,25 @@ const STOPS_IR = [
 
   // Guardem la funció original de dibuixar fronteres
   var originalDibujarFronteras = window.dibujarFronteras || dibujarFronteras;
-  
+
   // Sobrescrivim la funció perquè el GeoJSON sigui blanc/gris a IR
   window.dibujarFronteras = function(geojsonData) {
-    if (borderLayer) { 
-      if (map && map.hasLayer) {
+    if (borderLayer) {
+       if (map && map.hasLayer) {
         try { map.removeLayer(borderLayer); } catch(e) {}
       }
-      borderLayer = null; 
-    }
+      borderLayer = null;
+     }
     if (!geojsonData) return;
-    
+        
     // Determinar si estem en mode IR
     var isIrMode = (activeLayer === 'ir');
-    
+        
     // Color per IR: blanc grisós, per altres capes: gris fosc
     var borderColor = isIrMode ? '#c8c8c8' : '#2b2a2a';
     var borderOpacity = isIrMode ? 0.6 : 0.5;
     var borderWeight = isIrMode ? 1.0 : 1.2;
-    
+        
     borderLayer = L.geoJSON(geojsonData, {
       style: { 
         color: borderColor, 
@@ -113,7 +112,7 @@ const STOPS_IR = [
       interactive: false,
       zIndex: 3,
     });
-    
+        
     if (map && map.addLayer) {
       borderLayer.addTo(map);
       borderLayer.setZIndex(3);
@@ -129,18 +128,18 @@ const STOPS_IR = [
         try { map.removeLayer(overlays[key]); } catch(e) {}
       }
     }
-    
+        
     // Mostrar la capa activa
     if (overlays[activeLayer]) {
       overlays[activeLayer].addTo(map);
     }
-    
+        
     // Si hi ha fronteres, actualitzar-les amb el color correcte
     if (borderLayer && map.hasLayer(borderLayer)) {
       try { map.removeLayer(borderLayer); } catch(e) {}
       borderLayer = null;
     }
-    
+        
     // Recarregar GeoJSON amb el color corresponent
     cargarGeoJSON().then(function(data) {
       if (data) {
@@ -149,7 +148,7 @@ const STOPS_IR = [
         var borderColor = isIrMode ? '#c8c8c8' : '#2b2a2a';
         var borderOpacity = isIrMode ? 0.6 : 0.5;
         var borderWeight = isIrMode ? 1.0 : 1.2;
-        
+                
         borderLayer = L.geoJSON(data, {
           style: { 
             color: borderColor, 
@@ -166,7 +165,7 @@ const STOPS_IR = [
         }
       }
     });
-    
+        
     applyOnlyRadarOpacity();
   };
 
@@ -232,7 +231,7 @@ const STOPS_IR = [
       for (var col = 0; col < width; col++) {
         var val = rowValues ? rowValues[col] : null;
         var baseColor = irToColor(val);
-        
+                
         // Si és transparent (sense dades), ho deixem igual
         if (baseColor[3] === 0) {
           var idx = (row * width + col) * 4;
@@ -349,7 +348,7 @@ const STOPS_IR = [
 
     console.log('🔄 Carregant capa sota demanda: ' + layerName);
     switchLayer._loading[layerName] = true;
-    
+        
     dom.layerButtons.forEach(function(btn) {
       if (btn.dataset.layer === layerName) {
         btn.classList.add('loading-layer');
@@ -372,14 +371,14 @@ const STOPS_IR = [
 
     try {
       var success = await loadLayer(layerName, config.url, config.build);
-      
+            
       if (success) {
         activeLayer = layerName;
         showActiveLayer();
         updateLayerButtonsUI();
         updateLegendVisibility(layerName);
         setStatus('', 'Capa ' + layerName + ' carregada');
-        
+                
         // Actualitzar fronteres segons la capa
         if (layerName === 'ir') {
           cargarGeoJSON().then(function(data) {
@@ -442,8 +441,7 @@ const STOPS_IR = [
     });
   };
 
- 
-})();
+  })();
 
 function irToColor(tempC) {
   if (tempC === null || tempC === undefined || Number.isNaN(tempC) || tempC <= -999) {
@@ -974,18 +972,34 @@ function getPixelInfoLines(lat, lng, layerKey) {
 }
 
 // ─── setOverlay ───
+// CORREGIT: abans aquesta funció ignorava per complet el paràmetre
+// 'bbox' (el bbox REAL que arriba en cada payload, calculat per
+// sat.py a partir de l'AreaDefinition real un cop feto el resample)
+// i sempre feia servir CONFIG.bbox, un valor fix hardcodejat al
+// frontend que no coincidia amb el bbox real -- especialment en
+// latitud (fins a ~2.35° de diferencia al sud, ~0.15° al nord).
+// Aixo desplaçava i deformava CADA capa (imatge, IR, altura,
+// precipitacio, llamps) respecte al GeoJSON de fronteres i al mapa
+// de fons, encara que aquest ultim estigues perfectament posicionat.
+//
+// Ara es fa servir sempre el bbox que ve DINS del payload de cada
+// capa, que es el que reflecteix la geometria real generada per
+// sat.py en aquell moment. CONFIG.bbox es manté només com a valor
+// de fallback per si algun payload antic no portés bbox (no hauria
+// de passar amb el format actual de sat.py).
 function setOverlay(key, dataUrl, bbox, opacity) {
-  var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, 
-      lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
+  var b = bbox || CONFIG.bbox;
+  var lon_min = b.lon_min, lat_min = b.lat_min,
+      lon_max = b.lon_max, lat_max = b.lat_max;
   var bounds = [[lat_min, lon_min], [lat_max, lon_max]];
-  
+    
   if (overlays[key]) {
     overlays[key].setUrl(dataUrl);
     overlays[key].setBounds(bounds);
     overlays[key].setOpacity(opacity);
     return overlays[key];
   }
-  
+    
   overlays[key] = L.imageOverlay(dataUrl, bounds, {
     opacity: opacity,
     interactive: false,
@@ -1024,7 +1038,7 @@ function buildImageDataUrl(payload) {
   var rgbBytes = new Uint8Array(pixels);
   var expectedLength = width * height * 3;
   if (rgbBytes.length !== expectedLength) throw new Error('Mida incorrecta');
- 
+  
   var source = document.createElement('canvas');
   source.width = width;
   source.height = height;
@@ -1161,7 +1175,7 @@ function buildImageDataUrl(payload) {
   }
   
   sourceCtx.putImageData(imageData, 0, 0);
- 
+  
   // ─── UPSCALING ────────────────────────────────────────────
   var upscaled;
   if (window.HDEnhance) {
@@ -1180,7 +1194,7 @@ function buildImageDataUrl(payload) {
     midCtx.imageSmoothingEnabled = true;
     midCtx.imageSmoothingQuality = 'high';
     midCtx.drawImage(source, 0, 0, mid.width, mid.height);
- 
+    
     upscaled = document.createElement('canvas');
     upscaled.width = width * UPSCALE_FACTOR;
     upscaled.height = height * UPSCALE_FACTOR;
@@ -1192,12 +1206,12 @@ function buildImageDataUrl(payload) {
     upscaledCtx.filter = 'none';
     mid.width = 0; mid.height = 0;
   }
- 
+  
   var result = upscaled.toDataURL('image/png', 1.0);
- 
+  
   source.width = 0; source.height = 0;
   upscaled.width = 0; upscaled.height = 0;
- 
+  
   return result;
 }
 
@@ -1244,7 +1258,7 @@ async function loadLayer(key, url, buildFn) {
     console.log('Capa ' + key + ' ja carregada, utilitzant cache');
     return true;
   }
-  
+    
   var friendlyNames = {
     'image': 'imatge',
     'ir': 'infraroig',
@@ -1253,7 +1267,7 @@ async function loadLayer(key, url, buildFn) {
     'lightning_acc': 'llamps'
   };
   var displayName = friendlyNames[key] || key;
-  
+    
   try {
     setStatus('loading', 'Carregant ' + displayName + '...');
     var payload = await fetchAndDecode(url);
@@ -1353,12 +1367,12 @@ function updateLayerButtonsAvailability(statuses) {
     var layer = btn.dataset.layer;
     var available = statuses[layer] || false;
     var isActive = layer === activeLayer && available;
-    
+        
     btn.disabled = false;
     btn.classList.toggle('unavailable', !available && layer !== 'image');
     btn.classList.toggle('active', isActive);
     btn.classList.toggle('loading-layer', false);
-    
+        
     if (!available && layer !== 'image') {
       btn.textContent = btn.textContent.replace(' Cargar', '') + ' Cargar';
     }
@@ -1386,7 +1400,7 @@ async function switchLayer(layerName) {
 
   console.log('🔄 Carregant capa sota demanda: ' + layerName);
   switchLayer._loading[layerName] = true;
-  
+    
   dom.layerButtons.forEach(function(btn) {
     if (btn.dataset.layer === layerName) {
       btn.classList.add('loading-layer');
@@ -1409,7 +1423,7 @@ async function switchLayer(layerName) {
 
   try {
     var success = await loadLayer(layerName, config.url, config.build);
-    
+        
     if (success) {
       activeLayer = layerName;
       showActiveLayer();
@@ -1535,12 +1549,12 @@ function bindLayerToggle() {
     btn.addEventListener('click', function() {
       if (btn.disabled) return;
       var layer = btn.dataset.layer;
-      
+            
       if (layer === activeLayer && layerLoaded[layer]) return;
-      
+            
       dom.layerButtons.forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      
+            
       switchLayer(layer);
     });
   });
@@ -1715,8 +1729,8 @@ async function refreshCurrentLayer() {
       }
     });
   }
-
-    if (radarOverlayEnabled && window.StormAlert) {
+    
+  if (radarOverlayEnabled && window.StormAlert) {
     window.StormAlert.refresh();
   }
 
@@ -1801,41 +1815,41 @@ function carregarLlamps() {
     console.log('⚡ Llamps ja carregats');
     return;
   }
-  
+    
   // Comprovar que el mapa existeix i és vàlid
   if (!window.map) {
     console.log('⏳ Esperant mapa per carregar llamps...');
     setTimeout(carregarLlamps, 500);
     return;
   }
-  
+    
   // Comprovar que el mapa té el mètode createPane
   if (typeof window.map.createPane !== 'function') {
     console.log('⏳ Esperant que el mapa estigui completament inicialitzat...');
     setTimeout(carregarLlamps, 500);
     return;
   }
-  
+    
   // Comprovar que el contenidor del mapa existeix
   if (!document.getElementById('map')) {
     console.log('⏳ Esperant contenidor del mapa...');
     setTimeout(carregarLlamps, 500);
     return;
   }
-  
+    
   // Crear l'script
   var script = document.createElement('script');
   script.id = 'lightning-script';
   script.src = 'js/lightning.js';
   script.async = true;
-  
+    
   script.onload = function() {
     console.log('✅ Mòdul de llamps carregat correctament');
-    
+        
     // Disparar l'esdeveniment perquè lightning.js s'iniciï
     var event = new Event('auth:autoritzat');
     document.dispatchEvent(event);
-    
+        
     // Intentar inicialitzar manualment si no s'ha iniciat
     setTimeout(function() {
       if (typeof window.llamps !== 'undefined') {
@@ -1848,12 +1862,12 @@ function carregarLlamps() {
       }
     }, 1000);
   };
-  
+    
   script.onerror = function() {
     console.warn('⚠️ No s\'ha pogut carregar lightning.js');
     console.log('💡 Assegura\'t que el fitxer js/lightning.js existeix');
   };
-  
+    
   document.head.appendChild(script);
   console.log('⚡ Carregant mòdul de llamps...');
 }
@@ -1866,21 +1880,21 @@ function verificarMapaPerLlamps() {
     setTimeout(verificarMapaPerLlamps, 500);
     return;
   }
-  
+    
   // Comprovar que el mapa té el mètode createPane
   if (typeof window.map.createPane !== 'function') {
     console.log('⏳ Esperant que map.createPane estigui disponible...');
     setTimeout(verificarMapaPerLlamps, 500);
     return;
   }
-  
+    
   // Comprovar que el contenidor del mapa existeix
   if (!document.getElementById('map')) {
     console.log('⏳ Esperant contenidor del mapa...');
     setTimeout(verificarMapaPerLlamps, 500);
     return;
   }
-  
+    
   console.log('✅ Mapa completament llest! Carregant llamps...');
   carregarLlamps();
 }
@@ -1992,7 +2006,7 @@ function initMapFirstLoad() {
     attributionControl: true,
     zoomSnap: 0.5,
   });
-  
+    
   // ─── Assignar també a la variable local ───
   map = window.map;
 
@@ -2021,9 +2035,7 @@ function initMapFirstLoad() {
 
   cargarGeoJSON().then(dibujarFronteras);
   cargarTowns().then(function() { setTimeout(createLabelsFromTowns, 100); }).catch(function() { mostrarCapitalesPrincipales(); });
-
-
-
+    
   var timeoutLabels = null;
   map.on('zoomend', function() {
     clearTimeout(timeoutLabels);
