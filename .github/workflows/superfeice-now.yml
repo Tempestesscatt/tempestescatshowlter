@@ -58,49 +58,21 @@ jobs:
           pip check || true
           python -c "import cfgrib; print('cfgrib OK')"
 
-      - name: Corregir ruta de sortida al config del submòdul
+      - name: Preparar directoris de sortida
         run: |
           set -euo pipefail
-          
-          echo "=== FITXERS DE CONFIGURACIÓ TROBATS ==="
-          find scripts-privats/ -maxdepth 2 -name "config*.json" -type f | while read -r cfg; do
-            echo "--- $cfg ---"
-            cat "$cfg"
-            echo ""
-          done
-          
-          echo "=== CORREGINT RUTES ==="
-          
-          # Crear directoris de sortida
           mkdir -p scripts-privats/radar/public/dades_sfc
           mkdir -p radar/public/dades_sfc
-          
-          # Corregir tots els config*.json del submòdul
-          find scripts-privats/ -maxdepth 2 -name "config*.json" -type f | while read -r cfg; do
-            echo "Processant: $cfg"
-            
-            # Backup
-            cp "$cfg" "${cfg}.bak"
-            
-            # Reemplaçar rutes de Windows per ruta relativa
-            # Format amb backslashes
-            sed -i 's|C:\\Users\\simob\\Desktop\\tempestaprova\\mapbox-gl-js\\tempestes.cat\\tempestescatshowlter\\tempestescatshowlter\\tempestescatshowlter\\radar\\public\\dades_sfc|radar/public/dades_sfc|g' "$cfg"
-            
-            # Format amb forward slashes
-            sed -i 's|C:/Users/simob/Desktop/tempestaprova/mapbox-gl-js/tempestes.cat/tempestescatshowlter/tempestescatshowlter/tempestescatshowlter/radar/public/dades_sfc|radar/public/dades_sfc|g' "$cfg"
-            
-            # Qualsevol altra ruta amb C:\ o C:/
-            sed -i 's|C:[\\/]Users[\\/]simob[\\/]Desktop[\\/][^"]*dades_sfc|radar/public/dades_sfc|g' "$cfg"
-            
-            echo "Després de corregir:"
-            cat "$cfg"
-            echo ""
-          done
+
       - name: Executar sfc.py amb --now
         id: run_sfc
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
+          # Força la ruta de sortida via variable d'entorn: sfc.py li dona
+          # prioritat per sobre de "output_dir" del config.json/configNE.json
+          # i del fallback de Windows hardcodejat. Així no cal editar el JSON
+          # del submòdul amb sed.
           SFC_OUTPUT_DIR: ${{ github.workspace }}/scripts-privats/radar/public/dades_sfc
         run: |
           set -euo pipefail
