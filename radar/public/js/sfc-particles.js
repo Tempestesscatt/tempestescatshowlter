@@ -7,7 +7,7 @@
 
   // ─── CONFIGURACIÓ ───────────────────────────────────────────
   const PART_CONFIG = {
-    baseUrl: 'dades_sfc/',
+    baseUrl: 'https://radar-data.tempestes.cat/dades_sfc/',
     numParticles: 30000,      // SEMPRE 30000 partícules
     fadeAlpha: 0.92,          // Esteles més curtes per millor rendiment
     speedFactor: 0.56,        // factor d'escala px/frame per m/s de vent

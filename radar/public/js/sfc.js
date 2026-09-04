@@ -7,7 +7,7 @@
 
   // ─── CONFIGURACIÓ ───────────────────────────────────────────
   const SFC_CONFIG = {
-    baseUrl: 'dades_sfc/',
+    baseUrl: 'https://radar-data.tempestes.cat/dades_sfc/',
     variables: ['wind_speed_10m', 'srh', 'sd', 'cape', 'z500'],
     variableLabels: {
       'wind_speed_10m': 'Vent 10m',
@@ -920,6 +920,9 @@
     },
     getVariables: function() {
       return Object.keys(SFC_CONFIG.variableLabels);
+    },
+    _getRawPayload: function(hour) {
+      return sfcDataCache[hour] || null;
     }
   };
 
