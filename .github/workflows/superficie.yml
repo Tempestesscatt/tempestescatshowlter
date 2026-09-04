@@ -1,21 +1,44 @@
-name: Descarga SFC + Geopotencial 500hPa + Vent 500hPa
+name: Descarga AROME SFC + Geo/Vent 500hPa
 
 on:
-  workflow_dispatch: {}  # Execució manual
-  schedule:
-    - cron: '*/30 * * * *'  # Cada 30 minuts
+  workflow_dispatch:
+    inputs:
+      forcar_ara:
+        description: "Forçar descàrrega ignorant la finestra horària (--now)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
-  contents: read
+  contents: read  # no cal 'write': no tornem a commitejar res al repo
 
 env:
   R2_BUCKET: tempestes-radar-data
   R2_PREFIX_SFC: dades_sfc/
+  # Ruta REAL on sfc.py escriu els fitxers: com que sfc.py viu dins del
+  # submòdul privat 'scripts-privats/', el seu output_dir (llegit de
+  # configNE.json/config.json) ha d'apuntar a una ruta relativa a l'arrel
+  # del repo principal (mateix patró que DADES_SAT_DIR / DADES_RAD_DIR
+  # al workflow de satèl·lit+radar). Si el config.json del submòdul encara
+  # apunta a un path de Windows (fallback per defecte de carregar_config()),
+  # aquest job FALLARÀ perquè els fitxers no apareixeran aquí: cal que
+  # configNE.json tingui "output_dir": "radar/public/dades_sfc" (relatiu a
+  # l'arrel del repo, tal com s'executa aquí sota).
+  DADES_SFC_DIR: scripts-privats/radar/public/dades_sfc
+  # sfc.py descarrega HORES_A_DESCARREGAR steps (10 al codi actual) i genera
+  # un fitxer sfc_HH.msgpack.gz per cada hora VALIDA (hora_real_utc, 0-23),
+  # no per índex fix. Com que el nom exacte depèn de quan s'executi el run,
+  # no podem llistar noms fixos com al workflow de sat/radar: verifiquem que
+  # com a mínim aquest nombre de fitxers sfc_*.msgpack.gz no buits existeixin.
+  MIN_FITXERS_SFC: 10
 
 jobs:
-  sfc:
+  superficie:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     outputs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
@@ -25,6 +48,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: false
+        # IMPORTANT: no passem 'ssh-key' aquí. Si li passéssim la deploy key
+        # del submòdul privat, actions/checkout l'aplicaria també per clonar
+        # AQUEST repo (el públic), i com que la deploy key només té permisos
+        # sobre 'radar-privat', el checkout del repo principal fallaria amb
+        # "Permission denied". Per això el submòdul es clona a part, més avall.
 
       - name: Configurar clau SSH per al submòdul privat
         env:
@@ -43,122 +71,106 @@ jobs:
         run: |
           git submodule sync --recursive
           git submodule update --init --recursive --depth=1
+        # Clona 'scripts-privats' (repo privat, on viu sfc.py) fent servir
+        # la clau SSH configurada al pas anterior.
 
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Instal·lar dependències del sistema
+      - name: Instal·lar dependències
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libeccodes-dev libeccodes0 eccodes
-          # També instal·lar eines de compilació per si cal
-          sudo apt-get install -y build-essential
-
-      - name: Instal·lar dependències Python
-        run: |
-          set -euo pipefail
-          # Dependències per sfc.py - incloent cfgrib per GRIB
-          pip install requests numpy msgpack-python pyproj cfgrib eccodes
+          # eccodes: cfgrib el necessita per llegir els fitxers .grib2 d'AROME.
+          # Sense libeccodes al sistema, cfgrib.open_datasets() falla amb
+          # "ecCodes library not found" tot i tenir el paquet Python instal·lat.
+          sudo apt-get update && sudo apt-get install -y libeccodes-dev libeccodes0 || sudo apt-get install -y libeccodes0
+          # numpy fixat per sota de 2.3 pel mateix motiu que al workflow de
+          # satèl·lit: algunes dependències natives (cfgrib/eccodes-python)
+          # es poden haver compilat contra una ABI de numpy diferent i
+          # provocar segfaults en lloc d'un error net.
+          pip install meteofetch cfgrib scipy "numpy<2.3" requests msgpack-python
           pip check || true
-
-      - name: Verificar estructura de directoris del submòdul
-        run: |
-          echo "Contingut de scripts-privats:"
-          ls -la scripts-privats/
-          echo ""
-          echo "Buscant sfc.py:"
-          find . -name "sfc.py" -type f
-          echo ""
-          echo "Buscant directoris de sortida potencials:"
-          find . -type d -name "dades_sfc" 2>/dev/null || echo "No s'ha trobat cap directori dades_sfc"
-          find . -type d -name "public" 2>/dev/null || echo "No s'ha trobat cap directori public"
-          echo ""
-          echo "Estructura de scripts-privats:"
-          find scripts-privats/ -maxdepth 3 -type d
+          python -c "import cfgrib; print('cfgrib OK')"
 
       - name: Executar sfc.py
         id: run_sfc
         env:
-          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: |
-          python -X faulthandler scripts-privats/sfc.py
-        continue-on-error: true
-
-      - name: Localitzar fitxers SFC generats
-        id: locate
-        run: |
           set -euo pipefail
-          echo "Buscant fitxers SFC generats:"
-          
-          # Buscar fitxers msgpack.gz a tot el repositori
-          find . -name "sfc_*.msgpack.gz" -type f -exec ls -lh {} \; > sfc_files.txt || true
-          
-          # Buscar qualsevol fitxer msgpack.gz recent
-          find . -name "*.msgpack.gz" -type f -mmin -15 -exec ls -lh {} \; >> sfc_files.txt || true
-          
-          cat sfc_files.txt || echo "No s'han trobat fitxers"
-          
-          # Determinar el directori correcte
-          if [ -s sfc_files.txt ]; then
-            first_file=$(find . -name "sfc_*.msgpack.gz" -type f | head -n 1)
-            if [ -n "$first_file" ]; then
-              sfc_dir=$(dirname "$first_file")
-              echo "SFC_DIR=$sfc_dir" >> "$GITHUB_OUTPUT"
-              echo "Directori SFC: $sfc_dir"
-            fi
+          ARGS=""
+          if [ "${{ inputs.forcar_ara }}" = "true" ]; then
+            ARGS="--now"
           fi
+          python -X faulthandler scripts-privats/sfc.py $ARGS
+        # sfc.py viu al submòdul privat 'scripts-privats/', igual que sat.py
+        # i rad.py. S'executa des de l'arrel del repo perquè carregar_config()
+        # llegeix configNE.json/config.json AL COSTAT del propi script (relatiu
+        # a __file__), però "output_dir" dins d'aquest JSON s'ha d'haver
+        # configurat com a ruta relativa a l'arrel del repo (vegeu comentari
+        # a DADES_SFC_DIR més amunt).
+        #
+        # Si estem fora de la finestra horària i no s'ha passat --now, el propi
+        # script surt amb sys.exit(0) sense generar res: no és un error, però
+        # el pas 'verify' d'aquí sota farà fallar el job igualment (menys
+        # fitxers dels esperats), ja que no té sentit publicar-hi res nou.
+        continue-on-error: true
 
       - name: Verificar que els fitxers generats són complets i vàlids
         id: verify
         run: |
           set -euo pipefail
-          
-          # Buscar fitxers SFC a tot el repositori
-          valid_count=$(find . -name "sfc_*.msgpack.gz" -size +0c | wc -l)
-          
-          if [ "$valid_count" -eq 0 ]; then
-            echo "ERROR: No hi ha cap fitxer SFC vàlid"
+          if [ ! -d "$DADES_SFC_DIR" ]; then
+            echo "::error::No existeix el directori $DADES_SFC_DIR. Revisa 'output_dir' a configNE.json del submòdul."
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cd "$DADES_SFC_DIR"
+
+          n_valids=0
+          for f in sfc_*.msgpack.gz; do
+            [ -f "$f" ] || continue
+            if [ -s "$f" ]; then
+              n_valids=$((n_valids + 1))
+            fi
+          done
+
+          echo "Fitxers sfc_*.msgpack.gz vàlids trobats: $n_valids (mínim requerit: $MIN_FITXERS_SFC)"
+
+          if [ "$n_valids" -lt "$MIN_FITXERS_SFC" ]; then
+            echo "ERROR: només s'han generat $n_valids fitxers vàlids, per sota del mínim ($MIN_FITXERS_SFC)."
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
           else
-            echo "OK: $valid_count fitxers SFC vàlids disponibles"
-            
-            # Llistar els fitxers disponibles
-            echo "Fitxers disponibles:"
-            find . -name "sfc_*.msgpack.gz" -size +0c -exec ls -lh {} \;
-            
+            echo "OK: $n_valids fitxers presents i amb contingut"
             echo "files_ok=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Marcar job com a fallit si no hi ha dades
+      - name: Marcar job com a fallit si falten dades
         if: steps.verify.outputs.files_ok != 'true'
         run: |
-          echo "::error::No s'han generat dades SFC vàlides. Avortant."
+          echo "::error::Cicle SFC incomplet o fora de finestra horària: no es publicarà a R2 per evitar dades a mitges/desactualitzades."
           exit 1
 
-      - name: Pujar resultat com a artifact (temporal)
+      - name: Pujar resultat com a artifact (temporal, entre jobs)
         if: steps.verify.outputs.files_ok == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: dades-sfc
-          path: |
-            **/sfc_*.msgpack.gz
-            **/dades_sfc/*.msgpack.gz
+          path: ${{ env.DADES_SFC_DIR }}/
           retention-days: 1
           if-no-files-found: error
 
   publicar:
-    needs: sfc
-    if: needs.sfc.outputs.files_ok == 'true'
+    needs: [superficie]
+    if: needs.superficie.outputs.files_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     concurrency:
       group: sfc-update
-      cancel-in-progress: false
+      cancel-in-progress: false  # mai cancel·lar a mitges d'una pujada a R2
 
     steps:
       - name: Descarregar artifact SFC
@@ -167,21 +179,25 @@ jobs:
           name: dades-sfc
           path: dades_sfc/
 
-      - name: Verificar estructura dels fitxers descarregats
+      - name: Verificar altre cop abans de publicar (defensa extra)
         run: |
-          echo "Estructura després de descarregar:"
-          find . -name "sfc_*.msgpack.gz" -type f -exec ls -lh {} \;
-          
-          # Comptar fitxers vàlids
-          valid_count=$(find . -name "sfc_*.msgpack.gz" -size +0c | wc -l)
-          echo "Fitxers vàlids: $valid_count"
-          
-          if [ "$valid_count" -eq 0 ]; then
-            echo "::error::Cap fitxer SFC vàlid per publicar. Avortant."
+          set -euo pipefail
+          cd dades_sfc
+          n_valids=0
+          for f in sfc_*.msgpack.gz; do
+            [ -f "$f" ] || continue
+            if [ -s "$f" ]; then
+              n_valids=$((n_valids + 1))
+            fi
+          done
+          echo "Fitxers vàlids just abans de publicar: $n_valids"
+          if [ "$n_valids" -lt "$MIN_FITXERS_SFC" ]; then
+            echo "::error::Nombre de fitxers per sota del mínim just abans de publicar. Avortant."
             exit 1
           fi
+          echo "OK: verificació SFC prèvia a publicar correcta"
 
-      - name: Pujar a R2
+      - name: Pujar a R2 (únic lloc on viuen aquestes dades)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -210,31 +226,20 @@ jobs:
             return 1
           }
 
-          # Trobar tots els fitxers SFC
-          find . -name "sfc_*.msgpack.gz" -type f | while read -r f; do
-            filename=$(basename "$f")
-            echo "Pujant: $filename"
-            if ! upload_one "$f" "application/octet-stream" "${R2_BUCKET}/${R2_PREFIX_SFC}$filename"; then
-              echo "ERROR: no s'ha pogut pujar $filename després de tots els intents"
+          cd dades_sfc
+          for f in sfc_*.msgpack.gz; do
+            [ -f "$f" ] || continue
+            ct="application/octet-stream"
+            if ! upload_one "$f" "$ct" "${R2_BUCKET}/${R2_PREFIX_SFC}$f"; then
+              echo "ERROR: no s'ha pogut pujar $f (SFC) després de tots els intents"
               fail_count=$((fail_count + 1))
             fi
           done
+          cd ..
 
           if [ "$fail_count" -gt 0 ]; then
             echo "::error::$fail_count fitxer(s) no s'han pogut pujar a R2"
             exit 1
           fi
 
-          echo "OK: Dades SFC pujades a R2 correctament"
-
-  actualizar_frontend:
-    needs: publicar
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    
-    steps:
-      - name: Notificar actualització completada
-        run: |
-          echo "SFC actualitzat a R2"
-          echo "El frontend pot actualitzar les dades des de:"
-          echo "https://${R2_BUCKET}.r2.dev/${R2_PREFIX_SFC}sfc_$(date -u +%H).msgpack.gz"
+          echo "OK: dades SFC pujades a R2. No queda cap còpia al repositori."
