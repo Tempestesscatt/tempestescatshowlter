@@ -96,12 +96,12 @@ jobs:
             cat "$cfg"
             echo ""
           done
-
       - name: Executar sfc.py amb --now
         id: run_sfc
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
+          SFC_OUTPUT_DIR: ${{ github.workspace }}/scripts-privats/radar/public/dades_sfc
         run: |
           set -euo pipefail
           echo "Executant sfc.py des de scripts-privats/"
