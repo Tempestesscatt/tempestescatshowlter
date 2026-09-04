@@ -13,15 +13,15 @@ const CONFIG = {
   lightningAccDataUrl: R2_BASE + 'meteosat_ne_spain_lightning_acc.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
-  bbox: {
-    lon_min: -4.561660,
-    lat_min: 35.749154,
-    lon_max: 4.995522,
-    lat_max: 45.149700,
+bbox: {
+    lon_min: -4.423391,
+    lat_min: 38.070890,
+    lon_max: 4.950144,
+    lat_max: 45.134595,
 },
   initialCenter: [40.5, 0.0],
   initialZoom: 7,
-  defaultOpacity: 0.9,
+  defaultOpacity: 0.7,
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts
