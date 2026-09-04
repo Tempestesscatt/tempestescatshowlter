@@ -13,13 +13,13 @@ const CONFIG = {
   lightningAccDataUrl: R2_BASE + 'meteosat_ne_spain_lightning_acc.msgpack.gz',
   geojsonUrl: 'geo/spain.geojson',
 
-bbox: {
+  bbox: {
     lon_min: -4.423391,
     lat_min: 38.070890,
     lon_max: 4.950144,
     lat_max: 45.134595,
-},
-  initialCenter: [40.5, 0.0],
+  },
+  initialCenter: [41.6, 0.26],
   initialZoom: 7,
   defaultOpacity: 0.7,
 };
@@ -37,67 +37,51 @@ function lerpColor(c1, c2, f) {
 }
 
 const STOPS_IR = [
-    // ─── FRED EXTREM (tempestes molt profundes) ─────────────────────
-    {v:-80,  r:255, g:255, b:255}, // Blanc
-    {v:-77,  r:255, g:255, b:255}, // Blanc
-    {v:-74,  r:255, g:255, b:255}, // Blanc
-    {v:-71,  r:255, g:255, b:255}, // Blanc
-    {v:-68,  r:255, g:255, b:255}, // Blanc
-    {v:-65,  r:255, g:255, b:255}, // Blanc
-    {v:-62,  r:255, g:255, b:255}, // Blanc
-    {v:-59,  r:255, g:255, b:255}, // Blanc
-    {v:-56,  r:255, g:255, b:255}, // Blanc
-    {v:-53,  r:255, g:255, b:255}, // Blanc
-    {v:-50,  r:255, g:255, b:255}, // Blanc
-    {v:-45,  r:255, g:255, b:255}, // Blanc
-    {v:-41,  r:255, g:255, b:255}, // Blanc
-
-    // ─── FRED MODERAT (transició a escala de grisos) ────────────────
-    {v:-40, r:245, g:245, b:245}, // Gris molt clar
-    {v:-30, r:225, g:225, b:225}, // Gris clar
-    {v:-20, r:195, g:195, b:195}, // Gris clar
-    {v:-10, r:165, g:165, b:165}, // Gris
-
-    // ─── FRED SUAU / TEMPERATURES POSITIVES ──────────────────────────
-    {v:0,   r:135, g:135, b:135}, // Gris mitjà
-    {v:10,  r:105, g:105, b:105}, // Gris
-    {v:20,  r:80,  g:80,  b:80},  // Gris fosc
-    {v:30,  r:55,  g:55,  b:55},  // Gris fosc
-    {v:40,  r:30,  g:30,  b:30},  // Gris molt fosc
-    {v:50,  r:10,  g:10,  b:10},  // Gairebé negre
+  {v:-80,  r:255, g:255, b:255},
+  {v:-77,  r:255, g:255, b:255},
+  {v:-74,  r:255, g:255, b:255},
+  {v:-71,  r:255, g:255, b:255},
+  {v:-68,  r:255, g:255, b:255},
+  {v:-65,  r:255, g:255, b:255},
+  {v:-62,  r:255, g:255, b:255},
+  {v:-59,  r:255, g:255, b:255},
+  {v:-56,  r:255, g:255, b:255},
+  {v:-53,  r:255, g:255, b:255},
+  {v:-50,  r:255, g:255, b:255},
+  {v:-45,  r:255, g:255, b:255},
+  {v:-41,  r:255, g:255, b:255},
+  {v:-40, r:245, g:245, b:245},
+  {v:-30, r:225, g:225, b:225},
+  {v:-20, r:195, g:195, b:195},
+  {v:-10, r:165, g:165, b:165},
+  {v:0,   r:135, g:135, b:135},
+  {v:10,  r:105, g:105, b:105},
+  {v:20,  r:80,  g:80,  b:80},
+  {v:30,  r:55,  g:55,  b:55},
+  {v:40,  r:30,  g:30,  b:30},
+  {v:50,  r:10,  g:10,  b:10},
 ];
-
 
 // ============================================================
 // SOBRESCRIPCIÓ DE LA FUNCIÓ buildIrDataUrl AMB ELS NOUS AJUSTOS
-// ============================================================
-// Aplicat només a la capa IR (temperatura infraroja)
-// Brillo: 1.04 | Contraste: 2.12 | Saturación: 0.94 | Gamma: 1.00
-// Temperatura: 0 | Offset color: 0 | Opacitat: 0.83
-// GeoJSON: color blanco/gris en IR
 // ============================================================
 
 (function overrideIrBuild() {
   console.log('🎨 Aplicant ajustos IR personalitzats: Brillo 1.04, Contraste 2.12, Saturación 0.94, Gamma 1.00');
   console.log('🗺️ GeoJSON España: color blanc/gris per capa IR');
 
-  // Guardem la funció original de dibuixar fronteres
   var originalDibujarFronteras = window.dibujarFronteras || dibujarFronteras;
 
-  // Sobrescrivim la funció perquè el GeoJSON sigui blanc/gris a IR
   window.dibujarFronteras = function(geojsonData) {
     if (borderLayer) {
-       if (map && map.hasLayer) {
+      if (map && map.hasLayer) {
         try { map.removeLayer(borderLayer); } catch(e) {}
       }
       borderLayer = null;
-     }
+    }
     if (!geojsonData) return;
         
-    // Determinar si estem en mode IR
     var isIrMode = (activeLayer === 'ir');
-        
-    // Color per IR: blanc grisós, per altres capes: gris fosc
     var borderColor = isIrMode ? '#c8c8c8' : '#2b2a2a';
     var borderOpacity = isIrMode ? 0.6 : 0.5;
     var borderWeight = isIrMode ? 1.0 : 1.2;
@@ -119,31 +103,25 @@ const STOPS_IR = [
     }
   };
 
-  // També sobrescrivim showActiveLayer per actualitzar el color del GeoJSON
   var originalShowActiveLayer = window.showActiveLayer || showActiveLayer;
   window.showActiveLayer = function() {
-    // Amagar totes les capes
     for (var key in overlays) {
       if (overlays[key] && map.hasLayer(overlays[key])) {
         try { map.removeLayer(overlays[key]); } catch(e) {}
       }
     }
         
-    // Mostrar la capa activa
     if (overlays[activeLayer]) {
       overlays[activeLayer].addTo(map);
     }
         
-    // Si hi ha fronteres, actualitzar-les amb el color correcte
     if (borderLayer && map.hasLayer(borderLayer)) {
       try { map.removeLayer(borderLayer); } catch(e) {}
       borderLayer = null;
     }
         
-    // Recarregar GeoJSON amb el color corresponent
     cargarGeoJSON().then(function(data) {
       if (data) {
-        // Determinar color segons capa
         var isIrMode = (activeLayer === 'ir');
         var borderColor = isIrMode ? '#c8c8c8' : '#2b2a2a';
         var borderOpacity = isIrMode ? 0.6 : 0.5;
@@ -169,12 +147,10 @@ const STOPS_IR = [
     applyOnlyRadarOpacity();
   };
 
-  // Nova funció buildIrDataUrl amb ajustos
   window.buildIrDataUrl = function(payload) {
     var width = payload.width, height = payload.height, values = payload.values;
     if (!width || !height || !values) throw new Error('Payload invàlid');
 
-    // ─── FUNCIONS D'AJUT ──────────────────────────────────────
     function clamp(val) { return Math.max(0, Math.min(255, val)); }
 
     function rgbToHsv(r, g, b) {
@@ -211,15 +187,13 @@ const STOPS_IR = [
       return { r: r * 255, g: g * 255, b: b * 255 };
     }
 
-    // ─── PARÀMETRES IR PERSONALITZATS ────────────────────────
     var BRIGHTNESS = 1.04;
     var CONTRAST = 2.12;
     var SATURATION = 0.94;
     var GAMMA = 1.00;
-    var HUE_SHIFT = 0;      // 0 = neutral
-    var OPACITY = 0.83 * 255; // 0.83 * 255 ≈ 212
+    var HUE_SHIFT = 0;
+    var OPACITY = 0.83 * 255;
 
-    // ─── RENDERITZAT ──────────────────────────────────────────
     var canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -232,7 +206,6 @@ const STOPS_IR = [
         var val = rowValues ? rowValues[col] : null;
         var baseColor = irToColor(val);
                 
-        // Si és transparent (sense dades), ho deixem igual
         if (baseColor[3] === 0) {
           var idx = (row * width + col) * 4;
           imageData.data[idx] = 0;
@@ -246,29 +219,24 @@ const STOPS_IR = [
         var g = baseColor[1];
         var b = baseColor[2];
 
-        // ─── 1. GAMMA (1.00) ───
         var gammaInv = 1 / GAMMA;
         r = Math.pow(Math.min(1, r / 255), gammaInv) * 255;
         g = Math.pow(Math.min(1, g / 255), gammaInv) * 255;
         b = Math.pow(Math.min(1, b / 255), gammaInv) * 255;
 
-        // ─── 2. BRIGHTNESS (1.04) ───
         r = r * BRIGHTNESS;
         g = g * BRIGHTNESS;
         b = b * BRIGHTNESS;
 
-        // ─── 3. CONTRAST (2.12) ───
         r = ((r / 255 - 0.5) * CONTRAST + 0.5) * 255;
         g = ((g / 255 - 0.5) * CONTRAST + 0.5) * 255;
         b = ((b / 255 - 0.5) * CONTRAST + 0.5) * 255;
 
-        // ─── 4. SATURATION (0.94) ───
         var gray = (r + g + b) / 3;
         r = gray + (r - gray) * SATURATION;
         g = gray + (g - gray) * SATURATION;
         b = gray + (b - gray) * SATURATION;
 
-        // ─── 5. HUE SHIFT (0°) ───
         if (HUE_SHIFT !== 0) {
           var hsv = rgbToHsv(r, g, b);
           hsv.h = (hsv.h + HUE_SHIFT / 360) % 1;
@@ -276,12 +244,10 @@ const STOPS_IR = [
           r = rgb2.r; g = rgb2.g; b = rgb2.b;
         }
 
-        // ─── 6. CLAMP ───
         r = clamp(r);
         g = clamp(g);
         b = clamp(b);
 
-        // ─── 7. ESCRIURE PÍXEL ───
         var idx = (row * width + col) * 4;
         imageData.data[idx] = Math.round(r);
         imageData.data[idx + 1] = Math.round(g);
@@ -294,23 +260,19 @@ const STOPS_IR = [
     return canvas.toDataURL('image/png');
   };
 
-  // També interceptem switchLayer per actualitzar el color del GeoJSON
   var originalSwitchLayer = window.switchLayer || switchLayer;
   window.switchLayer = async function(layerName) {
-    // Evitar clics concurrents
     if (switchLayer._loading && switchLayer._loading[layerName]) {
       console.log('⏳ Ja s\'està carregant ' + layerName + ', ignorant clic duplicat');
       return;
     }
     if (!switchLayer._loading) switchLayer._loading = {};
 
-    // Si la capa ja està carregada, simplement canviem
     if (layerLoaded[layerName]) {
       activeLayer = layerName;
       showActiveLayer();
       updateLayerButtonsUI();
       updateLegendVisibility(layerName);
-      // Actualitzar fronteres si és IR
       if (layerName === 'ir') {
         cargarGeoJSON().then(function(data) {
           if (data && borderLayer) {
@@ -327,7 +289,6 @@ const STOPS_IR = [
           }
         });
       } else {
-        // Restaurar color normal
         cargarGeoJSON().then(function(data) {
           if (data && borderLayer) {
             try { map.removeLayer(borderLayer); } catch(e) {}
@@ -379,7 +340,6 @@ const STOPS_IR = [
         updateLegendVisibility(layerName);
         setStatus('', 'Capa ' + layerName + ' carregada');
                 
-        // Actualitzar fronteres segons la capa
         if (layerName === 'ir') {
           cargarGeoJSON().then(function(data) {
             if (data) {
@@ -441,7 +401,7 @@ const STOPS_IR = [
     });
   };
 
-  })();
+})();
 
 function irToColor(tempC) {
   if (tempC === null || tempC === undefined || Number.isNaN(tempC) || tempC <= -999) {
@@ -615,17 +575,7 @@ let layerLoaded = {
   lightning_acc: false
 };
 
-// L'overlay de radar és independent de la capa de fons activa: es
-// pot mostrar/amagar per sobre de qualsevol capa (satèl·lit, IR,
-// altura, precipitació, llamps) amb un toggle, no és una capa mes
-// de la llista exclusiva.
 let radarOverlayEnabled = false;
-
-// Quan "Nomes radar" es activat, posa a 0 l'opacitat de la capa de
-// fons activa (satelit/IR/altura/precip/llamps) perque nomes es
-// vegi el radar per sobre del mapa base (hillshade + fronteres).
-// Es manté sincronitzat si l'usuari canvia de capa o refresca
-// mentre l'opcio esta activa.
 let onlyRadarEnabled = false;
 
 function applyOnlyRadarOpacity() {
@@ -972,23 +922,12 @@ function getPixelInfoLines(lat, lng, layerKey) {
 }
 
 // ─── setOverlay ───
-// CORREGIT: abans aquesta funció ignorava per complet el paràmetre
-// 'bbox' (el bbox REAL que arriba en cada payload, calculat per
-// sat.py a partir de l'AreaDefinition real un cop feto el resample)
-// i sempre feia servir CONFIG.bbox, un valor fix hardcodejat al
-// frontend que no coincidia amb el bbox real -- especialment en
-// latitud (fins a ~2.35° de diferencia al sud, ~0.15° al nord).
-// Aixo desplaçava i deformava CADA capa (imatge, IR, altura,
-// precipitacio, llamps) respecte al GeoJSON de fronteres i al mapa
-// de fons, encara que aquest ultim estigues perfectament posicionat.
-//
-// Ara es fa servir sempre el bbox que ve DINS del payload de cada
-// capa, que es el que reflecteix la geometria real generada per
-// sat.py en aquell moment. CONFIG.bbox es manté només com a valor
-// de fallback per si algun payload antic no portés bbox (no hauria
-// de passar amb el format actual de sat.py).
+// 🔥 MODIFICAT: FORÇA SEMPRE EL BBOX DE CONFIG
+// Ignora completament el bbox que ve del servidor
 function setOverlay(key, dataUrl, bbox, opacity) {
-  var b = bbox || CONFIG.bbox;
+  // FORÇAR SEMPRE EL BBOX DE CONFIG
+  var b = CONFIG.bbox;
+  
   var lon_min = b.lon_min, lat_min = b.lat_min,
       lon_max = b.lon_max, lat_max = b.lat_max;
   var bounds = [[lat_min, lon_min], [lat_max, lon_max]];
@@ -1045,19 +984,6 @@ function buildImageDataUrl(payload) {
   var sourceCtx = source.getContext('2d');
   var imageData = sourceCtx.createImageData(width, height);
   
-  // ================================================================
-  // AJUSTOS DE COLOR - CONFIGURACIÓ ACTUAL
-  // ================================================================
-  //   Brillo: 2.15          | Contraste: 0.82
-  //   Saturación: 1.29      | Tono (Hue): 17°
-  //   Gamma: 0.96           | Exposición: -0.80
-  //   Sombras: 0.14         | Luces: 0.15
-  //   Vibrancia: 0.88       | Blanco/negro: 0.00
-  //   Opacidad: 222         | Desenfoque: 0.7px
-  //   Contraste CSS: 1.19   | Saturación CSS: 0.81
-  // ================================================================
-  
-  // ─── FUNCIONS D'AJUT ──────────────────────────────────────
   function clamp(val) { return Math.max(0, Math.min(255, val)); }
   
   function rgbToHsv(r, g, b) {
@@ -1094,80 +1020,67 @@ function buildImageDataUrl(payload) {
     return { r: r * 255, g: g * 255, b: b * 255 };
   }
   
-  // ─── PROCESSAMENT DE PÍXELS ─────────────────────────────
   for (var i = 0, j = 0; i < rgbBytes.length; i += 3, j += 4) {
     var r = rgbBytes[i];
     var g = rgbBytes[i + 1];
     var b = rgbBytes[i + 2];
     
-    // ─── 1. EXPOSICIÓ (-0.80) ───
     var exposureFactor = Math.pow(2, -0.80);
     r = r * exposureFactor;
     g = g * exposureFactor;
     b = b * exposureFactor;
     
-    // ─── 2. GAMMA (0.96) ───
     var gammaInv = 1 / 0.96;
     r = Math.pow(Math.min(1, r / 255), gammaInv) * 255;
     g = Math.pow(Math.min(1, g / 255), gammaInv) * 255;
     b = Math.pow(Math.min(1, b / 255), gammaInv) * 255;
     
-    // ─── 3. BRIGHTNESS (2.15) ───
     r = r * 2.15;
     g = g * 2.15;
     b = b * 2.15;
     
-    // ─── 4. CONTRAST (0.82) ───
     var contrastVal = 0.82;
     r = ((r / 255 - 0.5) * contrastVal + 0.5) * 255;
     g = ((g / 255 - 0.5) * contrastVal + 0.5) * 255;
     b = ((b / 255 - 0.5) * contrastVal + 0.5) * 255;
     
-    // ─── 5. SATURATION (1.29) ───
     var gray = (r + g + b) / 3;
     var satVal = 1.29;
     r = gray + (r - gray) * satVal;
     g = gray + (g - gray) * satVal;
     b = gray + (b - gray) * satVal;
     
-    // ─── 6. VIBRANCE (0.88) ───
     var vibVal = 0.88;
     var avg = (r + g + b) / 3;
     r = avg + (r - avg) * vibVal;
     g = avg + (g - avg) * vibVal;
     b = avg + (b - avg) * vibVal;
     
-    // ─── 7. HUE (17°) ───
     var hsv = rgbToHsv(r, g, b);
     hsv.h = (hsv.h + 17/360) % 1;
     var rgb2 = hsvToRgb(hsv.h, hsv.s, hsv.v);
     r = rgb2.r; g = rgb2.g; b = rgb2.b;
     
-    // ─── 8. SHADOWS (0.14) ───
     var shVal = 0.14;
     if (r < 128) r = r + (128 - r) * shVal * (1 - r/128);
     if (g < 128) g = g + (128 - g) * shVal * (1 - g/128);
     if (b < 128) b = b + (128 - b) * shVal * (1 - b/128);
     
-    // ─── 9. HIGHLIGHTS (0.15) ───
     var hlVal = 0.15;
     if (r > 128) r = r + (255 - r) * hlVal * ((r-128)/127);
     if (g > 128) g = g + (255 - g) * hlVal * ((g-128)/127);
     if (b > 128) b = b + (255 - b) * hlVal * ((b-128)/127);
     
-    // ─── 10. GRAYSCALE (0.00) ───
     var gray2 = (r + g + b) / 3;
     var gsVal = 0.00;
     r = r + (gray2 - r) * gsVal;
     g = g + (gray2 - g) * gsVal;
     b = b + (gray2 - b) * gsVal;
     
-    // ─── 11. CLAMP ───
     r = clamp(r);
     g = clamp(g);
     b = clamp(b);
     
-    // ─── 12. OPACITAT (222) ───
     imageData.data[j] = Math.round(r);
     imageData.data[j + 1] = Math.round(g);
     imageData.data[j + 2] = Math.round(b);
@@ -1176,7 +1089,6 @@ function buildImageDataUrl(payload) {
   
   sourceCtx.putImageData(imageData, 0, 0);
   
-  // ─── UPSCALING ────────────────────────────────────────────
   var upscaled;
   if (window.HDEnhance) {
     upscaled = window.HDEnhance.upscaleWithSharpen(source, UPSCALE_FACTOR, {
@@ -1185,7 +1097,6 @@ function buildImageDataUrl(payload) {
       cssFilter: 'contrast(1.19) saturate(0.81) blur(0.7px)',
     });
   } else {
-    // Fallback sense HDEnhance
     var midFactor = Math.max(1, Math.round(UPSCALE_FACTOR / 2));
     var mid = document.createElement('canvas');
     mid.width = width * midFactor;
@@ -1216,10 +1127,6 @@ function buildImageDataUrl(payload) {
 }
 
 // ─── buildValueGridDataUrl ───
-// Converteix un payload {width, height, values} en una imatge PNG (dataURL)
-// aplicant colorFn a cada valor de la graella. És l'equivalent de
-// buildImageDataUrl pero per capes de valors numèrics (IR, altura,
-// precipitació, llamps) en lloc de píxels RGB ja renderitzats.
 function buildValueGridDataUrl(payload, colorFn) {
   var width = payload.width, height = payload.height, values = payload.values;
   if (!width || !height || !values) throw new Error('Payload invàlid');
@@ -1381,15 +1288,12 @@ function updateLayerButtonsAvailability(statuses) {
 
 // ─── switchLayer amb càrrega sota demanda ───
 async function switchLayer(layerName) {
-  // Evitar clics concurrents: si ja hi ha una càrrega en curs cap a
-  // aquesta mateixa capa, ignorem els clics addicionals fins que acabi.
   if (switchLayer._loading && switchLayer._loading[layerName]) {
     console.log('⏳ Ja s\'està carregant ' + layerName + ', ignorant clic duplicat');
     return;
   }
   if (!switchLayer._loading) switchLayer._loading = {};
 
-  // Si la capa ja està carregada, simplement canviem
   if (layerLoaded[layerName]) {
     activeLayer = layerName;
     showActiveLayer();
@@ -1480,8 +1384,6 @@ function updateLegendVisibility(layerName) {
   var legendKey = legendMap[layerName];
   if (legendKey && dom[legendKey]) dom[legendKey].style.display = 'block';
 
-  // La llegenda de radar és independent: es mostra sempre que
-  // l'overlay estigui actiu, sigui quina sigui la capa de fons.
   if (dom.legendRadar) dom.legendRadar.style.display = radarOverlayEnabled ? 'block' : 'none';
 }
 
@@ -1508,7 +1410,6 @@ async function toggleRadarOverlay(enabled) {
     if (dom.legendRadar) dom.legendRadar.style.display = 'block';
     if (dom.radarControls) dom.radarControls.style.display = 'flex';
 
-    // ← AQUÍ (rama: radar ya estaba cargado)
     if (window.StormAlert) {
       window.StormAlert.attach(map);
       await window.StormAlert.refresh();
@@ -1536,7 +1437,6 @@ async function toggleRadarOverlay(enabled) {
   if (dom.radarControls) dom.radarControls.style.display = 'flex';
   setStatus('', 'Radar actiu');
 
-  // ← Y AQUÍ (rama: radar se acaba de cargar por primera vez)
   if (window.StormAlert) {
     window.StormAlert.attach(map);
     await window.StormAlert.refresh();
@@ -1707,17 +1607,9 @@ function createRefreshButton() {
   });
 }
 
-// Funció per refrescar només la capa activa
 async function refreshCurrentLayer() {
   if (isRefreshing) return;
 
-  // Si l'overlay de radar està actiu, es refresca en paral·lel amb
-  // la capa de fons (són independents ara). Es passa force=true a
-  // load() perque cada refresc (manual o automatic) torni a
-  // descarregar els 5 frames des de R2 sense fer servir cap dada
-  // en cache (anticache massiu: mai es reutilitzen frames vells).
-  // Es respecta si l'usuari tenia l'animacio en marxa o en pausa:
-  // nomes es torna a engegar l'animacio si ja estava reproduint-se.
   if (radarOverlayEnabled && window.RadarLayer) {
     var radarWasPlaying = window.RadarLayer.isPlaying();
     window.RadarLayer.detach();
@@ -1808,36 +1700,30 @@ function scheduleNextAutoRefresh() {
 // INTEGRACIÓ DE LLAMPS (Blitzortung) - VERSIÓ FINAL
 // ═════════════════════════════════════════════════════════════
 
-// Funció per carregar lightning.js dinàmicament
 function carregarLlamps() {
-  // Comprovar si ja està carregat
   if (document.getElementById('lightning-script')) {
     console.log('⚡ Llamps ja carregats');
     return;
   }
     
-  // Comprovar que el mapa existeix i és vàlid
   if (!window.map) {
     console.log('⏳ Esperant mapa per carregar llamps...');
     setTimeout(carregarLlamps, 500);
     return;
   }
     
-  // Comprovar que el mapa té el mètode createPane
   if (typeof window.map.createPane !== 'function') {
     console.log('⏳ Esperant que el mapa estigui completament inicialitzat...');
     setTimeout(carregarLlamps, 500);
     return;
   }
     
-  // Comprovar que el contenidor del mapa existeix
   if (!document.getElementById('map')) {
     console.log('⏳ Esperant contenidor del mapa...');
     setTimeout(carregarLlamps, 500);
     return;
   }
     
-  // Crear l'script
   var script = document.createElement('script');
   script.id = 'lightning-script';
   script.src = 'js/lightning.js';
@@ -1846,17 +1732,14 @@ function carregarLlamps() {
   script.onload = function() {
     console.log('✅ Mòdul de llamps carregat correctament');
         
-    // Disparar l'esdeveniment perquè lightning.js s'iniciï
     var event = new Event('auth:autoritzat');
     document.dispatchEvent(event);
         
-    // Intentar inicialitzar manualment si no s'ha iniciat
     setTimeout(function() {
       if (typeof window.llamps !== 'undefined') {
         console.log('⚡ Llamps disponibles. Utilitza llamps.toggle() per activar');
       } else {
         console.log('⚠️ El mòdul llamps no s\'ha inicialitzat. Intentant de nou...');
-        // Forçar inicialització
         var event2 = new Event('auth:autoritzat');
         document.dispatchEvent(event2);
       }
@@ -1872,23 +1755,19 @@ function carregarLlamps() {
   console.log('⚡ Carregant mòdul de llamps...');
 }
 
-// Funció per verificar que el mapa està completament llest
 function verificarMapaPerLlamps() {
-  // Comprovar que el mapa existeix
   if (!window.map) {
     console.log('⏳ Esperant window.map...');
     setTimeout(verificarMapaPerLlamps, 500);
     return;
   }
     
-  // Comprovar que el mapa té el mètode createPane
   if (typeof window.map.createPane !== 'function') {
     console.log('⏳ Esperant que map.createPane estigui disponible...');
     setTimeout(verificarMapaPerLlamps, 500);
     return;
   }
     
-  // Comprovar que el contenidor del mapa existeix
   if (!document.getElementById('map')) {
     console.log('⏳ Esperant contenidor del mapa...');
     setTimeout(verificarMapaPerLlamps, 500);
@@ -1922,14 +1801,10 @@ function initApp() {
   dom.radarPlayBtn = document.getElementById('radar-play-btn');
   dom.radarOnlyBtn = document.getElementById('radar-only-btn');
 
-  // Vincula l'element on RadarLayer escriura l'hora de cada frame
-  // mentre s'anima (al costat del toggle "Radar de pluja").
   if (window.RadarLayer && dom.radarTime) {
     window.RadarLayer.setTimeElement(dom.radarTime);
   }
 
-  // Commuta la icona play/pause quan l'estat d'animacio canvia,
-  // tant si el canvi ve del boto com d'una fletxa manual.
   if (window.RadarLayer && dom.radarPlayBtn) {
     window.RadarLayer.setPlayStateCallback(function(isPlaying) {
       dom.radarPlayBtn.classList.toggle('is-playing', isPlaying);
@@ -1974,8 +1849,6 @@ function initApp() {
     });
   }
 
-  // ═══ CARREGAR LLAMPS ═══
-  // Esperar que el mapa estigui llest abans de carregar llamps
   setTimeout(function() {
     if (window.map) {
       carregarLlamps();
@@ -1997,7 +1870,6 @@ function initApp() {
 }
 
 function initMapFirstLoad() {
-  // ─── PRIMER: Assignar window.map ───
   window.map = L.map('map', {
     center: CONFIG.initialCenter,
     zoom: CONFIG.initialZoom,
@@ -2007,7 +1879,6 @@ function initMapFirstLoad() {
     zoomSnap: 0.5,
   });
     
-  // ─── Assignar també a la variable local ───
   map = window.map;
 
   var lon_min = CONFIG.bbox.lon_min, lat_min = CONFIG.bbox.lat_min, lon_max = CONFIG.bbox.lon_max, lat_max = CONFIG.bbox.lat_max;
@@ -2020,7 +1891,6 @@ function initMapFirstLoad() {
 
   map.fitBounds(bounds, { padding: [10, 10] });
 
-  // ═══ CREAR PANE PER LLAMPS (ara que el mapa ja existeix) ═══
   try {
     map.createPane('paneLlamps');
     var paneLlamps = map.getPane('paneLlamps');
@@ -2116,10 +1986,8 @@ function initMapFirstLoad() {
   return map;
 }
 
-// Iniciar quan el DOM estigui llest
 document.addEventListener('DOMContentLoaded', initApp);
 
-// Exposar funcions per la consola
 window.carregarLlamps = carregarLlamps;
 window.toggleLlamps = function() {
   if (typeof toggleActiu !== 'undefined') {
