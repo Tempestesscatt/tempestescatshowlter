@@ -1,0 +1,225 @@
+name: Descarga SFC + Geopotencial 500hPa + Vent 500hPa
+
+on:
+  workflow_dispatch: {}  # Execució manual
+  schedule:
+    - cron: '*/30 * * * *'  # Cada 30 minuts
+
+permissions:
+  contents: read
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX_SFC: dades_sfc/
+  # Ruta REAL on sfc.py escriu els fitxers
+  DADES_SFC_DIR: scripts-privats/radar/public/dades_sfc
+  # Fitxers .msgpack.gz que ha de generar sfc.py per considerar el cicle vàlid
+  REQUIRED_FILES_SFC: >-
+    sfc_00.msgpack.gz
+    sfc_01.msgpack.gz
+    sfc_02.msgpack.gz
+    sfc_03.msgpack.gz
+    sfc_04.msgpack.gz
+    sfc_05.msgpack.gz
+    sfc_06.msgpack.gz
+    sfc_07.msgpack.gz
+    sfc_08.msgpack.gz
+    sfc_09.msgpack.gz
+    sfc_10.msgpack.gz
+    sfc_11.msgpack.gz
+    sfc_12.msgpack.gz
+    sfc_13.msgpack.gz
+    sfc_14.msgpack.gz
+    sfc_15.msgpack.gz
+    sfc_16.msgpack.gz
+    sfc_17.msgpack.gz
+    sfc_18.msgpack.gz
+    sfc_19.msgpack.gz
+    sfc_20.msgpack.gz
+    sfc_21.msgpack.gz
+    sfc_22.msgpack.gz
+    sfc_23.msgpack.gz
+
+jobs:
+  sfc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+      - name: Clonar repositori (sense submòduls)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -T git@github.com || true
+
+      - name: Inicialitzar submòdul privat (scripts-privats)
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          # Dependències mínimes per sfc.py
+          pip install requests numpy msgpack-python pyproj
+          pip check || true
+
+      - name: Executar sfc.py
+        id: run_sfc
+        env:
+          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          python -X faulthandler scripts-privats/sfc.py
+        continue-on-error: true
+
+      - name: Verificar que els fitxers generats són complets i vàlids
+        id: verify
+        run: |
+          set -euo pipefail
+          
+          # Verificar que el directori existeix
+          if [ ! -d "$DADES_SFC_DIR" ]; then
+            echo "ERROR: El directori $DADES_SFC_DIR no existeix"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          
+          cd "$DADES_SFC_DIR"
+          
+          # Verificar que almenys hi ha fitxers vàlids
+          valid_count=$(find . -name "sfc_*.msgpack.gz" -size +0c | wc -l)
+          
+          if [ "$valid_count" -eq 0 ]; then
+            echo "ERROR: No hi ha cap fitxer SFC vàlid"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "OK: $valid_count fitxers SFC vàlids disponibles"
+            
+            # Llistar els fitxers disponibles
+            echo "Fitxers disponibles:"
+            find . -name "sfc_*.msgpack.gz" -size +0c -exec ls -lh {} \;
+            
+            echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Marcar job com a fallit si no hi ha dades
+        if: steps.verify.outputs.files_ok != 'true'
+        run: |
+          echo "::error::No s'han generat dades SFC vàlides. Avortant."
+          exit 1
+
+      - name: Pujar resultat com a artifact (temporal)
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-sfc
+          path: ${{ env.DADES_SFC_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
+  publicar:
+    needs: sfc
+    if: needs.sfc.outputs.files_ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: sfc-update
+      cancel-in-progress: false
+
+    steps:
+      - name: Descarregar artifact SFC
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-sfc
+          path: dades_sfc/
+
+      - name: Verificar altre cop abans de publicar (defensa extra)
+        run: |
+          set -euo pipefail
+          cd dades_sfc
+          valid_count=$(find . -name "sfc_*.msgpack.gz" -size +0c | wc -l)
+          if [ "$valid_count" -eq 0 ]; then
+            echo "::error::Cap fitxer SFC vàlid per publicar. Avortant."
+            exit 1
+          fi
+          echo "OK: $valid_count fitxers SFC vàlids per publicar"
+
+      - name: Pujar a R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+
+          fail_count=0
+
+          upload_one() {
+            local f="$1"
+            local ct="$2"
+            local dest="$3"
+            local attempt=1
+            local max_attempts=3
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              echo "Pujant ($attempt/$max_attempts): $dest"
+              if npx wrangler r2 object put "$dest" \
+                   --file="$f" --remote --content-type="$ct"; then
+                return 0
+              fi
+              echo "Fallada pujant $dest, reintentant..."
+              attempt=$((attempt + 1))
+              sleep 3
+            done
+            return 1
+          }
+
+          cd dades_sfc
+          for f in *.msgpack.gz; do
+            [ -f "$f" ] || continue
+            ct="application/octet-stream"
+            if ! upload_one "$f" "$ct" "${R2_BUCKET}/${R2_PREFIX_SFC}$f"; then
+              echo "ERROR: no s'ha pogut pujar $f després de tots els intents"
+              fail_count=$((fail_count + 1))
+            fi
+          done
+
+          if [ "$fail_count" -gt 0 ]; then
+            echo "::error::$fail_count fitxer(s) no s'han pogut pujar a R2"
+            exit 1
+          fi
+
+          echo "OK: Dades SFC pujades a R2 correctament"
+
+  actualizar_frontend:
+    needs: publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    
+    steps:
+      - name: Notificar actualització completada
+        run: |
+          echo "SFC actualitzat a R2"
+          echo "El frontend pot actualitzar les dades des de:"
+          echo "https://${R2_BUCKET}.r2.dev/${R2_PREFIX_SFC}sfc_$(date -u +%H).msgpack.gz"
