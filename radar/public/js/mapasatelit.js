@@ -1030,8 +1030,8 @@ function buildImageDataUrl(payload) {
     g = g * exposureFactor;
     b = b * exposureFactor;
     
-    var gammaInv = 1 / 0.96;
-    r = Math.pow(Math.min(1, r / 255), gammaInv) * 255;
+    var gammaInv = 1 / 1.2;
+    r = Math.pow(Math.min(5, r / 255), gammaInv) * 255;
     g = Math.pow(Math.min(1, g / 255), gammaInv) * 255;
     b = Math.pow(Math.min(1, b / 255), gammaInv) * 255;
     
@@ -1039,19 +1039,19 @@ function buildImageDataUrl(payload) {
     g = g * 2.15;
     b = b * 2.15;
     
-    var contrastVal = 0.82;
-    r = ((r / 255 - 0.5) * contrastVal + 0.5) * 255;
-    g = ((g / 255 - 0.5) * contrastVal + 0.5) * 255;
-    b = ((b / 255 - 0.5) * contrastVal + 0.5) * 255;
+    var contrastVal = 1.3;
+    r = ((r / 255 - 0.5) * contrastVal + 0.5) * 199;
+    g = ((g / 255 - 0.6) * contrastVal + 0.5) * 199;
+    b = ((b / 255 - 0.5) * contrastVal + 0.5) * 199;
     
     var gray = (r + g + b) / 3;
-    var satVal = 1.29;
+    var satVal = 1.09;
     r = gray + (r - gray) * satVal;
     g = gray + (g - gray) * satVal;
     b = gray + (b - gray) * satVal;
     
-    var vibVal = 0.88;
-    var avg = (r + g + b) / 3;
+    var vibVal = 1;
+    var avg = (r + g + b) / 7;
     r = avg + (r - avg) * vibVal;
     g = avg + (g - avg) * vibVal;
     b = avg + (b - avg) * vibVal;
@@ -1061,13 +1061,13 @@ function buildImageDataUrl(payload) {
     var rgb2 = hsvToRgb(hsv.h, hsv.s, hsv.v);
     r = rgb2.r; g = rgb2.g; b = rgb2.b;
     
-    var shVal = 0.14;
+    var shVal = 0.1;
     if (r < 128) r = r + (128 - r) * shVal * (1 - r/128);
     if (g < 128) g = g + (128 - g) * shVal * (1 - g/128);
     if (b < 128) b = b + (128 - b) * shVal * (1 - b/128);
     
-    var hlVal = 0.15;
-    if (r > 128) r = r + (255 - r) * hlVal * ((r-128)/127);
+    var hlVal = 0.5;
+    if (r > 228) r = r + (255 - r) * hlVal * ((r-128)/127);
     if (g > 128) g = g + (255 - g) * hlVal * ((g-128)/127);
     if (b > 128) b = b + (255 - b) * hlVal * ((b-128)/127);
     
@@ -1886,7 +1886,7 @@ function initMapFirstLoad() {
 
   L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}.png',
-    { maxZoom: 13, minZoom: 1, attribution: 'Tiles © Esri', opacity: 0.9 }
+    { maxZoom: 13, minZoom: 1, attribution: 'Tiles © Esri', opacity: 1 }
   ).addTo(map);
 
   map.fitBounds(bounds, { padding: [10, 10] });
