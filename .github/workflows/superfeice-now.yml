@@ -62,113 +62,105 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Buscar fitxers de configuració al submòdul
-          echo "Buscant fitxers de configuració:"
-          find scripts-privats/ -maxdepth 2 -name "config*.json" -o -name "configNE*.json" | while read -r cfg; do
-            echo "  Trobat: $cfg"
+          echo "=== FITXERS DE CONFIGURACIÓ TROBATS ==="
+          find scripts-privats/ -maxdepth 2 -name "config*.json" -type f | while read -r cfg; do
+            echo "--- $cfg ---"
             cat "$cfg"
-            echo "---"
+            echo ""
           done
           
-          # Crear directori de sortida si no existeix
+          echo "=== CORREGINT RUTES ==="
+          
+          # Crear directoris de sortida
           mkdir -p scripts-privats/radar/public/dades_sfc
-          
-          # Intentar corregir el config.json del submòdul
-          if [ -f "scripts-privats/config.json" ]; then
-            echo "Corregint scripts-privats/config.json..."
-            # Fer backup
-            cp scripts-privats/config.json scripts-privats/config.json.bak
-            # Reemplaçar rutes de Windows per la ruta relativa correcta
-            sed -i 's|C:\\Users\\simob\\Desktop\\tempestaprova\\mapbox-gl-js\\tempestes.cat\\tempestescatshowlter\\tempestescatshowlter\\tempestescatshowlter\\radar\\public\\dades_sfc|radar/public/dades_sfc|g' scripts-privats/config.json
-            sed -i 's|C:/Users/simob/Desktop/tempestaprova/mapbox-gl-js/tempestes.cat/tempestescatshowlter/tempestescatshowlter/tempestescatshowlter/radar/public/dades_sfc|radar/public/dades_sfc|g' scripts-privats/config.json
-            echo "Config corregit:"
-            cat scripts-privats/config.json
-          fi
-          
-          if [ -f "scripts-privats/configNE.json" ]; then
-            echo "Corregint scripts-privats/configNE.json..."
-            # Fer backup
-            cp scripts-privats/configNE.json scripts-privats/configNE.json.bak
-            # Reemplaçar rutes de Windows per la ruta relativa correcta
-            sed -i 's|C:\\Users\\simob\\Desktop\\tempestaprova\\mapbox-gl-js\\tempestes.cat\\tempestescatshowlter\\tempestescatshowlter\\tempestescatshowlter\\radar\\public\\dades_sfc|radar/public/dades_sfc|g' scripts-privats/configNE.json
-            sed -i 's|C:/Users/simob/Desktop/tempestaprova/mapbox-gl-js/tempestes.cat/tempestescatshowlter/tempestescatshowlter/tempestescatshowlter/radar/public/dades_sfc|radar/public/dades_sfc|g' scripts-privats/configNE.json
-            echo "Config corregit:"
-            cat scripts-privats/configNE.json
-          fi
-          
-          # També crear el directori a l'arrel del repo per si de cas
           mkdir -p radar/public/dades_sfc
+          
+          # Corregir tots els config*.json del submòdul
+          find scripts-privats/ -maxdepth 2 -name "config*.json" -type f | while read -r cfg; do
+            echo "Processant: $cfg"
+            
+            # Backup
+            cp "$cfg" "${cfg}.bak"
+            
+            # Reemplaçar rutes de Windows per ruta relativa
+            # Format amb backslashes
+            sed -i 's|C:\\Users\\simob\\Desktop\\tempestaprova\\mapbox-gl-js\\tempestes.cat\\tempestescatshowlter\\tempestescatshowlter\\tempestescatshowlter\\radar\\public\\dades_sfc|radar/public/dades_sfc|g' "$cfg"
+            
+            # Format amb forward slashes
+            sed -i 's|C:/Users/simob/Desktop/tempestaprova/mapbox-gl-js/tempestes.cat/tempestescatshowlter/tempestescatshowlter/tempestescatshowlter/radar/public/dades_sfc|radar/public/dades_sfc|g' "$cfg"
+            
+            # Qualsevol altra ruta amb C:\ o C:/
+            sed -i 's|C:[\\/]Users[\\/]simob[\\/]Desktop[\\/][^"]*dades_sfc|radar/public/dades_sfc|g' "$cfg"
+            
+            echo "Després de corregir:"
+            cat "$cfg"
+            echo ""
+          done
 
-      - name: Executar sfc.py
+      - name: Executar sfc.py amb --now
         id: run_sfc
         env:
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: |
           set -euo pipefail
-          # Executar des de scripts-privats perquè les rutes relatives funcionin
+          echo "Executant sfc.py des de scripts-privats/"
           cd scripts-privats
-          python -X faulthandler sfc.py
+          python -X faulthandler sfc.py --now
         continue-on-error: true
 
       - name: Localitzar fitxers SFC generats
         id: locate
         run: |
           set -euo pipefail
-          echo "Buscant fitxers SFC generats:"
+          echo "=== BUSCANT FITXERS SFC GENERATS ==="
           
-          # Buscar a totes les ubicacions possibles
-          find . -name "sfc_*.msgpack.gz" -type f -exec ls -lh {} \; 2>/dev/null || true
-          
-          # Buscar en directoris específics
-          echo ""
-          echo "Contingut de scripts-privats/radar/public/dades_sfc:"
-          ls -la scripts-privats/radar/public/dades_sfc/ 2>/dev/null || echo "No existeix"
+          # Buscar en ubicacions específiques
+          echo "1. scripts-privats/radar/public/dades_sfc:"
+          ls -la scripts-privats/radar/public/dades_sfc/ 2>/dev/null | grep "sfc_" || echo "  Buit"
           
           echo ""
-          echo "Contingut de radar/public/dades_sfc:"
-          ls -la radar/public/dades_sfc/ 2>/dev/null || echo "No existeix"
+          echo "2. radar/public/dades_sfc:"
+          ls -la radar/public/dades_sfc/ 2>/dev/null | grep "sfc_" || echo "  Buit"
           
-          # Buscar a tot arreu
           echo ""
-          echo "Tots els fitxers sfc trobats:"
-          find /home/runner/work -name "sfc_*.msgpack.gz" -type f 2>/dev/null | head -20
+          echo "3. Buscant a tot el repositori:"
+          find . -name "sfc_*.msgpack.gz" -type f -exec ls -lh {} \; 2>/dev/null || echo "  No trobats"
+          
+          echo ""
+          echo "4. Buscant a tot el sistema:"
+          find /home/runner/work -name "sfc_*.msgpack.gz" -type f -exec ls -lh {} \; 2>/dev/null | head -20 || echo "  No trobats"
 
       - name: Verificar que els fitxers generats són complets i vàlids
         id: verify
         run: |
           set -euo pipefail
           
-          # Buscar en totes les ubicacions possibles
           n_valids=0
           
-          # Primera ubicació possible
+          # Verificar primera ubicació
           if [ -d "scripts-privats/radar/public/dades_sfc" ]; then
-            cd scripts-privats/radar/public/dades_sfc
-            for f in sfc_*.msgpack.gz; do
+            for f in scripts-privats/radar/public/dades_sfc/sfc_*.msgpack.gz; do
               [ -f "$f" ] || continue
               if [ -s "$f" ]; then
                 n_valids=$((n_valids + 1))
               fi
             done
-            cd - > /dev/null
           fi
           
-          # Segona ubicació possible
+          # Verificar segona ubicació
           if [ -d "radar/public/dades_sfc" ]; then
-            cd radar/public/dades_sfc
-            for f in sfc_*.msgpack.gz; do
+            for f in radar/public/dades_sfc/sfc_*.msgpack.gz; do
               [ -f "$f" ] || continue
               if [ -s "$f" ]; then
                 n_valids=$((n_valids + 1))
               fi
             done
-            cd - > /dev/null
           fi
           
-          # Tercera ubicació: buscar a tot arreu
+          # Si no s'han trobat a les ubicacions conegudes, buscar a tot arreu
           if [ "$n_valids" -eq 0 ]; then
-            n_valids=$(find /home/runner/work -name "sfc_*.msgpack.gz" -size +0c 2>/dev/null | wc -l)
+            n_valids=$(find /home/runner/work -name "sfc_*.msgpack.gz" -size +0c -type f 2>/dev/null | wc -l)
           fi
           
           echo "Fitxers sfc_*.msgpack.gz vàlids trobats: $n_valids (mínim requerit: $MIN_FITXERS_SFC)"
@@ -216,6 +208,8 @@ jobs:
             echo "::error::No s'han trobat fitxers per pujar"
             exit 1
           fi
+          
+          echo "Total fitxers a pujar: $n_files"
 
       - name: Pujar resultat com a artifact
         if: steps.verify.outputs.files_ok == 'true'
@@ -298,3 +292,12 @@ jobs:
           fi
 
           echo "OK: dades SFC pujades a R2 correctament"
+          
+          echo ""
+          echo "=== RESUM DE LA PUBLICACIÓ ==="
+          echo "Bucket: $R2_BUCKET"
+          echo "Prefix: $R2_PREFIX_SFC"
+          echo "Fitxers publicats:"
+          for f in sfc_*.msgpack.gz; do
+            echo "  - $f"
+          done
