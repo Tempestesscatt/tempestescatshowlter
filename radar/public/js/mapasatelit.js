@@ -21,7 +21,7 @@ const CONFIG = {
   },
   initialCenter: [41.6, 0.26],
   initialZoom: 7,
-  defaultOpacity: 0.7,
+  defaultOpacity: 0.8,
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts
