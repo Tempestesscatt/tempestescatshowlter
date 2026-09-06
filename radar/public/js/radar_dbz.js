@@ -1,26 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// radar_dbz.js - Capa de radar Cirrus (dBZ) sobre el mapa satelit
-// Tempestes.cat
-//
-// S'enganxa a mapasatelit.js com una capa mes: 'radar_dbz'.
-// A diferencia de les altres capes (image/ir/ctth_alti/precip),
-// les dades del radar no venen com a graella width x height, sino
-// com una llista de punts dispersos {lat, lon, dbz}. Aquest modul
-// els interpola a una graella pròpia abans de pintar-los, perque
-// es vegi com un radar real (taques suaus, no punts aillats).
-//
-// Frames: frame_1 (mes recent) ... frame_5 (mes antic). S'animen
-// en bucle mentre la capa estigui activa.
-//
-// OFFSET DE CORRECCIO (temporal):
-// Les dades del radar apareixen desplaçades de manera consistent
-// respecte al mapa satelit (pendent de diagnosticar l'origen exacte
-// a rad.py: projeccio/datum de la font Cirrus/Meteofrance). Mentre
-// no es corregeix a l'arrel, s'apliquen aqui uns offsets de
-// lon/lat ajustables en calent amb nudgeEast()/nudgeWest()/
-// nudgeNorth()/nudgeSouth(), persistits a localStorage perque no
-// calgui reajustar-los cada recarrega.
-// ─────────────────────────────────────────────────────────────
+
 
 (function (global) {
 
