@@ -11,6 +11,15 @@
 //
 // Frames: frame_1 (mes recent) ... frame_5 (mes antic). S'animen
 // en bucle mentre la capa estigui activa.
+//
+// OFFSET DE CORRECCIO (temporal):
+// Les dades del radar apareixen desplaçades de manera consistent
+// respecte al mapa satelit (pendent de diagnosticar l'origen exacte
+// a rad.py: projeccio/datum de la font Cirrus/Meteofrance). Mentre
+// no es corregeix a l'arrel, s'apliquen aqui uns offsets de
+// lon/lat ajustables en calent amb nudgeEast()/nudgeWest()/
+// nudgeNorth()/nudgeSouth(), persistits a localStorage perque no
+// calgui reajustar-los cada recarrega.
 // ─────────────────────────────────────────────────────────────
 
 (function (global) {
@@ -38,6 +47,35 @@
     // pero amb mes forats.
     interpolationRadiusCells: 1,
   };
+
+  // ─── Offset de correccio (lon/lat) ───
+  const LON_OFFSET_STORAGE_KEY = 'radar_lon_offset';
+  const LAT_OFFSET_STORAGE_KEY = 'radar_lat_offset';
+  // Graus per click de nudge (~1km aprox a aquesta latitud).
+  const OFFSET_STEP = 0.01;
+  // Valors inicials per defecte si no hi ha res desat a localStorage
+  // (0.1 en longitud es el valor que s'havia trobat que apropava
+  // be el radar cap a l'est; ajustable des de la UI o consola).
+  const DEFAULT_LON_OFFSET = 0.15;
+  const DEFAULT_LAT_OFFSET = -0.02;
+
+  function loadOffset(key, defaultVal) {
+    try {
+      const saved = localStorage.getItem(key);
+      const val = saved !== null ? parseFloat(saved) : defaultVal;
+      return Number.isFinite(val) ? val : defaultVal;
+    } catch (err) {
+      return defaultVal;
+    }
+  }
+
+  function saveOffset(key, val) {
+    try {
+      localStorage.setItem(key, String(val));
+    } catch (err) {
+      console.warn('No s\'ha pogut desar offset de radar:', err);
+    }
+  }
 
   // ─── Paleta dBZ estil NWS/radar americà ───
   // Verd (precip feble) -> groc -> taronja -> vermell -> magenta/blanc
@@ -201,6 +239,9 @@
     _timeEl: null,         // element HTML on es mostra l'hora del frame actual
     _isPlaying: false,     // si l'animacio automatica esta en marxa
     _onPlayStateChange: null, // callback opcional (per actualitzar boto play/pause)
+    _lonOffset: loadOffset(LON_OFFSET_STORAGE_KEY, DEFAULT_LON_OFFSET),
+    _latOffset: loadOffset(LAT_OFFSET_STORAGE_KEY, DEFAULT_LAT_OFFSET),
+    _onOffsetChange: null, // callback opcional (per actualitzar UI d'offset)
 
     isLoaded() {
       return this._loaded;
@@ -335,12 +376,79 @@
       else this.play();
     },
 
+    // ─── Ajust d'offset de correccio (lon/lat) ───
+    // Temporal, mentre no es diagnostica/corregeix l'origen exacte
+    // del desplaçament a rad.py. Persisteix a localStorage.
+
+    getLonOffset() {
+      return this._lonOffset;
+    },
+
+    getLatOffset() {
+      return this._latOffset;
+    },
+
+    // Vincula un callback opcional que s'avisa quan l'offset canvia
+    // (per exemple, per actualitzar una etiqueta a la UI amb els
+    // valors actuals de lon/lat offset).
+    setOffsetChangeCallback(cb) {
+      this._onOffsetChange = cb || null;
+    },
+
+    setLonOffset(val) {
+      this._lonOffset = val;
+      saveOffset(LON_OFFSET_STORAGE_KEY, val);
+      if (this._loaded && this._frames.length > 0) this._showFrame(this._animIndex);
+      if (this._onOffsetChange) this._onOffsetChange(this._lonOffset, this._latOffset);
+    },
+
+    setLatOffset(val) {
+      this._latOffset = val;
+      saveOffset(LAT_OFFSET_STORAGE_KEY, val);
+      if (this._loaded && this._frames.length > 0) this._showFrame(this._animIndex);
+      if (this._onOffsetChange) this._onOffsetChange(this._lonOffset, this._latOffset);
+    },
+
+    // Desplaça el radar cap a l'est (augmenta la longitud).
+    nudgeEast() {
+      this.setLonOffset(this._lonOffset + OFFSET_STEP);
+    },
+
+    // Desplaça el radar cap a l'oest (disminueix la longitud).
+    nudgeWest() {
+      this.setLonOffset(this._lonOffset - OFFSET_STEP);
+    },
+
+    // Desplaça el radar cap amunt / nord (augmenta la latitud).
+    nudgeNorth() {
+      this.setLatOffset(this._latOffset + OFFSET_STEP);
+    },
+
+    // Desplaça el radar cap avall / sud (disminueix la latitud).
+    nudgeSouth() {
+      this.setLatOffset(this._latOffset - OFFSET_STEP);
+    },
+
+    // Reinicia ambdos offsets a 0 (posicio "crua", sense correccio).
+    resetOffsets() {
+      this.setLonOffset(0);
+      this.setLatOffset(0);
+    },
+
     _showFrame(index) {
       const frame = this._frames[index];
       if (!frame || !this._map) return;
 
       const b = frame.bounds;
-      const bounds = [[b.south, b.west], [b.north, b.east]];
+      // Correccio temporal: les dades del radar apareixen desplaçades
+      // de manera consistent (pendent de diagnosticar l'origen exacte
+      // a rad.py: projeccio/datum). S'apliquen offsets ajustables amb
+      // nudgeEast()/nudgeWest()/nudgeNorth()/nudgeSouth(), persistits
+      // a localStorage.
+      const bounds = [
+        [b.south + this._latOffset, b.west + this._lonOffset],
+        [b.north + this._latOffset, b.east + this._lonOffset]
+      ];
 
       if (this._overlay) {
         this._overlay.setUrl(frame.dataUrl);
