@@ -45,7 +45,7 @@ env:
 jobs:
   satelite:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
 
     outputs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
@@ -265,10 +265,9 @@ jobs:
 
   publicar:
     needs: [satelite, radar]
-    # Publica encara que un dels dos falli, sempre que l'ALTRE hagi anat bé:
-    # d'aquesta manera un problema puntual amb Meteofrance (radar) no
-    # bloqueja l'actualització del satèl·lit, i viceversa.
-    if: always() && (needs.satelite.outputs.files_ok == 'true' || needs.radar.outputs.files_ok == 'true')
+    # MODIFICACIÓ: Ara NOMÉS es publica si TOTS DOS jobs han anat bé
+    # (files_ok == 'true' per als dos). Si qualsevol falla, NO es fa deploy.
+    if: always() && needs.satelite.outputs.files_ok == 'true' && needs.radar.outputs.files_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     concurrency:
@@ -277,14 +276,12 @@ jobs:
 
     steps:
       - name: Descarregar artifact satèl·lit
-        if: needs.satelite.outputs.files_ok == 'true'
         uses: actions/download-artifact@v4
         with:
           name: dades-satelit
           path: dades_sat/
 
       - name: Descarregar artifact radar
-        if: needs.radar.outputs.files_ok == 'true'
         uses: actions/download-artifact@v4
         with:
           name: dades-radar
