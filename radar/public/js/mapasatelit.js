@@ -20,8 +20,8 @@ const CONFIG = {
     lat_max: 45.134595,
   },
   initialCenter: [41.6, 0.26],
-  initialZoom: 7,
-  defaultOpacity: 0.8,
+  initialZoom: 2,
+  defaultOpacity: 0.9,
 };
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minuts

@@ -34,8 +34,8 @@
   // Valors inicials per defecte si no hi ha res desat a localStorage
   // (0.1 en longitud es el valor que s'havia trobat que apropava
   // be el radar cap a l'est; ajustable des de la UI o consola).
-  const DEFAULT_LON_OFFSET = 0.15;
-  const DEFAULT_LAT_OFFSET = -0.02;
+  const DEFAULT_LON_OFFSET = 0.05;
+  const DEFAULT_LAT_OFFSET = -0.049;
 
   function loadOffset(key, defaultVal) {
     try {
@@ -437,9 +437,9 @@
         // fronteres (zIndex 3), ja que ara es un overlay independent
         // que es pot combinar amb qualsevol capa de fons.
         this._overlay = L.imageOverlay(frame.dataUrl, bounds, {
-          opacity: 0.65,
+          opacity: 1,
           interactive: false,
-          zIndex: 4,
+          zIndex: 10,
         });
       }
       if (!this._map.hasLayer(this._overlay)) {
