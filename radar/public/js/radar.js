@@ -2,6 +2,7 @@
 //  radar.js — VISOR RADAR METEOROLÒGIC (NE ESPANYA)
 //  CIRRUS (dBZ) / NIMBUS (mm) · Hora Madrid · Escala americana · Multi-paleta
 //  + Ubicació en viu (seguiment) + Alerta de dBZ fort a prop
+//  + RENDERITZAT SUAU (interpolació bilineal + gaussiana)
 // ═══════════════════════════════════════════════════════════════════════
 
 (function() {
@@ -249,7 +250,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     map.getPane('paneUser').style.zIndex = 650;
 
     // ═══════════════════════════════════════════════════════════════════
-    //  CAPA CANVAS
+    //  CAPA CANVAS AMB RENDERITZAT SUAU (interpolació bilineal + gaussiana)
     // ═══════════════════════════════════════════════════════════════════
     const RadarLayer = L.Layer.extend({
         initialize: function() {
@@ -258,6 +259,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             this._offscreen = null;
             this._dirty = true;
             this._opacity = 0.85;
+            this._gridCache = null; // Cache de la reixa per evitar recàlculs
         },
         onAdd: function(map) {
             this._map = map;
@@ -275,16 +277,62 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         setFrame: function(frame) {
             this._frame = frame;
             this._dirty = true;
+            this._gridCache = null;
             this._render();
         },
         repaint: function() {
             this._dirty = true;
+            this._gridCache = null;
             this._render();
         },
         getFrame: function() {
             return this._frame;
         },
         _drawOffscreen: function() {
+            if (!this._frame || !this._frame.points || !this._frame.points.length) {
+                this._offscreen = null;
+                return;
+            }
+
+            // Si RadarStyleNWS no està disponible, fem fallback al mètode original
+            if (typeof RadarStyleNWS === 'undefined') {
+                console.warn('[Radar] RadarStyleNWS no disponible, usant renderitzat clàssic');
+                this._drawPointsOffscreen();
+                return;
+            }
+
+            try {
+                // 1. CONSTRUIR REIXA REGULAR AMB buildGrid
+                const gridObj = RadarStyleNWS.buildGrid(this._frame);
+                
+                if (!gridObj || !gridObj.grid || gridObj.nRows < 2 || gridObj.nCols < 2) {
+                    this._drawPointsOffscreen();
+                    return;
+                }
+
+                // 2. SUAVITZAT GAUSSIÀ (elimina textura de quadrícula)
+                const smoothed = RadarStyleNWS.smoothGrid(gridObj, 1.2);
+
+                // 3. DIMENSIONS DE L'OFFSCREEN
+                const W = 1024;
+                const H = Math.round(W * (smoothed.nRows / smoothed.nCols));
+
+                // 4. RASTERITZAR AMB INTERPOLACIÓ BILINEAL
+                const canvas = RadarStyleNWS.rasterizeGridToCanvas(smoothed, W, H, 210);
+                
+                // Guardar també el grid per si el necessitem després (p.ex. per l'alerta)
+                this._gridCache = smoothed;
+                this._offscreen = canvas;
+                this._dirty = false;
+
+            } catch(e) {
+                console.warn('[Radar] Error en renderitzat suau, fallback a punts:', e);
+                this._drawPointsOffscreen();
+            }
+        },
+
+        // Mètode original de pintar punts (fallback)
+        _drawPointsOffscreen: function() {
             if (!this._frame || !this._frame.points || !this._frame.points.length) return;
             const pts = this._frame.points;
             const b = this._frame.bounds;
@@ -300,7 +348,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             const ctx = this._offscreen.getContext('2d');
             ctx.clearRect(0, 0, W, H);
 
-            // ═══ MIDA DE PUNT BASADA EN LA RESOLUCIO REAL DE DADES ═══
+            // MIDA DE PUNT BASADA EN LA RESOLUCIO REAL DE DADES
             const resolutionM = this._frame.resolution_m || FALLBACK_RESOLUTION_M;
             const centerLatRad = ((b.north + b.south) / 2) * Math.PI / 180;
             const metersPerDegLon = 111320 * Math.cos(centerLatRad);
@@ -322,7 +370,9 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 ctx.fillRect(Math.floor(x), Math.floor(y), pSize, pSize);
             }
             this._dirty = false;
+            this._gridCache = null;
         },
+
         _render: function() {
             if (!this._frame || !this._map) return;
             if (this._dirty) this._drawOffscreen();
@@ -345,6 +395,18 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 ctx.drawImage(this._offscreen, tl.x, tl.y, w, h);
                 ctx.globalAlpha = 1.0;
             }
+        },
+
+        // Mètode per obtenir el grid actual (útil per l'alerta de proximitat)
+        getGrid: function() {
+            if (!this._gridCache && this._frame) {
+                try {
+                    if (typeof RadarStyleNWS !== 'undefined') {
+                        this._gridCache = RadarStyleNWS.buildGrid(this._frame);
+                    }
+                } catch(e) {}
+            }
+            return this._gridCache;
         }
     });
 
