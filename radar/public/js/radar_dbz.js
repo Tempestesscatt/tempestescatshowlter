@@ -1,5 +1,3 @@
-
-
 (function (global) {
 
   // Dades servides des de R2 (mateix bucket/domini que fa servir
@@ -13,17 +11,23 @@
     // Temps entre frames de l'animacio (ms). Prou lent per veure
     // be cada instant pero prou agil per transmetre moviment.
     animIntervalMs: 700,
-    // Resolucio de la graella d'interpolacio (px). Mes alt = mes
-    // detall pero mes cost de calcul; 400x400 va sobrat per la
-    // regio NE Espanya i es suavitza igualment amb l'upscale del
-    // canvas (igual que fan les altres capes).
-    gridWidth: 380,
-    gridHeight: 380,
-    // Radi d'influencia de cada punt de radar sobre la graella,
-    // en "cel·les" de graella. Mes gran = taques mes suaus i
-    // contínues (estil radar real); mes petit = mes fidel al punt
-    // pero amb mes forats.
-    interpolationRadiusCells: 1,
+    // Resolucio de sortida del canvas rasteritzat (px). Es el que
+    // abans es deia gridWidth/gridHeight; ara es nomes la mida del
+    // canvas final (la reixa de dades interna es construeix a la
+    // resolucio nativa dels punts i despres es mostreja bilinealment
+    // cap aquesta mida de sortida, igual que fa radar-style.js).
+    outW: 700,
+    outH: 700,
+    // Radi (en cel·les de la reixa nativa) del blur gaussia aplicat
+    // abans de rasteritzar. Mes gran = taques mes suaus i continues
+    // (estil radar real); mes petit = mes fidel al punt pero amb
+    // mes soroll/textura.
+    smoothRadiusCells: 1,
+    // Resolucio aproximada (metres) de cada cel·la de la reixa nativa
+    // construida a partir dels punts dispersos del frame. Nomes
+    // s'utilitza si el payload del frame no porta el seu propi
+    // resolution_m.
+    defaultResolutionM: 2000,
   };
 
   // ─── Offset de correccio (lon/lat) ───
@@ -55,156 +59,276 @@
     }
   }
 
-  // ─── Paleta dBZ estil NWS/radar americà ───
-  // Verd (precip feble) -> groc -> taronja -> vermell -> magenta/blanc
-  // (nucli de tempesta severa), igual que els radars operatius de la
-  // NOAA (NEXRAD reflectivity, escala "NWS Reflectivity").
-  const DBZ_STOPS = [
-    { dbz: 5, color: [4, 233, 231] },     // cian - precip molt feble
-    { dbz: 10, color: [1, 159, 244] },    // blau clar
-    { dbz: 15, color: [3, 0, 244] },      // blau
-    { dbz: 20, color: [2, 253, 2] },      // verd
-    { dbz: 25, color: [1, 197, 1] },      // verd mitja
-    { dbz: 30, color: [0, 142, 0] },      // verd fosc
-    { dbz: 35, color: [253, 248, 2] },    // groc
-    { dbz: 40, color: [229, 188, 0] },    // groc-taronja
-    { dbz: 45, color: [253, 149, 0] },    // taronja
-    { dbz: 50, color: [253, 0, 0] },      // vermell
-    { dbz: 55, color: [212, 0, 0] },      // vermell fosc
-    { dbz: 60, color: [188, 0, 0] },      // granate
-    { dbz: 65, color: [248, 0, 253] },    // magenta - severa
-    { dbz: 70, color: [152, 84, 198] },   // violeta - extrema
-    { dbz: 75, color: [253, 253, 253] },  // blanc - nucli extrem
+  // =====================================================================
+  // RENDERITZAT VISUAL (estil radar-style.js v2)
+  //
+  // En comptes de "pintar" cada punt dispers directament sobre un canvas
+  // amb un kernel gaussia per punt (com abans), aqui es segueix el
+  // mateix enfocament que radar-style.js:
+  //   1) els punts {lat,lon,dbz} es converteixen a una REIXA REGULAR
+  //      (buildGrid), agafant el maxim de dBZ per cel·la.
+  //   2) es suavitza la reixa sencera amb un blur gaussia separable
+  //      que ignora les cel·les sense dada (smoothGrid), evitant que
+  //      les zones sense pluja es "tenyeixin".
+  //   3) es rasteritza la reixa suavitzada a la mida final del canvas
+  //      fent servir interpolacio BILINEAL entre cel·les
+  //      (rasterizeGridToCanvas), amb un lleuger fade a la vora del
+  //      llindar minim per evitar una vora dura.
+  // Aixo dona vores suaus i contínues, com el radar de TV/NEXRAD real,
+  // en lloc de l'aspecte "taques" del kernel per punt.
+  // =====================================================================
+
+  // ─── Paleta dBZ estil NWS/radar americà (colors "clàssics") ───
+  const NWS_STEPS = [
+    { min: -Infinity, max: 5,  c: null },
+    { min: 5,   max: 10,  c: [4, 233, 231] },
+    { min: 10,  max: 15,  c: [1, 159, 244] },
+    { min: 15,  max: 20,  c: [3, 0, 244] },
+    { min: 20,  max: 25,  c: [2, 253, 2] },
+    { min: 25,  max: 30,  c: [1, 197, 1] },
+    { min: 30,  max: 35,  c: [0, 142, 0] },
+    { min: 35,  max: 40,  c: [253, 248, 2] },
+    { min: 40,  max: 45,  c: [229, 188, 0] },
+    { min: 45,  max: 50,  c: [253, 149, 0] },
+    { min: 50,  max: 55,  c: [253, 0, 0] },
+    { min: 55,  max: 60,  c: [212, 0, 0] },
+    { min: 60,  max: 65,  c: [188, 0, 0] },
+    { min: 65,  max: 70,  c: [248, 0, 253] },
+    { min: 70,  max: 75,  c: [152, 84, 198] },
+    { min: 75,  max: Infinity, c: [253, 253, 253] },
   ];
 
-  function lerpColor(c1, c2, f) {
-    return [
-      Math.round(c1[0] + (c2[0] - c1[0]) * f),
-      Math.round(c1[1] + (c2[1] - c1[1]) * f),
-      Math.round(c1[2] + (c2[2] - c1[2]) * f),
-    ];
-  }
+  const THRESHOLD_DBZ = 5;
 
-  function dbzToColor(dbz) {
-    if (dbz === null || dbz === undefined || Number.isNaN(dbz) || dbz < DBZ_STOPS[0].dbz) {
-      return [0, 0, 0, 0]; // transparent per sota del llindar minim
-    }
-    const clamped = Math.min(DBZ_STOPS[DBZ_STOPS.length - 1].dbz, dbz);
-    for (let i = 0; i < DBZ_STOPS.length - 1; i++) {
-      const a = DBZ_STOPS[i];
-      const b = DBZ_STOPS[i + 1];
-      if (clamped >= a.dbz && clamped <= b.dbz) {
-        const f = (clamped - a.dbz) / (b.dbz - a.dbz);
-        const [r, g, bl] = lerpColor(a.color, b.color, f);
-        // Opacitat progressiva: precip feble mes transparent, nuclis
-        // forts gairebe opacs, com fan els radars reals.
-        const alpha = Math.round(140 + (clamped / DBZ_STOPS[DBZ_STOPS.length - 1].dbz) * 115);
-        return [r, g, bl, Math.min(255, alpha)];
+  /**
+   * Color continu (no per graons) per a un valor de dBZ, interpolant
+   * linealment entre els colors base de cada tram. Dona transicions
+   * netes sense bandes brusques.
+   */
+  function dbzToColorSmooth(dbz) {
+    const steps = NWS_STEPS.filter((s) => s.c);
+    if (dbz < THRESHOLD_DBZ) return steps[0].c;
+    if (dbz >= steps[steps.length - 1].min) return steps[steps.length - 1].c;
+    for (let i = 0; i < steps.length - 1; i++) {
+      const a = steps[i], b = steps[i + 1];
+      if (dbz >= a.min && dbz < b.min) {
+        const t = (dbz - a.min) / (b.min - a.min);
+        return [
+          a.c[0] + t * (b.c[0] - a.c[0]),
+          a.c[1] + t * (b.c[1] - a.c[1]),
+          a.c[2] + t * (b.c[2] - a.c[2]),
+        ];
       }
     }
-    return [...DBZ_STOPS[DBZ_STOPS.length - 1].color, 255];
+    return steps[0].c;
   }
 
-  // ─── Interpolacio de punts dispersos a graella ───
-  // Per cada frame es reben punts {lat, lon, dbz} irregulars. Es
-  // projecten sobre una graella regular (gridWidth x gridHeight) dins
-  // el bbox del frame, acumulant-los amb un kernel gaussia simple
-  // (pes segons distancia) perque el resultat siguin taques suaus i
-  // continues en lloc de pixels aillats.
-  function interpolateToGrid(points, bounds, gridW, gridH, radiusCells) {
-    const grid = new Float32Array(gridW * gridH).fill(NaN);
-    const weightSum = new Float32Array(gridW * gridH);
-    const valueSum = new Float32Array(gridW * gridH);
+  /**
+   * Construeix una reixa regular a partir dels punts d'un frame.
+   * frame ha de tenir { points: [{lat,lon,dbz}, ...], resolution_m?,
+   * bounds?: {north,south,east,west} }.
+   * Retorna { grid: Float32Array(nRows*nCols) amb NaN=sense dada,
+   *           nRows, nCols, north, west, dLat, dLon }.
+   */
+  function buildGrid(frame) {
+    const pts = frame.points;
+    const resolutionM = frame.resolution_m || RADAR_CONFIG.defaultResolutionM;
 
-    const lonRange = bounds.east - bounds.west;
-    const latRange = bounds.north - bounds.south;
-    if (lonRange <= 0 || latRange <= 0 || points.length === 0) {
-      return { grid, gridW, gridH };
+    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+
+    if (frame.bounds) {
+      minLat = frame.bounds.south;
+      maxLat = frame.bounds.north;
+      minLon = frame.bounds.west;
+      maxLon = frame.bounds.east;
+    } else {
+      for (const p of pts) {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      }
     }
 
-    const radiusPx = Math.max(1, radiusCells);
-    const radiusPx2 = radiusPx * radiusPx;
+    if (!isFinite(minLat) || !pts || pts.length === 0) {
+      return { grid: new Float32Array(1).fill(NaN), nRows: 1, nCols: 1, north: 0, west: 0, dLat: 0.01, dLon: 0.01 };
+    }
 
-    for (let p = 0; p < points.length; p++) {
-      const pt = points[p];
-      const gx = ((pt.lon - bounds.west) / lonRange) * (gridW - 1);
-      const gy = ((bounds.north - pt.lat) / latRange) * (gridH - 1);
+    const midLat = (minLat + maxLat) / 2;
+    const metersPerDegLat = 111320;
+    const metersPerDegLon = 111320 * Math.cos((midLat * Math.PI) / 180);
+    const dLat = resolutionM / metersPerDegLat;
+    const dLon = resolutionM / Math.max(metersPerDegLon, 1);
 
-      const x0 = Math.max(0, Math.floor(gx - radiusPx));
-      const x1 = Math.min(gridW - 1, Math.ceil(gx + radiusPx));
-      const y0 = Math.max(0, Math.floor(gy - radiusPx));
-      const y1 = Math.min(gridH - 1, Math.ceil(gy + radiusPx));
+    const nRows = Math.max(1, Math.round((maxLat - minLat) / dLat) + 1);
+    const nCols = Math.max(1, Math.round((maxLon - minLon) / dLon) + 1);
 
-      for (let y = y0; y <= y1; y++) {
-        for (let x = x0; x <= x1; x++) {
-          const dx = x - gx;
-          const dy = y - gy;
-          const d2 = dx * dx + dy * dy;
-          if (d2 > radiusPx2) continue;
-          // Kernel gaussia normalitzat pel radi (suavitzat estandard)
-          const w = Math.exp(-d2 / (2 * (radiusPx / 2) * (radiusPx / 2)));
-          const idx = y * gridW + x;
-          weightSum[idx] += w;
-          valueSum[idx] += w * pt.dbz;
+    const grid = new Float32Array(nRows * nCols).fill(NaN);
+
+    for (const p of pts) {
+      const row = Math.round((maxLat - p.lat) / dLat); // fila 0 = nord
+      const col = Math.round((p.lon - minLon) / dLon);
+      if (row >= 0 && row < nRows && col >= 0 && col < nCols) {
+        const idx = row * nCols + col;
+        if (isNaN(grid[idx]) || p.dbz > grid[idx]) grid[idx] = p.dbz;
+      }
+    }
+
+    return { grid, nRows, nCols, north: maxLat, west: minLon, dLat, dLon };
+  }
+
+  /**
+   * Aplica un suavitzat gaussia (blur) sobre la reixa de dBZ, tractant
+   * les cel·les sense dada (NaN) amb pes zero perque no "tenyeixin"
+   * les zones sense pluja del voltant.
+   */
+  function smoothGrid(gridObj, radius) {
+    radius = radius || 1;
+    const { grid, nRows, nCols } = gridObj;
+
+    const sigma = radius * 0.6;
+    const kernelSize = radius * 2 + 1;
+    const kernel = new Float32Array(kernelSize);
+    let kSum = 0;
+    for (let i = 0; i < kernelSize; i++) {
+      const x = i - radius;
+      const v = Math.exp(-(x * x) / (2 * sigma * sigma));
+      kernel[i] = v;
+      kSum += v;
+    }
+    for (let i = 0; i < kernelSize; i++) kernel[i] /= kSum;
+
+    const tmp = new Float32Array(nRows * nCols).fill(NaN);
+    const out = new Float32Array(nRows * nCols).fill(NaN);
+
+    // passada horitzontal
+    for (let r = 0; r < nRows; r++) {
+      for (let c = 0; c < nCols; c++) {
+        let sumW = 0, sumV = 0, any = false;
+        for (let k = -radius; k <= radius; k++) {
+          const cc = c + k;
+          if (cc < 0 || cc >= nCols) continue;
+          const v = grid[r * nCols + cc];
+          if (isNaN(v)) continue;
+          const w = kernel[k + radius];
+          sumV += v * w;
+          sumW += w;
+          any = true;
         }
+        tmp[r * nCols + c] = any ? sumV / sumW : NaN;
       }
     }
 
-    for (let i = 0; i < grid.length; i++) {
-      grid[i] = weightSum[i] > 0 ? valueSum[i] / weightSum[i] : NaN;
+    // passada vertical
+    for (let c = 0; c < nCols; c++) {
+      for (let r = 0; r < nRows; r++) {
+        let sumW = 0, sumV = 0, any = false;
+        for (let k = -radius; k <= radius; k++) {
+          const rr = r + k;
+          if (rr < 0 || rr >= nRows) continue;
+          const v = tmp[rr * nCols + c];
+          if (isNaN(v)) continue;
+          const w = kernel[k + radius];
+          sumV += v * w;
+          sumW += w;
+          any = true;
+        }
+        out[r * nCols + c] = any ? sumV / sumW : NaN;
+      }
     }
 
-    return { grid, gridW, gridH };
+    return { grid: out, nRows, nCols, north: gridObj.north, west: gridObj.west, dLat: gridObj.dLat, dLon: gridObj.dLon };
   }
 
-  function buildRadarDataUrl(frameData) {
-    const { gridWidth, gridHeight, interpolationRadiusCells } = RADAR_CONFIG;
-    const { grid, gridW, gridH } = interpolateToGrid(
-      frameData.points, frameData.bounds, gridWidth, gridHeight, interpolationRadiusCells
-    );
+  /**
+   * Interpolacio bilineal d'un valor de la reixa a coordenades de
+   * fila/columna fraccionaries.
+   */
+  function bilinearSample(grid, nRows, nCols, r, c) {
+    if (r < 0 || r > nRows - 1 || c < 0 || c > nCols - 1) return NaN;
+    const r0 = Math.floor(r), c0 = Math.floor(c);
+    const r1 = Math.min(r0 + 1, nRows - 1), c1 = Math.min(c0 + 1, nCols - 1);
+    const fr = r - r0, fc = c - c0;
 
+    const v00 = grid[r0 * nCols + c0];
+    const v01 = grid[r0 * nCols + c1];
+    const v10 = grid[r1 * nCols + c0];
+    const v11 = grid[r1 * nCols + c1];
+
+    const vals = [
+      { v: v00, w: (1 - fr) * (1 - fc) },
+      { v: v01, w: (1 - fr) * fc },
+      { v: v10, w: fr * (1 - fc) },
+      { v: v11, w: fr * fc },
+    ].filter((x) => !isNaN(x.v));
+
+    if (vals.length === 0) return NaN;
+    let sumW = 0, sumV = 0;
+    for (const x of vals) { sumW += x.w; sumV += x.v * x.w; }
+    return sumW > 0 ? sumV / sumW : NaN;
+  }
+
+  /**
+   * Rasteritza una reixa de dBZ a un <canvas> amb interpolacio
+   * bilineal (suau, sense vores dentades) i colors NWS continus.
+   */
+  function rasterizeGridToCanvas(gridObj, outW, outH, opacity255) {
+    const { grid, nRows, nCols } = gridObj;
     const canvas = document.createElement('canvas');
-    canvas.width = gridW;
-    canvas.height = gridH;
+    canvas.width = outW;
+    canvas.height = outH;
     const ctx = canvas.getContext('2d');
-    const imageData = ctx.createImageData(gridW, gridH);
+    const imgData = ctx.createImageData(outW, outH);
+    const data = imgData.data;
+    const baseAlpha = opacity255 !== undefined ? opacity255 : 210;
 
-    for (let i = 0; i < grid.length; i++) {
-      const color = dbzToColor(grid[i]);
-      const idx = i * 4;
-      imageData.data[idx] = color[0];
-      imageData.data[idx + 1] = color[1];
-      imageData.data[idx + 2] = color[2];
-      imageData.data[idx + 3] = color[3];
+    const rowScale = (nRows - 1) / Math.max(outH - 1, 1);
+    const colScale = (nCols - 1) / Math.max(outW - 1, 1);
+
+    for (let y = 0; y < outH; y++) {
+      const r = y * rowScale;
+      for (let x = 0; x < outW; x++) {
+        const c = x * colScale;
+        const dbz = bilinearSample(grid, nRows, nCols, r, c);
+        const idx = (y * outW + x) * 4;
+        if (isNaN(dbz) || dbz < THRESHOLD_DBZ) {
+          data[idx + 3] = 0;
+          continue;
+        }
+        const col = dbzToColorSmooth(dbz);
+        data[idx] = col[0];
+        data[idx + 1] = col[1];
+        data[idx + 2] = col[2];
+        // fade suau just per sobre del llindar, per evitar vora dura
+        const fadeIn = Math.min(1, (dbz - THRESHOLD_DBZ) / 3);
+        data[idx + 3] = Math.round(baseAlpha * fadeIn);
+      }
     }
-    ctx.putImageData(imageData, 0, 0);
 
-    // Suavitzat final amb un lleuger blur via upscale (igual patro
-    // que la resta de capes de mapasatelit.js), perque quedi "maco"
-    // i sense pixelat en fer zoom.
-    const upFactor = 3;
-    const upCanvas = document.createElement('canvas');
-    upCanvas.width = gridW * upFactor;
-    upCanvas.height = gridH * upFactor;
-    const upCtx = upCanvas.getContext('2d');
-    upCtx.imageSmoothingEnabled = true;
-    upCtx.imageSmoothingQuality = 'high';
-    upCtx.filter = 'blur(1.2px) saturate(1.1)';
-    upCtx.drawImage(canvas, 0, 0, upCanvas.width, upCanvas.height);
-    upCtx.filter = 'none';
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  }
 
-    const result = upCanvas.toDataURL('image/png', 1.0);
-
+  /**
+   * Substitueix l'antiga interpolateToGrid + dbzToColor per punt.
+   * Rep el payload del frame (amb .points, .bounds opcional,
+   * .resolution_m opcional) i retorna un dataURL PNG ja suavitzat i
+   * rasteritzat amb bilineal, igual que radar-style.js.
+   */
+  function buildRadarDataUrl(frameData) {
+    const rawGrid = buildGrid(frameData);
+    const smoothed = smoothGrid(rawGrid, RADAR_CONFIG.smoothRadiusCells);
+    const canvas = rasterizeGridToCanvas(smoothed, RADAR_CONFIG.outW, RADAR_CONFIG.outH, 210);
+    const result = canvas.toDataURL('image/png', 1.0);
     canvas.width = 0; canvas.height = 0;
-    upCanvas.width = 0; upCanvas.height = 0;
-
     return result;
   }
 
   // ─── Gestor de capa de radar ───
   // Exposa una API senzilla que mapasatelit.js pot cridar. Manté
   // l'estat propi (frames carregats, animacio en marxa) aillat
-  // d'aquest modul.
+  // d'aquest modul. (Sense canvis respecte a la versio anterior:
+  // nomes es substitueix com es genera frame.dataUrl.)
   const RadarLayer = {
     _frames: [],           // [{timestamp, dataUrl, bounds}, ...] ordenats 1..5
     _loaded: false,
