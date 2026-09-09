@@ -811,6 +811,17 @@
     <button type="button" class="dismiss-btn" id="radarUpdateDismissBtn" title="Descartar">×</button>
   </div>
 
+  <!-- HUD superior: nom del lloc + hora + estat de carrega -->
+  <div class="hud">
+    <div class="hud-row">
+      <span class="hud-title">Tempestes.cat</span>
+    </div>
+
+    <div class="hud-status">
+      <span class="dot loading" id="status-dot"></span>
+      <span id="status-text">Carregant...</span>
+    </div>
+  </div>
 
   <!-- Botó tornar -->
   <a href="https://tempestes.cat/" class="back-btn" title="Tornar a Tempestes.cat">
@@ -1261,12 +1272,12 @@
           url: 'https://geoserveis.icgc.cat/servei/catalunya/mapa-base/wmts/orto-hibrida/MON3857NW/{z}/{x}/{y}.png',
           options: { maxZoom: 19, minZoom: 1, attribution: '© ICGC' },
         },
-{
-  id: 'icgc-administratiu',
-  name: 'ICGC Administratiu',
-  url: 'https://geoserveis.icgc.cat/servei/catalunya/mapa-base/wmts/administratiu/MON3857NW/{z}/{x}/{y}.png',
-  options: { maxZoom: 19, minZoom: 1, attribution: '© ICGC' },
-},
+        {
+          id: 'icgc-administratiu',
+          name: 'ICGC Administratiu',
+          url: 'https://geoserveis.icgc.cat/servei/catalunya/mapa-base/wmts/administratiu/MON3857NW/{z}/{x}/{y}.png',
+          options: { maxZoom: 19, minZoom: 1, attribution: '© ICGC' },
+        },
       ];
       var BASEMAP_STORAGE_KEY = 'tempestescat_basemap_id';
       var currentBaseLayer = null;
