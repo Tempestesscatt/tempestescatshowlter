@@ -1,2 +1,6 @@
 deploy_key*
 *.pem
+
+
+# Ignorar carpeta de dades d'animació
+scripts-privats/dades_anim/
