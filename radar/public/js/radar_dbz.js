@@ -8,36 +8,49 @@
   const RADAR_CONFIG = {
     framePattern: RADAR_BASE + 'meteorad_ne_spain_dbz_frame_{n}.msgpack.gz',
     totalFrames: 5,
-    // Temps entre frames de l'animacio (ms). Prou lent per veure
-    // be cada instant pero prou agil per transmetre moviment.
+    // Temps base entre frames REALS (ms) a velocitat 1x. Es multiplica
+    // per la fraccio de pas d'interpolacio (vegeu INTERP_STEPS) i es
+    // divideix per l'speedMultiplier seleccionat per l'usuari.
     animIntervalMs: 700,
-    // Resolucio de sortida del canvas rasteritzat (px). Es el que
-    // abans es deia gridWidth/gridHeight; ara es nomes la mida del
-    // canvas final (la reixa de dades interna es construeix a la
-    // resolucio nativa dels punts i despres es mostreja bilinealment
-    // cap aquesta mida de sortida, igual que fa radar-style.js).
+    // Nombre de fotogrames intermedis generats ENTRE cada parell de
+    // frames reals consecutius (interpolacio temporal, com lerpGrids
+    // de radar-style.js). 0 = sense interpolar (salt brusc, com
+    // abans). Amb INTERP_STEPS=4 es generen 4 passos intermedis, es
+    // a dir t=0.2,0.4,0.6,0.8 entre cada parell de frames reals, a
+    // mes dels propis frames reals (t=0 i t=1).
+    interpSteps: 4,
+    // Resolucio de sortida del canvas rasteritzat (px).
     outW: 700,
     outH: 700,
     // Radi (en cel·les de la reixa nativa) del blur gaussia aplicat
-    // abans de rasteritzar. Mes gran = taques mes suaus i continues
-    // (estil radar real); mes petit = mes fidel al punt pero amb
-    // mes soroll/textura.
+    // abans de rasteritzar.
     smoothRadiusCells: 1,
-    // Resolucio aproximada (metres) de cada cel·la de la reixa nativa
-    // construida a partir dels punts dispersos del frame. Nomes
-    // s'utilitza si el payload del frame no porta el seu propi
-    // resolution_m.
+    // Resolucio aproximada (metres) de cada cel·la de la reixa nativa.
     defaultResolutionM: 2000,
   };
+
+  // Multiplicadors de velocitat disponibles per l'usuari. 1 = velocitat
+  // normal (animIntervalMs entre frames reals). 0.5 = doble de lenta.
+  // 4 = quatre vegades mes rapida.
+  const SPEED_OPTIONS = [0.5, 1, 2, 4];
+  const SPEED_STORAGE_KEY = 'radar_speed_multiplier';
+
+  function loadSpeed() {
+    try {
+      var saved = parseFloat(localStorage.getItem(SPEED_STORAGE_KEY));
+      return SPEED_OPTIONS.indexOf(saved) !== -1 ? saved : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+  function saveSpeed(val) {
+    try { localStorage.setItem(SPEED_STORAGE_KEY, String(val)); } catch (e) {}
+  }
 
   // ─── Offset de correccio (lon/lat) ───
   const LON_OFFSET_STORAGE_KEY = 'radar_lon_offset';
   const LAT_OFFSET_STORAGE_KEY = 'radar_lat_offset';
-  // Graus per click de nudge (~1km aprox a aquesta latitud).
   const OFFSET_STEP = 0.01;
-  // Valors inicials per defecte si no hi ha res desat a localStorage
-  // (0.1 en longitud es el valor que s'havia trobat que apropava
-  // be el radar cap a l'est; ajustable des de la UI o consola).
   const DEFAULT_LON_OFFSET = 0.05;
   const DEFAULT_LAT_OFFSET = -0.049;
 
@@ -59,26 +72,61 @@
     }
   }
 
+  // ─── Parseig robust de timestamps de radar ───
+  // Els frames envien timestamps en format compacte tipus
+  // "2026-09-09T215000Z" (sense ":" a la part de l'hora), que NO es
+  // un ISO 8601 valid i que `new Date(...)` rebutja silenciosament
+  // (retorna Invalid Date). Aquesta funcio normalitza aquest format
+  // (amb o sense guions/separadors) abans de crear el Date, i cau
+  // a altres formats ISO/"YYYY-MM-DD HH:MM:SS" si cal.
+  function parsejarTimestampRadar(timestamp) {
+    if (!timestamp) return null;
+    const raw = String(timestamp).trim();
+
+    // Format compacte: 2026-09-09T215000Z o 20260909T215000Z
+    const compacte = raw.match(/^(\d{4})-?(\d{2})-?(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/);
+    if (compacte) {
+      const iso = compacte[1] + '-' + compacte[2] + '-' + compacte[3] + 'T' +
+                  compacte[4] + ':' + compacte[5] + ':' + compacte[6] + 'Z';
+      const dt = new Date(iso);
+      if (!Number.isNaN(dt.getTime())) return dt;
+    }
+
+    // Format ISO normal (amb ":"), amb o sense zona horaria explicita
+    const tieneZona = /Z$|[+-]\d{2}:?\d{2}$/.test(raw);
+    const isoNormal = tieneZona ? raw : (raw.replace(' ', 'T') + 'Z');
+    const dt2 = new Date(isoNormal);
+    if (!Number.isNaN(dt2.getTime())) return dt2;
+
+    // Ultim recurs
+    const dt3 = new Date(raw);
+    if (!Number.isNaN(dt3.getTime())) return dt3;
+
+    return null;
+  }
+
+  // Format curt "HH:MM" en hora local de Madrid, per la caixa del
+  // panell de radar (al costat del toggle). Sempre retorna una hora
+  // llegible en 24h; mai el text cru del timestamp.
+  function formatarHoraLocalMadrid(timestamp) {
+    const dt = parsejarTimestampRadar(timestamp);
+    if (!dt) return '--:--';
+    try {
+      return new Intl.DateTimeFormat('ca-ES', {
+        timeZone: 'Europe/Madrid',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(dt);
+    } catch (err) {
+      return '--:--';
+    }
+  }
+
   // =====================================================================
-  // RENDERITZAT VISUAL (estil radar-style.js v2)
-  //
-  // En comptes de "pintar" cada punt dispers directament sobre un canvas
-  // amb un kernel gaussia per punt (com abans), aqui es segueix el
-  // mateix enfocament que radar-style.js:
-  //   1) els punts {lat,lon,dbz} es converteixen a una REIXA REGULAR
-  //      (buildGrid), agafant el maxim de dBZ per cel·la.
-  //   2) es suavitza la reixa sencera amb un blur gaussia separable
-  //      que ignora les cel·les sense dada (smoothGrid), evitant que
-  //      les zones sense pluja es "tenyeixin".
-  //   3) es rasteritza la reixa suavitzada a la mida final del canvas
-  //      fent servir interpolacio BILINEAL entre cel·les
-  //      (rasterizeGridToCanvas), amb un lleuger fade a la vora del
-  //      llindar minim per evitar una vora dura.
-  // Aixo dona vores suaus i contínues, com el radar de TV/NEXRAD real,
-  // en lloc de l'aspecte "taques" del kernel per punt.
+  // RENDERITZAT VISUAL (estil radar-style.js v2, amb interpolacio
+  // temporal afegida)
   // =====================================================================
 
-  // ─── Paleta dBZ estil NWS/radar americà (colors "clàssics") ───
   const NWS_STEPS = [
     { min: -Infinity, max: 5,  c: null },
     { min: 5,   max: 10,  c: [4, 233, 231] },
@@ -100,11 +148,6 @@
 
   const THRESHOLD_DBZ = 5;
 
-  /**
-   * Color continu (no per graons) per a un valor de dBZ, interpolant
-   * linealment entre els colors base de cada tram. Dona transicions
-   * netes sense bandes brusques.
-   */
   function dbzToColorSmooth(dbz) {
     const steps = NWS_STEPS.filter((s) => s.c);
     if (dbz < THRESHOLD_DBZ) return steps[0].c;
@@ -125,10 +168,6 @@
 
   /**
    * Construeix una reixa regular a partir dels punts d'un frame.
-   * frame ha de tenir { points: [{lat,lon,dbz}, ...], resolution_m?,
-   * bounds?: {north,south,east,west} }.
-   * Retorna { grid: Float32Array(nRows*nCols) amb NaN=sense dada,
-   *           nRows, nCols, north, west, dLat, dLon }.
    */
   function buildGrid(frame) {
     const pts = frame.points;
@@ -166,7 +205,7 @@
     const grid = new Float32Array(nRows * nCols).fill(NaN);
 
     for (const p of pts) {
-      const row = Math.round((maxLat - p.lat) / dLat); // fila 0 = nord
+      const row = Math.round((maxLat - p.lat) / dLat);
       const col = Math.round((p.lon - minLon) / dLon);
       if (row >= 0 && row < nRows && col >= 0 && col < nCols) {
         const idx = row * nCols + col;
@@ -177,11 +216,6 @@
     return { grid, nRows, nCols, north: maxLat, west: minLon, dLat, dLon };
   }
 
-  /**
-   * Aplica un suavitzat gaussia (blur) sobre la reixa de dBZ, tractant
-   * les cel·les sense dada (NaN) amb pes zero perque no "tenyeixin"
-   * les zones sense pluja del voltant.
-   */
   function smoothGrid(gridObj, radius) {
     radius = radius || 1;
     const { grid, nRows, nCols } = gridObj;
@@ -201,7 +235,6 @@
     const tmp = new Float32Array(nRows * nCols).fill(NaN);
     const out = new Float32Array(nRows * nCols).fill(NaN);
 
-    // passada horitzontal
     for (let r = 0; r < nRows; r++) {
       for (let c = 0; c < nCols; c++) {
         let sumW = 0, sumV = 0, any = false;
@@ -219,7 +252,6 @@
       }
     }
 
-    // passada vertical
     for (let c = 0; c < nCols; c++) {
       for (let r = 0; r < nRows; r++) {
         let sumW = 0, sumV = 0, any = false;
@@ -240,10 +272,6 @@
     return { grid: out, nRows, nCols, north: gridObj.north, west: gridObj.west, dLat: gridObj.dLat, dLon: gridObj.dLon };
   }
 
-  /**
-   * Interpolacio bilineal d'un valor de la reixa a coordenades de
-   * fila/columna fraccionaries.
-   */
   function bilinearSample(grid, nRows, nCols, r, c) {
     if (r < 0 || r > nRows - 1 || c < 0 || c > nCols - 1) return NaN;
     const r0 = Math.floor(r), c0 = Math.floor(c);
@@ -269,9 +297,47 @@
   }
 
   /**
-   * Rasteritza una reixa de dBZ a un <canvas> amb interpolacio
-   * bilineal (suau, sense vores dentades) i colors NWS continus.
+   * Interpolacio temporal entre dues reixes (t=0 -> gA, t=1 -> gB).
+   * Si les reixes no coincideixen geometricament, es remalla gB sobre
+   * les coordenades de gA amb mostreig bilineal. Igual que lerpGrids
+   * de radar-style.js.
    */
+  function lerpGrids(gA, gB, t) {
+    if (t <= 0) return gA;
+    if (t >= 1) return gB;
+
+    const { nRows, nCols } = gA;
+    const out = new Float32Array(nRows * nCols);
+
+    const sameShape = gB.nRows === gA.nRows && gB.nCols === gA.nCols &&
+      gB.north === gA.north && gB.west === gA.west;
+
+    for (let r = 0; r < nRows; r++) {
+      for (let c = 0; c < nCols; c++) {
+        const a = gA.grid[r * nCols + c];
+
+        let b;
+        if (sameShape) {
+          b = gB.grid[r * nCols + c];
+        } else {
+          const lat = gA.north - r * gA.dLat;
+          const lon = gA.west + c * gA.dLon;
+          const rB = (gB.north - lat) / gB.dLat;
+          const cB = (lon - gB.west) / gB.dLon;
+          b = bilinearSample(gB.grid, gB.nRows, gB.nCols, rB, cB);
+        }
+
+        const aNan = isNaN(a), bNan = isNaN(b);
+        if (aNan && bNan) out[r * nCols + c] = NaN;
+        else if (aNan) out[r * nCols + c] = b * t;
+        else if (bNan) out[r * nCols + c] = a * (1 - t);
+        else out[r * nCols + c] = a + (b - a) * t;
+      }
+    }
+
+    return { grid: out, nRows, nCols, north: gA.north, west: gA.west, dLat: gA.dLat, dLon: gA.dLon };
+  }
+
   function rasterizeGridToCanvas(gridObj, outW, outH, opacity255) {
     const { grid, nRows, nCols } = gridObj;
     const canvas = document.createElement('canvas');
@@ -299,7 +365,6 @@
         data[idx] = col[0];
         data[idx + 1] = col[1];
         data[idx + 2] = col[2];
-        // fade suau just per sobre del llindar, per evitar vora dura
         const fadeIn = Math.min(1, (dbz - THRESHOLD_DBZ) / 3);
         data[idx + 3] = Math.round(baseAlpha * fadeIn);
       }
@@ -310,40 +375,48 @@
   }
 
   /**
-   * Substitueix l'antiga interpolateToGrid + dbzToColor per punt.
-   * Rep el payload del frame (amb .points, .bounds opcional,
-   * .resolution_m opcional) i retorna un dataURL PNG ja suavitzat i
-   * rasteritzat amb bilineal, igual que radar-style.js.
+   * Genera el dataURL PNG a partir d'una reixa ja suavitzada
+   * (rawGrid -> smoothGrid ja aplicat prèviament).
    */
-  function buildRadarDataUrl(frameData) {
-    const rawGrid = buildGrid(frameData);
-    const smoothed = smoothGrid(rawGrid, RADAR_CONFIG.smoothRadiusCells);
-    const canvas = rasterizeGridToCanvas(smoothed, RADAR_CONFIG.outW, RADAR_CONFIG.outH, 210);
+  function gridToDataUrl(smoothedGrid) {
+    const canvas = rasterizeGridToCanvas(smoothedGrid, RADAR_CONFIG.outW, RADAR_CONFIG.outH, 210);
     const result = canvas.toDataURL('image/png', 1.0);
     canvas.width = 0; canvas.height = 0;
     return result;
   }
 
+  /**
+   * Processa el payload cru d'un frame (punts) fins a la reixa
+   * suavitzada, LLESTA per interpolar amb lerpGrids o rasteritzar
+   * directament amb gridToDataUrl.
+   */
+  function buildSmoothedGrid(frameData) {
+    const rawGrid = buildGrid(frameData);
+    return smoothGrid(rawGrid, RADAR_CONFIG.smoothRadiusCells);
+  }
+
   // ─── Gestor de capa de radar ───
-  // Exposa una API senzilla que mapasatelit.js pot cridar. Manté
-  // l'estat propi (frames carregats, animacio en marxa) aillat
-  // d'aquest modul. (Sense canvis respecte a la versio anterior:
-  // nomes es substitueix com es genera frame.dataUrl.)
   const RadarLayer = {
-    _frames: [],           // [{timestamp, dataUrl, bounds}, ...] ordenats 1..5
+    _frames: [],           // [{timestamp, bounds, grid, dataUrl}, ...] ordenats antic->nou
     _loaded: false,
     _loading: false,
     _animTimer: null,
+    // _animIndex ara es un index FRACCIONARI (pot ser 2.4, per
+    // exemple) que representa "entre el frame 2 i el 3, a un 40%".
+    // L'index de frame REAL mostrat a la UI (comptador, hora) es
+    // Math.round(_animIndex).
     _animIndex: 0,
     _overlay: null,
     _map: null,
-    _onFrameChange: null,  // callback opcional (per actualitzar HUD hora)
-    _timeEl: null,         // element HTML on es mostra l'hora del frame actual
-    _isPlaying: false,     // si l'animacio automatica esta en marxa
-    _onPlayStateChange: null, // callback opcional (per actualitzar boto play/pause)
+    _onFrameChange: null,
+    _timeEl: null,
+    _isPlaying: false,
+    _onPlayStateChange: null,
     _lonOffset: loadOffset(LON_OFFSET_STORAGE_KEY, DEFAULT_LON_OFFSET),
     _latOffset: loadOffset(LAT_OFFSET_STORAGE_KEY, DEFAULT_LAT_OFFSET),
-    _onOffsetChange: null, // callback opcional (per actualitzar UI d'offset)
+    _onOffsetChange: null,
+    _speedMultiplier: loadSpeed(),
+    _onSpeedChange: null,
 
     isLoaded() {
       return this._loaded;
@@ -353,11 +426,6 @@
       return this._loading;
     },
 
-    // Descarrega i processa els 5 frames. Nomes es fa la primera
-    // vegada que s'activa la capa (com IR/precip a mapasatelit.js).
-    // Passar force=true ignora el cache intern i torna a descarregar
-    // els 5 frames encara que ja estiguessin carregats (anticache
-    // massiu: cada refresc obté dades noves de R2, mai les antigues).
     async load(force) {
       if (this._loading) return this._loaded;
       if (this._loaded && !force) return true;
@@ -377,11 +445,12 @@
           const compressed = new Uint8Array(await response.arrayBuffer());
           const decompressed = pako.inflate(compressed);
           const payload = msgpack.decode(decompressed);
-          const dataUrl = buildRadarDataUrl(payload);
+          const smoothed = buildSmoothedGrid(payload);
           results.push({
             timestamp: payload.timestamp,
             bounds: payload.bounds,
-            dataUrl: dataUrl,
+            grid: smoothed,               // reixa crua suavitzada, per interpolar
+            dataUrl: gridToDataUrl(smoothed), // PNG del frame real (sense interpolar), cache
           });
         } catch (err) {
           console.warn('Radar frame_' + n + ' no disponible:', err.message);
@@ -393,35 +462,21 @@
         return false;
       }
 
-      // results ve ordenat frame_1 (mes nou) ... frame_5 (mes antic).
-      // Es capgira perque l'animacio flueixi cronologicament: index 0
-      // = mes antic, ultim index = mes nou. Aixi l'animacio avança
-      // "cap endavant en el temps" i acaba sempre a l'instant mes
-      // recent abans de tornar a començar pel mes antic.
       this._frames = results.reverse();
       this._loaded = true;
       this._loading = false;
       return true;
     },
 
-    // Crea/actualitza l'overlay a Leaflet i comença l'animacio.
-    // onFrameChange es opcional (per exemple, per mostrar l'hora del
-    // frame de radar en algun HUD secundari); no toca l'hora
-    // principal, que sempre reflecteix la capa de fons.
     attach(map, onFrameChange) {
       this._map = map;
       this._onFrameChange = onFrameChange || null;
       if (!this._loaded || this._frames.length === 0) return;
 
-      // Comença mostrant l'instant mes recent (ultim del array, ja
-      // que _frames va d'antic a nou), en ESTATIC. No s'anima fins
-      // que l'usuari premi play o una fletxa manualment.
       this._animIndex = this._frames.length - 1;
       this._showFrame(this._animIndex);
     },
 
-    // Treu l'overlay del mapa i atura l'animacio (pero manté les
-    // dades en cache per si es torna a activar la capa).
     detach() {
       this._stopAnimation();
       this._isPlaying = false;
@@ -433,20 +488,20 @@
     },
 
     // ─── Controls manuals (fletxes + play/pause) ───
-
-    // Avança un frame cap al mes nou (cronologicament endavant).
-    // Fa wrap: des del mes nou torna al mes antic.
+    // Ara es mouen d'un FRAME REAL a un altre (saltant qualsevol
+    // interpolacio intermitja en curs), arrodonint primer l'index
+    // fraccionari actual.
     stepForward() {
       if (!this._loaded || this._frames.length === 0) return;
-      this._animIndex = (this._animIndex + 1) % this._frames.length;
+      const cur = Math.round(this._animIndex);
+      this._animIndex = (cur + 1) % this._frames.length;
       this._showFrame(this._animIndex);
     },
 
-    // Retrocedeix un frame cap al mes antic (cronologicament enrere).
-    // Fa wrap: des del mes antic salta al mes nou.
     stepBackward() {
       if (!this._loaded || this._frames.length === 0) return;
-      this._animIndex = (this._animIndex - 1 + this._frames.length) % this._frames.length;
+      const cur = Math.round(this._animIndex);
+      this._animIndex = (cur - 1 + this._frames.length) % this._frames.length;
       this._showFrame(this._animIndex);
     },
 
@@ -454,8 +509,6 @@
       return this._isPlaying;
     },
 
-    // Vincula un callback opcional que s'avisa quan l'estat play/
-    // pause canvia (per exemple, per commutar la icona del boto).
     setPlayStateCallback(cb) {
       this._onPlayStateChange = cb || null;
     },
@@ -478,10 +531,32 @@
       else this.play();
     },
 
-    // ─── Ajust d'offset de correccio (lon/lat) ───
-    // Temporal, mentre no es diagnostica/corregeix l'origen exacte
-    // del desplaçament a rad.py. Persisteix a localStorage.
+    // ─── Velocitat d'animacio (0.5x, 1x, 2x, 4x) ───
+    getSpeedOptions() {
+      return SPEED_OPTIONS.slice();
+    },
 
+    getSpeed() {
+      return this._speedMultiplier;
+    },
+
+    setSpeedCallback(cb) {
+      this._onSpeedChange = cb || null;
+    },
+
+    setSpeed(multiplier) {
+      if (SPEED_OPTIONS.indexOf(multiplier) === -1) return;
+      this._speedMultiplier = multiplier;
+      saveSpeed(multiplier);
+      if (this._onSpeedChange) this._onSpeedChange(multiplier);
+      // Si esta animant, reinicia el timer perque el nou interval
+      // s'apliqui immediatament en lloc d'esperar al proxim tick.
+      if (this._isPlaying) {
+        this._startAnimation();
+      }
+    },
+
+    // ─── Ajust d'offset de correccio (lon/lat) ───
     getLonOffset() {
       return this._lonOffset;
     },
@@ -490,9 +565,6 @@
       return this._latOffset;
     },
 
-    // Vincula un callback opcional que s'avisa quan l'offset canvia
-    // (per exemple, per actualitzar una etiqueta a la UI amb els
-    // valors actuals de lon/lat offset).
     setOffsetChangeCallback(cb) {
       this._onOffsetChange = cb || null;
     },
@@ -511,56 +583,64 @@
       if (this._onOffsetChange) this._onOffsetChange(this._lonOffset, this._latOffset);
     },
 
-    // Desplaça el radar cap a l'est (augmenta la longitud).
-    nudgeEast() {
-      this.setLonOffset(this._lonOffset + OFFSET_STEP);
-    },
+    nudgeEast() { this.setLonOffset(this._lonOffset + OFFSET_STEP); },
+    nudgeWest() { this.setLonOffset(this._lonOffset - OFFSET_STEP); },
+    nudgeNorth() { this.setLatOffset(this._latOffset + OFFSET_STEP); },
+    nudgeSouth() { this.setLatOffset(this._latOffset - OFFSET_STEP); },
+    resetOffsets() { this.setLonOffset(0); this.setLatOffset(0); },
 
-    // Desplaça el radar cap a l'oest (disminueix la longitud).
-    nudgeWest() {
-      this.setLonOffset(this._lonOffset - OFFSET_STEP);
-    },
-
-    // Desplaça el radar cap amunt / nord (augmenta la latitud).
-    nudgeNorth() {
-      this.setLatOffset(this._latOffset + OFFSET_STEP);
-    },
-
-    // Desplaça el radar cap avall / sud (disminueix la latitud).
-    nudgeSouth() {
-      this.setLatOffset(this._latOffset - OFFSET_STEP);
-    },
-
-    // Reinicia ambdos offsets a 0 (posicio "crua", sense correccio).
-    resetOffsets() {
-      this.setLonOffset(0);
-      this.setLatOffset(0);
-    },
-
+    /**
+     * Mostra el frame a un index FRACCIONARI (p.ex. 2.4 = 40% entre
+     * el frame real 2 i el 3). Si index cau exactament sobre un
+     * enter, s'usa directament el dataUrl ja cachejat del frame
+     * real (mes rapid, sense recalcular). Si no, s'interpola entre
+     * els dos frames reals adjacents amb lerpGrids + rasteritzat al
+     * vol.
+     */
     _showFrame(index) {
-      const frame = this._frames[index];
-      if (!frame || !this._map) return;
+      if (!this._map || this._frames.length === 0) return;
 
-      const b = frame.bounds;
-      // Correccio temporal: les dades del radar apareixen desplaçades
-      // de manera consistent (pendent de diagnosticar l'origen exacte
-      // a rad.py: projeccio/datum). S'apliquen offsets ajustables amb
-      // nudgeEast()/nudgeWest()/nudgeNorth()/nudgeSouth(), persistits
-      // a localStorage.
-      const bounds = [
+      const n = this._frames.length;
+      // Normalitza dins [0, n) fent wrap, mantenint la part fraccionaria.
+      let idx = index % n;
+      if (idx < 0) idx += n;
+
+      const i0 = Math.floor(idx);
+      const frac = idx - i0;
+      const frameA = this._frames[i0];
+
+      let dataUrl, bounds, tsForLabel;
+
+      if (frac < 0.001) {
+        // Exactament sobre un frame real: usar el PNG ja cachejat.
+        dataUrl = frameA.dataUrl;
+        bounds = frameA.bounds;
+        tsForLabel = frameA.timestamp;
+      } else {
+        // Fotograma intermedi: interpolar entre frameA i el seguent
+        // (amb wrap circular, com stepForward/animacio).
+        const i1 = (i0 + 1) % n;
+        const frameB = this._frames[i1];
+        const interpGrid = lerpGrids(frameA.grid, frameB.grid, frac);
+        dataUrl = gridToDataUrl(interpGrid);
+        // bounds/timestamp: interpolem visualment la posicio pero
+        // etiquetem amb el frame real mes proper per no confondre
+        // l'hora mostrada (arrodonim a A o B segons quin es mes a prop).
+        bounds = frac < 0.5 ? frameA.bounds : frameB.bounds;
+        tsForLabel = frac < 0.5 ? frameA.timestamp : frameB.timestamp;
+      }
+
+      const b = bounds;
+      const boundsLeaflet = [
         [b.south + this._latOffset, b.west + this._lonOffset],
         [b.north + this._latOffset, b.east + this._lonOffset]
       ];
 
       if (this._overlay) {
-        this._overlay.setUrl(frame.dataUrl);
-        this._overlay.setBounds(bounds);
+        this._overlay.setUrl(dataUrl);
+        this._overlay.setBounds(boundsLeaflet);
       } else {
-        // zIndex 4: per sobre de qualsevol capa de fons (satelit,
-        // ir, alcada, precip, llamps fan servir zIndex 2) i de les
-        // fronteres (zIndex 3), ja que ara es un overlay independent
-        // que es pot combinar amb qualsevol capa de fons.
-        this._overlay = L.imageOverlay(frame.dataUrl, bounds, {
+        this._overlay = L.imageOverlay(dataUrl, boundsLeaflet, {
           opacity: 1,
           interactive: false,
           zIndex: 10,
@@ -570,49 +650,46 @@
         this._overlay.addTo(this._map);
       }
 
-      if (this._onFrameChange) this._onFrameChange(frame.timestamp, index, this._frames.length);
-      this._updateTimeLabel(frame.timestamp);
+      if (this._onFrameChange) this._onFrameChange(tsForLabel, Math.round(idx) % n, n);
+      this._updateTimeLabel(tsForLabel);
     },
 
-    // Escriu l'hora del frame actual a l'element HTML del costat del
-    // toggle (si existeix). Format Europe/Madrid, igual que la resta
-    // de l'app (formatHoraMadrid a mapasatelit.js).
+    // Actualitza la caixa d'hora curta del panell de radar (al
+    // costat del toggle). Sempre en format "HH:MM", hora local de
+    // Madrid — mai el timestamp cru (p.ex. mai "2026-09-09T215000Z").
     _updateTimeLabel(timestamp) {
-      if (!this._timeEl || !timestamp) return;
-      try {
-        var raw = String(timestamp);
-        var tieneZona = /Z$|[+-]\d{2}:?\d{2}$/.test(raw.trim());
-        var iso = tieneZona ? raw : (raw.replace(' ', 'T') + 'Z');
-        var dt = new Date(iso);
-        if (Number.isNaN(dt.getTime())) dt = new Date(raw);
-        if (Number.isNaN(dt.getTime())) { this._timeEl.textContent = raw; return; }
-        var formatted = new Intl.DateTimeFormat('ca-ES', {
-          timeZone: 'Europe/Madrid',
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(dt);
-        this._timeEl.textContent = formatted;
-      } catch (err) {
-        this._timeEl.textContent = timestamp;
-      }
+      if (!this._timeEl) return;
+      this._timeEl.textContent = formatarHoraLocalMadrid(timestamp);
     },
 
-    // Vincula l'element HTML on es mostrarà l'hora de cada frame
-    // (cridat una vegada des de mapasatelit.js, al costat del toggle).
     setTimeElement(el) {
       this._timeEl = el || null;
     },
 
     _startAnimation() {
       this._stopAnimation();
+      const n = this._frames.length;
+      if (n === 0) return;
+
+      // Pas d'interpolacio: quants "trossos" fraccionaris hi ha
+      // entre cada parell de frames reals. interpSteps=4 -> 5 passos
+      // (0, 0.2, 0.4, 0.6, 0.8) abans d'arribar al seguent frame real.
+      const stepsPerFrame = Math.max(1, RADAR_CONFIG.interpSteps + 1);
+      const stepFraction = 1 / stepsPerFrame;
+
+      // Interval entre CADA fotograma (real o intermedi), ajustat
+      // per la velocitat seleccionada: mes speedMultiplier = mes
+      // rapid = interval mes curt. Es divideix tambe per stepsPerFrame
+      // perque el temps TOTAL per avançar d'un frame real al seguent
+      // segueixi sent proporcional a animIntervalMs, encara que ara
+      // hi hagi passos intermedis pel mig.
+      const totalMsPerRealFrame = RADAR_CONFIG.animIntervalMs / this._speedMultiplier;
+      const tickMs = Math.max(30, totalMsPerRealFrame * stepFraction);
+
       this._animTimer = setInterval(() => {
-        // Animacio cap endavant en el temps: com _frames va d'antic
-        // (index 0) a nou (ultim index), sumar 1 avança cronologi-
-        // cament. Quan arriba al mes nou, fa wrap al mes antic i
-        // torna a començar: antic->...->nou->antic->...
-        this._animIndex = (this._animIndex + 1) % this._frames.length;
+        this._animIndex = (this._animIndex + stepFraction) % n;
         this._showFrame(this._animIndex);
-      }, RADAR_CONFIG.animIntervalMs);
+      }, tickMs);
     },
 
     _stopAnimation() {
