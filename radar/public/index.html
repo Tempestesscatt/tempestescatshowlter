@@ -226,11 +226,12 @@
 
     .radar-panel-time {
       display: block;
-      font-size: 9px;
+      font-size: 13px;
+      font-weight: 700;
       color: var(--cyan);
       font-variant-numeric: tabular-nums;
-      margin-top: 1px;
-      min-height: 11px;
+      margin-top: 2px;
+      min-height: 15px;
       line-height: 1.3;
     }
 
@@ -553,6 +554,7 @@
 
       .radar-panel { top: 60px; left: 10px; min-width: 130px; padding: 8px 10px; }
       .radar-panel-text { font-size: 11px; }
+      .radar-panel-time { font-size: 12px; }
       .radar-panel-sub { display: none; }
 
       .layer-dock { bottom: 10px; padding: 4px; gap: 2px; }
@@ -652,12 +654,15 @@
   </div>
 
   <!--
-    NOTA: s'ha tret la barra de capes (layer-dock) amb Satèl·lit / IR Temperatura /
-    Altura núvols perquè totes tres es basaven en dades Meteosat d'EUMETSAT amb
-    latència inferior a 1 hora, i mostrar-les públicament requeriria la llicència
-    de "Broadcaster" (8.000 EUR/any). El radar de pluja i els llamps es mantenen
-    perquè provenen d'altres fonts (Météo-France / Blitzortung).
+    NOTA: s'ha tret Satèl·lit / IR Temperatura / Altura núvols perquè totes tres
+    es basaven en dades Meteosat d'EUMETSAT amb latència inferior a 1 hora, i
+    mostrar-les públicament requeriria la llicència de "Broadcaster" (8.000
+    EUR/any). El radar de pluja, el vent (SFC) i els llamps es mantenen perquè
+    provenen d'altres fonts (Météo-France / Blitzortung).
   -->
+  <div class="layer-dock">
+    <button class="layer-btn" data-layer="vent" id="vent-toggle-btn">Vent</button>
+  </div>
 
   <!-- Llegendes (nomes queden les que no depenen de capes EUMETSAT) -->
   <div class="legend" id="legend-precip">
@@ -1099,6 +1104,55 @@
         radarToggle.addEventListener('change', function() {
           toggleRadarOverlay(radarToggle.checked);
         });
+      }
+
+      // Radar ON per defecte: es l'unica capa de fons de dades que
+      // queda a la app (sense satelit), aixi que arrenca activada
+      // sense que l'usuari hagi de prement el toggle.
+      function activarRadarPerDefecte() {
+        if (!window.RadarLayer) {
+          setTimeout(activarRadarPerDefecte, 300);
+          return;
+        }
+        if (radarToggle) radarToggle.checked = true;
+        toggleRadarOverlay(true);
+      }
+      activarRadarPerDefecte();
+
+      // ─── Vent (SFC / sfc.js + sfc-particles.js) ───
+      // Es un boto ON/OFF independent del radar, igual que abans hi
+      // havia dins el layer-dock. Assumeix que sfc.js exposa
+      // window.SfcLayer amb .enable(map) / .disable(), seguint el
+      // mateix patró que RadarLayer. Si el nom real de l'API de
+      // sfc.js es diferent, nomes cal ajustar aquestes 3 crides.
+      var ventBtn = document.getElementById('vent-toggle-btn');
+      var ventActiu = false;
+
+      function toggleVent() {
+        ventActiu = !ventActiu;
+        ventBtn.classList.toggle('active', ventActiu);
+
+        if (window.SfcLayer) {
+          if (ventActiu) {
+            if (typeof window.SfcLayer.enable === 'function') window.SfcLayer.enable(window.map);
+            else if (typeof window.SfcLayer.attach === 'function') window.SfcLayer.attach(window.map);
+            else if (typeof window.SfcLayer.show === 'function') window.SfcLayer.show(window.map);
+          } else {
+            if (typeof window.SfcLayer.disable === 'function') window.SfcLayer.disable();
+            else if (typeof window.SfcLayer.detach === 'function') window.SfcLayer.detach();
+            else if (typeof window.SfcLayer.hide === 'function') window.SfcLayer.hide();
+          }
+        } else if (typeof window.toggleSfc === 'function') {
+          // Fallback per si sfc.js exposa una funcio global en lloc
+          // d'un objecte SfcLayer.
+          window.toggleSfc(ventActiu);
+        } else {
+          console.warn('Mòdul de vent (SFC) no disponible encara');
+        }
+      }
+
+      if (ventBtn) {
+        ventBtn.addEventListener('click', toggleVent);
       }
 
       // Llamps
