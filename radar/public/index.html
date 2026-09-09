@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Tempestes.cat — Satèl·lit i Radar</title>
+  <title>Tempestes.cat — Radar</title>
 
   <!-- Google Analytics -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDWCZ0Z9XF"></script>
@@ -19,7 +19,6 @@
        crossorigin="anonymous"></script>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- ... -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="icon" type="image/png/ico" href="img/Tempestes_cat.ico" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -225,9 +224,6 @@
     .radar-panel-label svg { width: 15px; height: 15px; color: var(--cyan); flex-shrink: 0; }
     .radar-panel-text { font-size: 12px; font-weight: 600; color: var(--text-primary); }
 
-    /* Hora del frame de radar actiu, sota el text del toggle.
-       Nomes te contingut quan RadarLayer esta actiu i animant
-       (el JS l'omple/buida via setTimeElement a mapasatelit.js). */
     .radar-panel-time {
       display: block;
       font-size: 9px;
@@ -270,9 +266,6 @@
 
     .radar-panel-sub { font-size: 9px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
 
-    /* Controls manuals d'animacio del radar (fletxes + play/pause).
-       Nomes es mostren quan el radar esta actiu; s'afegeixen/treuen
-       via JS (display none/flex) des de mapasatelit.js. */
     .radar-controls {
       display: none;
       align-items: center;
@@ -380,33 +373,12 @@
     .legend-bar { height: 7px; border-radius: 4px; margin-bottom: 4px; }
     .legend-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-    #legend-ir .legend-bar { background: linear-gradient(to right, rgb(10,10,10) 0%, rgb(255,255,255) 40%, rgb(255,255,0) 55%, rgb(255,0,0) 70%, rgb(150,0,150) 85%, rgb(255,255,255) 100%); }
-    #legend-alti .legend-bar { background: linear-gradient(to right, rgb(0,30,80) 0%, rgb(0,150,190) 25%, rgb(60,200,80) 45%, rgb(255,190,20) 65%, rgb(255,60,20) 80%, rgb(200,80,220) 100%); }
     #legend-precip .legend-bar { background: linear-gradient(to right, rgb(120,190,235) 0%, rgb(0,160,90) 25%, rgb(150,210,20) 45%, rgb(255,175,15) 65%, rgb(230,40,30) 85%, rgb(220,60,220) 100%); }
     #legend-lightning .legend-bar { background: linear-gradient(to right, rgb(255,255,120) 0%, rgb(255,175,15) 30%, rgb(235,60,15) 55%, rgb(170,10,90) 80%, rgb(255,255,255) 100%); }
     #legend-radar .legend-bar { background: linear-gradient(to right, rgb(4,233,231) 0%, rgb(2,253,2) 20%, rgb(253,248,2) 45%, rgb(253,149,0) 65%, rgb(253,0,0) 80%, rgb(248,0,253) 92%, rgb(253,253,253) 100%); }
 
     #legend-radar { bottom: 78px; }
     .legend[data-stacked="true"] { bottom: 156px; }
-
-    /* Atribucio EUMETSAT (obligatoria per llicencia Meteosat) */
-    .eumetsat-attribution {
-      position: absolute;
-      bottom: 14px;
-      left: 14px;
-      z-index: 999;
-      background: var(--bg-panel);
-      backdrop-filter: blur(18px);
-      border: 1px solid var(--line);
-      border-radius: var(--radius-sm);
-      padding: 5px 10px;
-      font-size: 9px;
-      color: var(--text-muted);
-      user-select: none;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.35);
-      line-height: 1.3;
-      pointer-events: none;
-    }
 
     /* Panell d'administracio */
     #adminPanel {
@@ -591,8 +563,6 @@
       .legend-title { font-size: 9px; }
       .legend-labels { font-size: 8px; }
 
-      .eumetsat-attribution { bottom: 10px; left: 10px; font-size: 8px; padding: 4px 8px; max-width: 130px; }
-
       #adminPanel { top: 60px; right: 10px; min-width: 180px; padding: 10px 12px; max-height: calc(100vh - 140px); }
       #adminPanel h4 { font-size: 12px; }
       #toggleAdminBtn { bottom: 56px; right: 10px; font-size: 10px; padding: 6px 10px; }
@@ -620,11 +590,8 @@
       <div class="preloader-progress-track">
         <div class="preloader-progress-fill" id="preloader-fill"></div>
       </div>
-      <div class="preloader-subtitle" id="preloader-subtitle">Connectant amb el satel·lit...</div>
-      <div class="preloader-steps" id="preloader-steps">
-        <span class="preloader-step" data-step="image">Satel·lit</span>
-
-      </div>
+      <div class="preloader-subtitle" id="preloader-subtitle">Carregant el radar...</div>
+      <div class="preloader-steps" id="preloader-steps"></div>
     </div>
   </div>
 
@@ -684,25 +651,15 @@
     </div>
   </div>
 
-<div class="layer-dock">
-  <button class="layer-btn active" data-layer="image">Satèl·lit</button>
-  <button class="layer-btn" data-layer="ir">IR Temperatura</button>
-  <button class="layer-btn" data-layer="ctth_alti">Altura núvols</button>
-  
-  
-</div>
+  <!--
+    NOTA: s'ha tret la barra de capes (layer-dock) amb Satèl·lit / IR Temperatura /
+    Altura núvols perquè totes tres es basaven en dades Meteosat d'EUMETSAT amb
+    latència inferior a 1 hora, i mostrar-les públicament requeriria la llicència
+    de "Broadcaster" (8.000 EUR/any). El radar de pluja i els llamps es mantenen
+    perquè provenen d'altres fonts (Météo-France / Blitzortung).
+  -->
 
-  <!-- Llegendes -->
-  <div class="legend" id="legend-ir">
-    <p class="legend-title">Temperatura del nuvol</p>
-    <div class="legend-bar"></div>
-    <div class="legend-labels"><span>-80</span><span>-40</span><span>50</span></div>
-  </div>
-  <div class="legend" id="legend-alti">
-    <p class="legend-title">Altura dels nuvols</p>
-    <div class="legend-bar"></div>
-    <div class="legend-labels"><span>0 m</span><span>8000 m</span><span>16000 m</span></div>
-  </div>
+  <!-- Llegendes (nomes queden les que no depenen de capes EUMETSAT) -->
   <div class="legend" id="legend-precip">
     <p class="legend-title">Precipitacio estimada</p>
     <div class="legend-bar"></div>
@@ -717,11 +674,6 @@
     <p class="legend-title">Radar (reflectivitat)</p>
     <div class="legend-bar"></div>
     <div class="legend-labels"><span>Feble</span><span>Moderat</span><span>Intens</span></div>
-  </div>
-
-  <!-- Atribucio EUMETSAT (obligatoria segons llicencia Meteosat < 1h) -->
-  <div class="eumetsat-attribution" id="eumetsatAttribution">
-    This service is based on EUMETSAT Meteosat data <span id="eumetsatYear"></span>
   </div>
 
   <!-- Panell d'administracio -->
@@ -771,8 +723,13 @@
     Admin
   </button>
 
+  <!--
+    NOTA: s'ha tret la càrrega de js/mapasatelit.js perquè és el fitxer que
+    descarrega i pinta les capes de satèl·lit EUMETSAT (image, ir, ctth_alti).
+    radar_dbz.js (radar de pluja) i llamps.js (llamps) es mantenen perquè no
+    depenen de dades EUMETSAT.
+  -->
   <script src="js/radar_dbz.js"></script>
-  <script src="js/mapasatelit.js"></script>
   <script src="js/hd.js"></script>
   <script src="js/stormalert.js"></script>
   <script src="js/llamps.js"></script>
@@ -781,13 +738,7 @@
   <script src="https://tempestes.cat/js/stormalert.js"></script>
 
 
-  
-
-
   <script>
-    // ─── Atribucio EUMETSAT: any dinamic ───
-    document.getElementById('eumetsatYear').textContent = new Date().getFullYear();
-
     // ─── Configuracio Firebase ───
     const ADMIN_UID = 'zD8SlXoDNOQCboc0JQ3zCnFza9W2';
 
@@ -828,15 +779,6 @@
     const clearAlertsBtn = document.getElementById('clearAlertsBtn');
 
     // ─── Referencia a la base de dades ───
-    // NOTA IMPORTANT: tota la gestio d'escoltar/pintar/afegir/
-    // eliminar alertes ara viu NOMES a stormalert.js. Aquest
-    // fitxer nomes crea la referencia i l'hi passa amb
-    // StormAlert.setAlertsRef(alertsRef). Abans hi havia un
-    // segon listener de clic al mapa i unes funcions
-    // listenAlerts()/updateAlertList() duplicades aqui, que
-    // competien amb stormalert.js i forçaven sempre shape:'circle'
-    // i color:'#ff8800' — per aixo la paleta (formes/colors) no
-    // feia res i "eliminar" fallava. S'ha tret tot aixo.
     const alertsRef = database.ref('radar_alerts');
 
     // ─── Autenticacio ───
@@ -924,12 +866,10 @@
     // ─── Toggle panell admin ───
     toggleAdminBtn.addEventListener('click', () => {
       if (!currentUser) {
-        // Si no hi ha usuari, obrim el panell pero mostrem el boto d'iniciar sessio
         isAdminMode = !isAdminMode;
         adminPanel.style.display = isAdminMode ? 'block' : 'none';
         toggleAdminBtn.classList.toggle('admin-active', isAdminMode);
         adminBadgeDot.className = 'badge ' + (isAdminMode ? 'on' : 'off');
-        // Assegurar que es veu la seccio d'autenticacio
         if (isAdminMode) {
           document.getElementById('authSection').style.display = 'block';
         }
@@ -1000,7 +940,7 @@
     // ─── Gestionar llegendes ───
     (function() {
       var legendRadar = document.getElementById('legend-radar');
-      var otherLegendIds = ['legend-ir', 'legend-alti', 'legend-precip', 'legend-lightning'];
+      var otherLegendIds = ['legend-precip', 'legend-lightning'];
 
       function anyOtherLegendVisible() {
         return otherLegendIds.some(function(id) {
@@ -1020,8 +960,176 @@
       });
     })();
 
-    console.log('Tempestes.cat - Panell d\'administracio carregat');
-    console.log('ID Admin esperat:', ADMIN_UID);
+    // ─── Inicialitzacio minima del mapa (sense capes de satelit) ───
+    // Aquesta part abans vivia dins mapasatelit.js (initMapFirstLoad), que
+    // s'ha tret. Es recrea aqui nomes el necessari perque el radar de pluja,
+    // els llamps i les alertes segueixin funcionant sobre un mapa base.
+    (function initBaseMap() {
+      var bbox = {
+        lon_min: -4.423391,
+        lat_min: 38.070890,
+        lon_max: 4.950144,
+        lat_max: 45.134595,
+      };
+
+      window.map = L.map('map', {
+        center: [41.6, 0.26],
+        zoom: 2,
+        zoomControl: true,
+        fadeAnimation: true,
+        attributionControl: true,
+        zoomSnap: 0.5,
+      });
+
+      var bounds = [[bbox.lat_min, bbox.lon_min], [bbox.lat_max, bbox.lon_max]];
+
+      L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}.png',
+        { maxZoom: 13, minZoom: 1, attribution: 'Tiles © Esri', opacity: 1 }
+      ).addTo(window.map);
+
+      window.map.fitBounds(bounds, { padding: [10, 10] });
+
+      try {
+        window.map.createPane('paneLlamps');
+        var paneLlamps = window.map.getPane('paneLlamps');
+        if (paneLlamps) {
+          paneLlamps.style.zIndex = 700;
+          paneLlamps.style.pointerEvents = 'none';
+        }
+      } catch (e) {
+        console.warn('No s\'ha pogut crear pane per llamps:', e.message);
+      }
+
+      // Fronteres (opcional, estil per defecte)
+      fetch('geo/spain.geojson').then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
+        if (!data) return;
+        L.geoJSON(data, {
+          style: { color: '#2b2a2a', weight: 1.2, opacity: 0.5, fill: false },
+          interactive: false,
+        }).addTo(window.map);
+      }).catch(function() {});
+
+      // Amagar preloader (ja no hi ha capes de satelit que esperar)
+      var preloader = document.getElementById('preloader');
+      var statusDot = document.getElementById('status-dot');
+      var statusText = document.getElementById('status-text');
+      if (statusDot) statusDot.className = 'dot';
+      if (statusText) statusText.textContent = 'Mapa carregat';
+      if (preloader) {
+        setTimeout(function() {
+          preloader.classList.add('hidden');
+        }, 400);
+      }
+
+      // Radar toggle (funcionalitat de radar_dbz.js, si el fitxer defineix RadarLayer)
+      var radarToggle = document.getElementById('radar-toggle');
+      var radarTime = document.getElementById('radar-time');
+      var radarControls = document.getElementById('radar-controls');
+      var radarPrevBtn = document.getElementById('radar-prev-btn');
+      var radarNextBtn = document.getElementById('radar-next-btn');
+      var radarPlayBtn = document.getElementById('radar-play-btn');
+      var radarOnlyBtn = document.getElementById('radar-only-btn');
+      var legendRadar = document.getElementById('legend-radar');
+      var onlyRadarEnabled = false;
+
+      if (window.RadarLayer && radarTime) {
+        window.RadarLayer.setTimeElement(radarTime);
+      }
+      if (window.RadarLayer && radarPlayBtn) {
+        window.RadarLayer.setPlayStateCallback(function(isPlaying) {
+          radarPlayBtn.classList.toggle('is-playing', isPlaying);
+        });
+      }
+      if (radarPrevBtn) {
+        radarPrevBtn.addEventListener('click', function() {
+          if (window.RadarLayer) { window.RadarLayer.pause(); window.RadarLayer.stepBackward(); }
+        });
+      }
+      if (radarNextBtn) {
+        radarNextBtn.addEventListener('click', function() {
+          if (window.RadarLayer) { window.RadarLayer.pause(); window.RadarLayer.stepForward(); }
+        });
+      }
+      if (radarPlayBtn) {
+        radarPlayBtn.addEventListener('click', function() {
+          if (window.RadarLayer) window.RadarLayer.togglePlay();
+        });
+      }
+      if (radarOnlyBtn) {
+        radarOnlyBtn.addEventListener('click', function() {
+          onlyRadarEnabled = !onlyRadarEnabled;
+          radarOnlyBtn.classList.toggle('is-active', onlyRadarEnabled);
+        });
+      }
+
+      async function toggleRadarOverlay(enabled) {
+        if (!enabled) {
+          if (window.RadarLayer) window.RadarLayer.detach();
+          if (legendRadar) legendRadar.style.display = 'none';
+          if (radarControls) radarControls.style.display = 'none';
+          return;
+        }
+        if (!window.RadarLayer) {
+          console.warn('RadarLayer no disponible');
+          if (radarToggle) radarToggle.checked = false;
+          return;
+        }
+        if (window.RadarLayer.isLoaded()) {
+          window.RadarLayer.attach(window.map);
+          if (legendRadar) legendRadar.style.display = 'block';
+          if (radarControls) radarControls.style.display = 'flex';
+          if (window.StormAlert) { window.StormAlert.attach(window.map); await window.StormAlert.refresh(); }
+          return;
+        }
+        if (radarToggle) radarToggle.disabled = true;
+        var ok = await window.RadarLayer.load();
+        if (radarToggle) radarToggle.disabled = false;
+        if (!ok) {
+          if (radarToggle) radarToggle.checked = false;
+          return;
+        }
+        window.RadarLayer.attach(window.map);
+        if (legendRadar) legendRadar.style.display = 'block';
+        if (radarControls) radarControls.style.display = 'flex';
+        if (window.StormAlert) { window.StormAlert.attach(window.map); await window.StormAlert.refresh(); }
+      }
+
+      if (radarToggle) {
+        radarToggle.addEventListener('change', function() {
+          toggleRadarOverlay(radarToggle.checked);
+        });
+      }
+
+      // Llamps
+      function carregarLlamps() {
+        if (document.getElementById('lightning-script')) return;
+        if (!window.map || typeof window.map.createPane !== 'function' || !document.getElementById('map')) {
+          setTimeout(carregarLlamps, 500);
+          return;
+        }
+        var script = document.createElement('script');
+        script.id = 'lightning-script';
+        script.src = 'js/lightning.js';
+        script.async = true;
+        script.onload = function() {
+          var event = new Event('auth:autoritzat');
+          document.dispatchEvent(event);
+        };
+        script.onerror = function() {
+          console.warn('No s\'ha pogut carregar lightning.js');
+        };
+        document.head.appendChild(script);
+      }
+      setTimeout(carregarLlamps, 1000);
+      window.carregarLlamps = carregarLlamps;
+      window.toggleLlamps = function() {
+        if (typeof toggleActiu !== 'undefined') { toggleActiu(); }
+        else { carregarLlamps(); }
+      };
+    })();
+
+    console.log('Tempestes.cat - Nomes radar de pluja i llamps (sense capes EUMETSAT)');
   </script>
 
 </body>
