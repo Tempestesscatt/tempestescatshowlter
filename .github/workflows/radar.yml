@@ -26,12 +26,11 @@ env:
   # Fitxers .msgpack.gz que ha de generar sat.py per considerar el cicle vàlid.
   # Si en falta algun, NO es publica res a R2 per no deixar el mapa a mitges
   # (p.ex. imatge nova però altura vella, o a l'inrevés).
+  # MODIFICACIÓ: Eliminats precip i lightning
   REQUIRED_FILES_SAT: >-
     meteosat_ne_spain.msgpack.gz
     meteosat_ne_spain_temp.msgpack.gz
     meteosat_ne_spain_ctth_alti.msgpack.gz
-    meteosat_ne_spain_precip.msgpack.gz
-    meteosat_ne_spain_lightning_acc.msgpack.gz
   # Frames del radar (frame_1 = més recent ... frame_5 = més antic) +
   # el fitxer de metadata que escriu rad.py.
   REQUIRED_FILES_RAD: >-
