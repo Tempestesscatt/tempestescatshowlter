@@ -50,15 +50,6 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive --depth=1
 
-      - name: DEBUG submòdul
-        run: |
-          echo "=== Commit del submòdul ==="
-          cd scripts-privats && git log --oneline -1 || true
-          cd ..
-          echo ""
-          echo "=== Grep prefix_local ==="
-          grep -n "prefix_local" scripts-privats/radar-real.py || echo "NO TROBAT"
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
@@ -135,7 +126,7 @@ jobs:
 
 
   # ============================================================
-  # JOB 2: Acumulacions
+  # JOB 2: Acumulacions (en paral·lel amb radar-png)
   # ============================================================
   acumulacions:
     runs-on: ubuntu-latest
@@ -191,17 +182,30 @@ jobs:
         id: verify
         run: |
           set -euo pipefail
-          if [ ! -s "$DADES_ACUM_DIR/manifest.json" ]; then
+
+          if [ ! -d "$DADES_ACUM_DIR" ]; then
+            echo "AVIS: no existeix $DADES_ACUM_DIR"
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 1
+            exit 0
           fi
-          n=$(find "$DADES_ACUM_DIR" -maxdepth 1 -name "*.png" | wc -l); n=$((n))
+
+          if [ ! -s "$DADES_ACUM_DIR/manifest.json" ]; then
+            echo "AVIS: no s'ha generat manifest.json"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          n=$(find "$DADES_ACUM_DIR" -maxdepth 1 -name "*.png" | wc -l)
+          n=$((n))
           echo "Acumulacions: $n PNGs"
+
           if [ "$n" -eq 0 ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 1
+            exit 0
           fi
+
           echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          echo "OK: $n PNGs d'acumulacions"
 
       - name: Pujar artifact acumulacions
         if: steps.verify.outputs.files_ok == 'true'
@@ -214,13 +218,15 @@ jobs:
 
 
   # ============================================================
-  # JOB 3: Publicar a R2
+  # JOB 3: Publicar a R2 (només depèn de radar-png)
   # ============================================================
   publicar:
     needs: [radar-png, acumulacions]
+    # 👇 Només exigeix que radar-png hagi acabat bé.
+    # Les acumulacions són opcionals (es poden saltar).
     if: |
-      needs.radar-png.outputs.files_ok == 'true' &&
-      needs.acumulacions.outputs.files_ok == 'true'
+      always() &&
+      needs.radar-png.outputs.files_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -232,32 +238,54 @@ jobs:
 
       - name: Descarregar artifact radar-png
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: dades-radar-png
           path: dades_png/
 
-      - name: Descarregar artifact acumulacions
+      - name: Descarregar artifact acumulacions (si existeix)
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: dades-acumulacions
           path: dades_acum/
 
-      - name: Verificar abans de publicar
+      - name: Verificar què tenim
+        id: check
         run: |
           set -euo pipefail
+
           echo "=== radar-png ==="
           ls -la dades_png/ || echo "no existeix"
+
+          ok_radar=false
           for sub in dades_radar_dbz dades_radar_nimbus; do
-            if [ -d "dades_png/$sub" ]; then
-              [ -s "dades_png/$sub/manifest.json" ] || { echo "::error::falta $sub/manifest.json"; exit 1; }
+            if [ -d "dades_png/$sub" ] && [ -s "dades_png/$sub/manifest.json" ]; then
               n=$(find "dades_png/$sub" -maxdepth 1 -name "*.png" | wc -l)
               echo "  $sub: $n PNGs"
+              ok_radar=true
             fi
           done
+
           echo "=== acumulacions ==="
           ls -la dades_acum/ || echo "no existeix"
-          [ -s "dades_acum/manifest.json" ] || { echo "::error::falta acum/manifest.json"; exit 1; }
-          echo "OK: verificació prèvia correcta"
+
+          ok_acum=false
+          if [ -d "dades_acum" ] && [ -s "dades_acum/manifest.json" ]; then
+            n=$(find "dades_acum" -maxdepth 1 -name "*.png" | wc -l)
+            echo "  acumulacions: $n PNGs"
+            if [ "$n" -gt 0 ]; then
+              ok_acum=true
+            fi
+          fi
+
+          echo "radar_ok=$ok_radar" >> "$GITHUB_OUTPUT"
+          echo "acum_ok=$ok_acum" >> "$GITHUB_OUTPUT"
+
+          if [ "$ok_radar" != "true" ]; then
+            echo "::error::No hi ha dades de radar per publicar"
+            exit 1
+          fi
 
       - name: Pujar a R2
         env:
@@ -316,13 +344,20 @@ jobs:
             cd - > /dev/null
           }
 
+          # Sempre pugem dBZ i NIMBUS (obligatoris)
           upload_dir "dades_png/dades_radar_dbz" "$R2_PREFIX"
           upload_dir "dades_png/dades_radar_nimbus" "$R2_PREFIX_NIMBUS"
-          upload_dir "dades_acum" "$R2_PREFIX_ACUM"
+
+          # Acumulacions: només si existeixen (opcionals)
+          if [ -d "dades_acum" ] && [ -s "dades_acum/manifest.json" ]; then
+            upload_dir "dades_acum" "$R2_PREFIX_ACUM"
+          else
+            echo "AVIS: no hi ha acumulacions per publicar (es salta)"
+          fi
 
           if [ "$fail_count" -gt 0 ]; then
             echo "::error::$fail_count fitxers no s'han pogut pujar"
             exit 1
           fi
 
-          echo "OK: dBZ + NIMBUS + Acumulacions pujats a R2."
+          echo "OK: dades pujades a R2."
