@@ -714,25 +714,29 @@ function showFrame(key, index) {
   }
 }
 
-let rafId = 0;
-let lastTick = 0;
+let intervalId = 0;
 
-function loop(ts) {
-  if (!lastTick) lastTick = ts;
-  if (ts - lastTick >= 1000 / FPS) {
-    lastTick = ts;
-    for (const key of Object.keys(state.layers)) {
-      const st = state.layers[key];
-      if (!st.initialized || st.frames.length === 0) continue;
-      let next = st.currentIndex + 1;
-      if (next >= st.frames.length) {
-        if (!LOOP) continue;
-        next = st.minIndex;
-      }
-      showFrame(key, next);
+function tick() {
+  for (const key of Object.keys(state.layers)) {
+    const st = state.layers[key];
+    if (!st.initialized || st.frames.length === 0) continue;
+    let next = st.currentIndex + 1;
+    if (next >= st.frames.length) {
+      if (!LOOP) continue;
+      next = st.minIndex;
     }
+    showFrame(key, next);
   }
-  rafId = requestAnimationFrame(loop);
+}
+
+export function startAllAnimations() {
+  stopAllAnimations();
+  intervalId = setInterval(tick, 1000 / FPS);
+}
+
+export function stopAllAnimations() {
+  if (intervalId) clearInterval(intervalId);
+  intervalId = 0;
 }
 
 // Primer frame permès (els anteriors queden bloquejats)
