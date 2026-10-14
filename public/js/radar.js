@@ -2,11 +2,12 @@
 // MapLibre GL JS: radar (PNG), comarques (GeoJSON) i ciutats (window.CIUTATS.llista).
 //
 //  - Comarques: línies NEGRES al mapa clar, BLANQUES al mapa fosc.
-//  - Municipis: línies dibuixades des del GeoJSON.gz (un sol fitxer per tot).
+//  - Municipis: PNG de línies a /dades/municipis_lines.png (petit)
+//              + GeoJSON.gz a /dades/municipis.geojson.gz (per avisos).
 //  - Ciutats: capes per trams de zoom (sempre funciona), mida adaptada
 //    al zoom i a la població, densitat ajustable.
 //  - Radar: carrega els frames des de manifest.json (a R2) i els pre-carrega
-//    perquè l'animació no parpellegi.
+//    TOTS alhora perquè l'animació vagi fluida.
 
 // ---------------------------------------------------------------------------
 // CONFIGURACIÓ
@@ -45,26 +46,24 @@ const LINE_THEME = {
 const LINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 5, 0.5, 8, 0.9, 11, 1.3, 14, 1.8];
 
 // ---------------------------------------------------------------------------
-// MUNICIPIS (només GeoJSON.gz, un sol fitxer per mapa i avisos)
+// MUNICIPIS: PNG de línies (local) + GeoJSON.gz (local) per avisos
 // ---------------------------------------------------------------------------
 
+const MUNI_INFO_URL  = '/dades/municipis_lines.json';
+const MUNI_PNG_URL   = '/dades/municipis_lines.png';
+const MUNI_PNG_SRC   = 'municipis-png-src';
+const MUNI_PNG_LAYER = 'municipis-png-layer';
+
+// GeoJSON.gz amb els municipis
 const MUNICIPIS_GZ_URL = '/dades/municipis.geojson.gz';
 
-const MUNI_SRC = 'municipis-src';
-const MUNI_LINE = 'municipis-line';
-
-// Estil de les línies de municipis
-const MUNI_THEME = { clar: 'rgba(0,0,0,0.38)', fosc: 'rgba(255,255,255,0.32)' };
-const MUNI_WIDTH = ['interpolate', ['linear'], ['zoom'], 8, 0.4, 11, 0.8, 14, 1.4];
-const MUNI_OPACITY = ['interpolate', ['linear'], ['zoom'], 8, 0, 9.5, 1];
-
-// Cache del GeoJSON (compartida per mapa i avisos)
+let muniInfo = null;
 let municipisPromise = null;
 
-/**
- * Descarrega el municipis.geojson.gz i el descomprimeix a text.
- * Usa DecompressionStream (natiu al navegador) → molt ràpid.
- */
+// ---------------------------------------------------------------------------
+// UTILITATS: descomprimir .gz al vol
+// ---------------------------------------------------------------------------
+
 async function fetchGunzip(url) {
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -102,43 +101,6 @@ export function getMunicipis() {
       });
   }
   return municipisPromise;
-}
-
-async function addMunicipis(map) {
-  const geo = await getMunicipis();
-  if (!geo) return;
-
-  if (map.getLayer(MUNI_LINE)) map.removeLayer(MUNI_LINE);
-  if (map.getSource(MUNI_SRC)) map.removeSource(MUNI_SRC);
-
-  map.addSource(MUNI_SRC, { type: 'geojson', data: geo });
-  map.addLayer({
-    id: MUNI_LINE,
-    type: 'line',
-    source: MUNI_SRC,
-    minzoom: 8,
-    layout: { 'line-join': 'round', visibility: vis(state.municipisVisible) },
-    paint: {
-      'line-color': MUNI_THEME[state.theme],
-      'line-width': MUNI_WIDTH,
-      'line-opacity': MUNI_OPACITY,
-    },
-  });
-}
-
-export function setMunicipisVisibility(visible) {
-  state.municipisVisible = visible;
-  const map = state.map;
-  if (map && map.getLayer(MUNI_LINE)) {
-    map.setLayoutProperty(MUNI_LINE, 'visibility', vis(visible));
-  }
-}
-
-function restyleMunicipis() {
-  const map = state.map;
-  if (map && map.getLayer(MUNI_LINE)) {
-    map.setPaintProperty(MUNI_LINE, 'line-color', MUNI_THEME[state.theme]);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +231,61 @@ async function addComarques(map) {
       'line-width': LINE_WIDTH,
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// MUNICIPIS (PNG de línies)
+// ---------------------------------------------------------------------------
+
+async function addMunicipis(map) {
+  if (!muniInfo) {
+    try {
+      const r = await fetch(MUNI_INFO_URL, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      muniInfo = await r.json();
+    } catch (e) {
+      console.warn('[municipis-png]', e.message);
+      return;
+    }
+  }
+
+  if (map.getLayer(MUNI_PNG_LAYER)) map.removeLayer(MUNI_PNG_LAYER);
+  if (map.getSource(MUNI_PNG_SRC)) map.removeSource(MUNI_PNG_SRC);
+
+  map.addSource(MUNI_PNG_SRC, {
+    type: 'image',
+    url: MUNI_PNG_URL,
+    coordinates: muniInfo.coordinates,
+  });
+
+  map.addLayer({
+    id: MUNI_PNG_LAYER,
+    type: 'raster',
+    source: MUNI_PNG_SRC,
+    minzoom: 8,
+    layout: { visibility: vis(state.municipisVisible) },
+    paint: {
+      'raster-opacity': [
+        'interpolate', ['linear'], ['zoom'],
+        8, 0,
+        9.5, 1,
+      ],
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear',
+    },
+  });
+}
+
+export function setMunicipisVisibility(visible) {
+  state.municipisVisible = visible;
+  const map = state.map;
+  if (map && map.getLayer(MUNI_PNG_LAYER)) {
+    map.setLayoutProperty(MUNI_PNG_LAYER, 'visibility', vis(visible));
+  }
+}
+
+function restyleMunicipis() {
+  // El PNG ja ve pintat amb color fix; no cal restyling per tema.
 }
 
 // ---------------------------------------------------------------------------
@@ -448,26 +465,78 @@ async function initLayer(map, key) {
   }
   if (st.frames.length === 0) return false;
 
-  st.currentIndex = st.frames.length - 1;
+  st.currentIndex = st.frames.length - 1; // comença al frame més recent
   addRadarLayer(map, key);
   st.initialized = true;
+
+  // 👇 PRE-CÀRREGA COMPLETA: baixem tots els frames de cop
+  console.log(`[radar:${key}] Pre-carregant ${st.frames.length} PNGs...`);
+  preload(st.frames, (pct) => {
+    // Opcional: pots actualitzar una barra de progrés aquí
+    // console.log(`[radar:${key}] ${Math.round(pct * 100)}%`);
+  });
+
   return true;
 }
 
-// Pre-carrega els PNG a la memòria cau del navegador
+// ---------------------------------------------------------------------------
+// PRE-CÀRREGA (baixa TOTS els PNGs de cop)
+// ---------------------------------------------------------------------------
+
 const preloaded = new Set();
 
-function preload(all) {
+/**
+ * Pre-carrega tots els PNGs d'un array d'URLs.
+ * - Descarrega 8 en paral·lel (per no saturar la xarxa).
+ * - Marca cada URL com a `preloaded` per no tornar-la a baixar.
+ * - Es pot cridar diverses vegades: només baixa les que falten.
+ * - Retorna una Promise que es resol quan totes han acabat (o fallat).
+ */
+function preload(all, onProgress) {
   const urls = all.filter((u) => !preloaded.has(u));
+  if (urls.length === 0) {
+    if (onProgress) onProgress(1);
+    return Promise.resolve();
+  }
+
   urls.forEach((u) => preloaded.add(u));
-  let i = 0;
-  const worker = () => {
-    if (i >= urls.length) return;
-    const img = new Image();
-    img.onload = img.onerror = worker;
-    img.src = urls[i++];
-  };
-  for (let n = 0; n < 4; n++) worker();
+  const total = urls.length;
+  let done = 0;
+  let ok = 0;
+  let ko = 0;
+  let idx = 0;
+
+  const MAX_PARALLEL = 8;
+
+  return new Promise((resolve) => {
+    function worker() {
+      if (idx >= total) {
+        if (ok + ko === total) {
+          console.log(`[radar] Pre-càrrega feta: ${ok} OK, ${ko} errors (${total} en total)`);
+          resolve();
+        }
+        return;
+      }
+      const i = idx++;
+      const url = urls[i];
+      const img = new Image();
+      img.onload = () => {
+        ok++;
+        done++;
+        if (onProgress) onProgress(done / total);
+        worker();
+      };
+      img.onerror = () => {
+        ko++;
+        done++;
+        if (onProgress) onProgress(done / total);
+        worker();
+      };
+      img.src = url;
+    }
+
+    for (let n = 0; n < MAX_PARALLEL; n++) worker();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -536,9 +605,9 @@ function orderLayers(map) {
   for (const key of Object.keys(RADAR)) {
     if (map.getLayer(RADAR[key].layerId)) map.moveLayer(RADAR[key].layerId);
   }
+  if (map.getLayer(MUNI_PNG_LAYER)) map.moveLayer(MUNI_PNG_LAYER);
   if (map.getLayer(AVIS_FILL)) map.moveLayer(AVIS_FILL);
   if (map.getLayer(AVIS_LINE)) map.moveLayer(AVIS_LINE);
-  if (map.getLayer(MUNI_LINE)) map.moveLayer(MUNI_LINE);
   if (map.getLayer(COMARQUES_LINE)) map.moveLayer(COMARQUES_LINE);
   const style = map.getStyle();
   for (const l of style.layers) {
@@ -552,13 +621,15 @@ function orderLayers(map) {
 
 export async function initRadar(map) {
   state.map = map;
-  getMunicipis(); // comença a baixar el .geojson.gz
+  getMunicipis(); // comença a baixar el .geojson.gz (per als avisos)
   await addRelief(map);
   await addComarques(map);
-  await addMunicipis(map);  // 👈 espera que el .gz estigui descomprimit
+  await addMunicipis(map);
   addAvisos(map);
   addCities(map);
 
+  // Ara no esperem que acabin les pre-càrregues: initLayer les llança
+  // en segon pla i retorna de seguida.
   const results = await Promise.all(Object.keys(RADAR).map((k) => initLayer(map, k)));
 
   orderLayers(map);
@@ -664,12 +735,13 @@ function loop(ts) {
   rafId = requestAnimationFrame(loop);
 }
 
+// Primer frame permès (els anteriors queden bloquejats)
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
   st.minIndex = Math.max(0, Math.min(idx, Math.max(0, st.frames.length - 1)));
   if (st.initialized && st.currentIndex < st.minIndex) showFrame(key, st.minIndex);
-  preload(st.frames.slice(st.minIndex));
+  // Ja no cal cridar preload aquí perquè ho hem fet a initLayer
 }
 
 export function startAllAnimations() {
