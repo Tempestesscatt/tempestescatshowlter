@@ -1,10 +1,10 @@
 // public/js/avisos.js
 // Avisos de pluja intensa per municipi.
 //
-// Agafa els frames de pluja (mm/h) de l'última finestra, llegeix els colors
-// del PNG en uns punts de mostra dins de cada municipi i els converteix a
-// mm/h (mateixa escala que valor.js). Retorna els municipis que passen els
-// llindars.
+// Agafa els frames de pluja (mm/h) de l'última finestra (que ara venen de R2),
+// llegeix els colors del PNG en uns punts de mostra dins de cada municipi i
+// els converteix a mm/h (mateixa escala que valor.js). Retorna els municipis
+// que passen els llindars.
 
 import { colorToValue, lngLatToUV, SCALES } from '../dades/valor.js';
 
@@ -105,13 +105,13 @@ async function getSamples(geojson) {
 }
 
 // ---------------------------------------------------------------------------
-// LECTURA DELS FRAMES
+// LECTURA DELS FRAMES (ara des de R2)
 // ---------------------------------------------------------------------------
 
 function loadImage(url) {
   return new Promise((res, rej) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+    img.crossOrigin = 'anonymous';   // 👈 imprescindible per a CORS de R2
     img.onload = () => res(img);
     img.onerror = () => rej(new Error("No s'ha pogut carregar " + url));
     img.src = url;
@@ -142,7 +142,14 @@ export async function computeAvisos({ frames, municipis, onProgress }) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   for (let fi = 0; fi < frames.length; fi++) {
-    const img = await loadImage(frames[fi].url);
+    let img;
+    try {
+      img = await loadImage(frames[fi].url);
+    } catch (e) {
+      console.warn('[avisos]', e.message);
+      continue;
+    }
+
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;
     ctx.clearRect(0, 0, canvas.width, canvas.height);

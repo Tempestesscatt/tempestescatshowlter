@@ -71,12 +71,13 @@ const CITY_TEXT_SIZE = [
 // ---------------------------------------------------------------------------
 
 // URL base dels PNGs i manifest a R2
-const RADAR_BASE = 'https://radar-data.tempestes.cat/dades_radar';
+const RADAR_BASE_DBZ    = 'https://radar-data.tempestes.cat/dades_radar_dbz';
+const RADAR_BASE_NIMBUS = 'https://radar-data.tempestes.cat/dades_radar_nimbus';
 
 const RADAR = {
   dbz: {
     label: 'Reflectivitat (dBZ)',
-    basePath: RADAR_BASE,
+    basePath: RADAR_BASE_DBZ,          // ✅ dades_radar_dbz
     sourceId: 'radar-src-dbz',
     layerId: 'radar-layer-dbz',
     opacity: 0.85,
@@ -84,7 +85,7 @@ const RADAR = {
   },
   lluvia: {
     label: 'Intensitat de pluja (mm/h)',
-    basePath: RADAR_BASE,
+    basePath: RADAR_BASE_NIMBUS,       // ✅ dades_radar_nimbus
     sourceId: 'radar-src-lluvia',
     layerId: 'radar-layer-lluvia',
     opacity: 0.9,
