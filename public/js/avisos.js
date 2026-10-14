@@ -5,6 +5,9 @@
 // llegeix els colors del PNG en uns punts de mostra dins de cada municipi i
 // els converteix a mm/h (mateixa escala que valor.js). Retorna els municipis
 // que passen els llindars.
+//
+// Els municipis els rep del radar.getMunicipis(), que ara llegeix el
+// municipis.geojson.gz descomprimit al vol.
 
 import { colorToValue, lngLatToUV, SCALES } from '../dades/valor.js';
 
@@ -111,7 +114,7 @@ async function getSamples(geojson) {
 function loadImage(url) {
   return new Promise((res, rej) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';   // 👈 imprescindible per a CORS de R2
+    img.crossOrigin = 'anonymous';   // imprescindible per a CORS de R2
     img.onload = () => res(img);
     img.onerror = () => rej(new Error("No s'ha pogut carregar " + url));
     img.src = url;
@@ -125,7 +128,13 @@ const levelOf = (v) => {
 };
 
 export async function computeAvisos({ frames, municipis, onProgress }) {
-  if (!frames.length || !municipis || !Array.isArray(municipis.features)) {
+  if (!frames.length) {
+    console.warn('[avisos] no hi ha frames per analitzar');
+    return { items: [], latest: null };
+  }
+
+  if (!municipis || !Array.isArray(municipis.features)) {
+    console.warn('[avisos] municipis no vàlids (null o buit)');
     return { items: [], latest: null };
   }
 

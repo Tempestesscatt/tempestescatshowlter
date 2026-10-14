@@ -2,9 +2,10 @@
 // MapLibre GL JS: radar (PNG), comarques (GeoJSON) i ciutats (window.CIUTATS.llista).
 //
 //  - Comarques: línies NEGRES al mapa clar, BLANQUES al mapa fosc.
+//  - Municipis: línies dibuixades des del GeoJSON.gz (un sol fitxer per tot).
 //  - Ciutats: capes per trams de zoom (sempre funciona), mida adaptada
 //    al zoom i a la població, densitat ajustable.
-//  - Radar: carrega els frames des de manifest.json i els pre-carrega
+//  - Radar: carrega els frames des de manifest.json (a R2) i els pre-carrega
 //    perquè l'animació no parpellegi.
 
 // ---------------------------------------------------------------------------
@@ -43,17 +44,110 @@ const LINE_THEME = {
 
 const LINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 5, 0.5, 8, 0.9, 11, 1.3, 14, 1.8];
 
-const MUNICIPIS_URL = '/dades/municipis.geojson';
+// ---------------------------------------------------------------------------
+// MUNICIPIS (només GeoJSON.gz, un sol fitxer per mapa i avisos)
+// ---------------------------------------------------------------------------
+
+const MUNICIPIS_GZ_URL = '/dades/municipis.geojson.gz';
+
 const MUNI_SRC = 'municipis-src';
 const MUNI_LINE = 'municipis-line';
-const AVIS_SRC = 'avisos-src';
-const AVIS_FILL = 'avisos-fill';
-const AVIS_LINE = 'avisos-line';
 
-// Els municipis apareixen en fer zoom (fade entre el zoom 8 i el 9,5)
+// Estil de les línies de municipis
 const MUNI_THEME = { clar: 'rgba(0,0,0,0.38)', fosc: 'rgba(255,255,255,0.32)' };
 const MUNI_WIDTH = ['interpolate', ['linear'], ['zoom'], 8, 0.4, 11, 0.8, 14, 1.4];
 const MUNI_OPACITY = ['interpolate', ['linear'], ['zoom'], 8, 0, 9.5, 1];
+
+// Cache del GeoJSON (compartida per mapa i avisos)
+let municipisPromise = null;
+
+/**
+ * Descarrega el municipis.geojson.gz i el descomprimeix a text.
+ * Usa DecompressionStream (natiu al navegador) → molt ràpid.
+ */
+async function fetchGunzip(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+
+  const ds = new DecompressionStream('gzip');
+  const decompressedStream = r.body.pipeThrough(ds);
+
+  const reader = decompressedStream.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+
+  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return new TextDecoder('utf-8').decode(result);
+}
+
+export function getMunicipis() {
+  if (!municipisPromise) {
+    municipisPromise = fetchGunzip(MUNICIPIS_GZ_URL)
+      .then((text) => JSON.parse(text))
+      .catch((e) => {
+        console.warn('[municipis]', e.message);
+        municipisPromise = null;
+        return null;
+      });
+  }
+  return municipisPromise;
+}
+
+async function addMunicipis(map) {
+  const geo = await getMunicipis();
+  if (!geo) return;
+
+  if (map.getLayer(MUNI_LINE)) map.removeLayer(MUNI_LINE);
+  if (map.getSource(MUNI_SRC)) map.removeSource(MUNI_SRC);
+
+  map.addSource(MUNI_SRC, { type: 'geojson', data: geo });
+  map.addLayer({
+    id: MUNI_LINE,
+    type: 'line',
+    source: MUNI_SRC,
+    minzoom: 8,
+    layout: { 'line-join': 'round', visibility: vis(state.municipisVisible) },
+    paint: {
+      'line-color': MUNI_THEME[state.theme],
+      'line-width': MUNI_WIDTH,
+      'line-opacity': MUNI_OPACITY,
+    },
+  });
+}
+
+export function setMunicipisVisibility(visible) {
+  state.municipisVisible = visible;
+  const map = state.map;
+  if (map && map.getLayer(MUNI_LINE)) {
+    map.setLayoutProperty(MUNI_LINE, 'visibility', vis(visible));
+  }
+}
+
+function restyleMunicipis() {
+  const map = state.map;
+  if (map && map.getLayer(MUNI_LINE)) {
+    map.setPaintProperty(MUNI_LINE, 'line-color', MUNI_THEME[state.theme]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AVISOS (fills i línies per municipi)
+// ---------------------------------------------------------------------------
+
+const AVIS_SRC = 'avisos-src';
+const AVIS_FILL = 'avisos-fill';
+const AVIS_LINE = 'avisos-line';
 
 const AVIS_COLOR = ['match', ['get', 'level'], 3, '#ef4444', 2, '#f97316', '#facc15'];
 
@@ -70,14 +164,13 @@ const CITY_TEXT_SIZE = [
 // RADAR (configuració)
 // ---------------------------------------------------------------------------
 
-// URL base dels PNGs i manifest a R2
 const RADAR_BASE_DBZ    = 'https://radar-data.tempestes.cat/dades_radar_dbz';
 const RADAR_BASE_NIMBUS = 'https://radar-data.tempestes.cat/dades_radar_nimbus';
 
 const RADAR = {
   dbz: {
     label: 'Reflectivitat (dBZ)',
-    basePath: RADAR_BASE_DBZ,          // ✅ dades_radar_dbz
+    basePath: RADAR_BASE_DBZ,
     sourceId: 'radar-src-dbz',
     layerId: 'radar-layer-dbz',
     opacity: 0.85,
@@ -85,7 +178,7 @@ const RADAR = {
   },
   lluvia: {
     label: 'Intensitat de pluja (mm/h)',
-    basePath: RADAR_BASE_NIMBUS,       // ✅ dades_radar_nimbus
+    basePath: RADAR_BASE_NIMBUS,
     sourceId: 'radar-src-lluvia',
     layerId: 'radar-layer-lluvia',
     opacity: 0.9,
@@ -179,43 +272,8 @@ async function addComarques(map) {
 }
 
 // ---------------------------------------------------------------------------
-// CIUTATS (una capa per tram de zoom)
+// AVISOS DE PLUJA (fills i línies)
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// MUNICIPIS (línies que apareixen en fer zoom) + AVISOS DE PLUJA
-// ---------------------------------------------------------------------------
-
-let municipisPromise = null;
-
-export function getMunicipis() {
-  if (!municipisPromise) {
-    municipisPromise = fetch(MUNICIPIS_URL)
-      .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .catch((e) => { console.warn('[municipis]', e.message); municipisPromise = null; return null; });
-  }
-  return municipisPromise;
-}
-
-async function addMunicipis(map) {
-  const geo = await getMunicipis();
-  if (!geo) return;
-  if (map.getLayer(MUNI_LINE)) map.removeLayer(MUNI_LINE);
-  if (map.getSource(MUNI_SRC)) map.removeSource(MUNI_SRC);
-  map.addSource(MUNI_SRC, { type: 'geojson', data: geo });
-  map.addLayer({
-    id: MUNI_LINE,
-    type: 'line',
-    source: MUNI_SRC,
-    minzoom: 8,
-    layout: { 'line-join': 'round', visibility: vis(state.municipisVisible) },
-    paint: {
-      'line-color': MUNI_THEME[state.theme],
-      'line-width': MUNI_WIDTH,
-      'line-opacity': MUNI_OPACITY,
-    },
-  });
-}
 
 function addAvisos(map) {
   if (map.getLayer(AVIS_LINE)) map.removeLayer(AVIS_LINE);
@@ -239,16 +297,9 @@ export function setAvisosData(fc) {
   if (src) src.setData(state.avisosData);
 }
 
-export function setMunicipisVisibility(visible) {
-  state.municipisVisible = visible;
-  const map = state.map;
-  if (map && map.getLayer(MUNI_LINE)) map.setLayoutProperty(MUNI_LINE, 'visibility', vis(visible));
-}
-
-function restyleMunicipis() {
-  const map = state.map;
-  if (map && map.getLayer(MUNI_LINE)) map.setPaintProperty(MUNI_LINE, 'line-color', MUNI_THEME[state.theme]);
-}
+// ---------------------------------------------------------------------------
+// CIUTATS (una capa per tram de zoom)
+// ---------------------------------------------------------------------------
 
 let citiesCache = null;
 
@@ -397,13 +448,13 @@ async function initLayer(map, key) {
   }
   if (st.frames.length === 0) return false;
 
-  st.currentIndex = st.frames.length - 1; // comença al frame més recent
+  st.currentIndex = st.frames.length - 1;
   addRadarLayer(map, key);
   st.initialized = true;
   return true;
 }
 
-// Pre-carrega els PNG a la memòria cau del navegador (animació sense parpelleig)
+// Pre-carrega els PNG a la memòria cau del navegador
 const preloaded = new Set();
 
 function preload(all) {
@@ -420,11 +471,7 @@ function preload(all) {
 }
 
 // ---------------------------------------------------------------------------
-// ORDRE DE CAPES: radar < comarques < ciutats
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// RELLEU (PNG generat per generar_relleu.py), per sobre del mapa base
+// RELLEU
 // ---------------------------------------------------------------------------
 
 const RELIEF_INFO_URL = '/dades/relleu_catalunya.json';
@@ -481,7 +528,7 @@ export function setReliefVisibility(visible) {
 }
 
 // ---------------------------------------------------------------------------
-// ORDRE DE CAPES: mapa base < relleu < radar < comarques < ciutats
+// ORDRE DE CAPES
 // ---------------------------------------------------------------------------
 
 function orderLayers(map) {
@@ -505,21 +552,19 @@ function orderLayers(map) {
 
 export async function initRadar(map) {
   state.map = map;
-  getMunicipis(); // comença a baixar-los mentre es carrega la resta
+  getMunicipis(); // comença a baixar el .geojson.gz
   await addRelief(map);
   await addComarques(map);
-  await addMunicipis(map);
+  await addMunicipis(map);  // 👈 espera que el .gz estigui descomprimit
   addAvisos(map);
   addCities(map);
 
   const results = await Promise.all(Object.keys(RADAR).map((k) => initLayer(map, k)));
 
   orderLayers(map);
-  // L'animació l'arrenca l'HTML un cop sap quin accés té l'usuari
   return results.some(Boolean);
 }
 
-// Després d'un map.setStyle() totes les capes desapareixen: les tornem a posar
 export async function reapplyLayers() {
   const map = state.map;
   if (!map) return;
@@ -619,7 +664,6 @@ function loop(ts) {
   rafId = requestAnimationFrame(loop);
 }
 
-// Primer frame permès (els anteriors queden bloquejats). Només pre-carrega els permesos.
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
