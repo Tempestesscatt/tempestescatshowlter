@@ -8,12 +8,12 @@ permissions:
 
 env:
   R2_BUCKET: tempestes-radar-data
-  R2_PREFIX: dades_radar/
+  R2_PREFIX: dades_radar_dbz/
   R2_PREFIX_NIMBUS: dades_radar_nimbus/
   R2_PREFIX_ACUM: dades_radar_acumulacions/
   DADES_PNG_DIR: scripts-privats/radar_out
   DADES_ACUM_DIR: scripts-privats/radar_out_acum
-  R2_PUBLIC_BASE: https://radar-data.tempestes.cat   # 👈 canvia-ho si cal
+  R2_PUBLIC_BASE: https://radar-data.tempestes.cat
 
 jobs:
 
@@ -50,23 +50,14 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive --depth=1
 
-      - name: DEBUG submòdul (comprovació)
+      - name: DEBUG submòdul
         run: |
-          echo "=== Fitxers a scripts-privats ==="
-          ls -la scripts-privats/ || echo "no existeix"
-          echo ""
           echo "=== Commit del submòdul ==="
           cd scripts-privats && git log --oneline -1 || true
           cd ..
           echo ""
-          echo "=== Grep processar_producte a radar-real.py ==="
-          grep -n "processar_producte" scripts-privats/radar-real.py || echo "NO TROBAT"
-          echo ""
-          echo "=== Grep mkdir a manifest_utils.py ==="
-          grep -n "mkdir" scripts-privats/manifest_utils.py || echo "NO TROBAT"
-          echo ""
-          echo "=== Grep cumul.py existeix? ==="
-          ls -la scripts-privats/cumul.py || echo "NO EXISTEIX"
+          echo "=== Grep prefix_local ==="
+          grep -n "prefix_local" scripts-privats/radar-real.py || echo "NO TROBAT"
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -80,7 +71,6 @@ jobs:
           pip check || true
 
       - name: Executar radar-real.py
-        id: run_png
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
@@ -88,8 +78,7 @@ jobs:
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
-        run: |
-          python -X faulthandler scripts-privats/radar-real.py
+        run: python -X faulthandler scripts-privats/radar-real.py
         continue-on-error: true
 
       - name: Verificar manifest i PNGs
@@ -99,9 +88,14 @@ jobs:
           ok=true
           n_total=0
 
-          for sub in dbz lluvia; do
-            dir="$DADES_PNG_DIR/$sub"
-            echo "--- Comprovant $sub ---"
+          declare -A SUBS=(
+            ["dbz"]="dades_radar_dbz"
+            ["lluvia"]="dades_radar_nimbus"
+          )
+
+          for sub in "${!SUBS[@]}"; do
+            dir="$DADES_PNG_DIR/${SUBS[$sub]}"
+            echo "--- Comprovant $sub ($dir) ---"
 
             if [ ! -d "$dir" ]; then
               echo "AVIS: no existeix $dir"
@@ -125,18 +119,10 @@ jobs:
 
           if [ "$ok" != "true" ] || [ "$n_total" -eq 0 ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            echo "ERROR: verificació fallida"
             exit 1
           fi
 
           echo "files_ok=true" >> "$GITHUB_OUTPUT"
-          echo "OK: $n_total PNGs totals"
-
-      - name: Marcar job com a fallit si no hi ha dades
-        if: steps.verify.outputs.files_ok != 'true'
-        run: |
-          echo "::error::Cicle de radar PNG incomplet"
-          exit 1
 
       - name: Pujar artifact radar-png
         if: steps.verify.outputs.files_ok == 'true'
@@ -149,7 +135,7 @@ jobs:
 
 
   # ============================================================
-  # JOB 2: Acumulacions (en paral·lel amb radar-png)
+  # JOB 2: Acumulacions
   # ============================================================
   acumulacions:
     runs-on: ubuntu-latest
@@ -193,45 +179,29 @@ jobs:
           pip check || true
 
       - name: Executar cumul.py
-        id: run_acum
         env:
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
-        run: |
-          python -X faulthandler scripts-privats/cumul.py
+        run: python -X faulthandler scripts-privats/cumul.py
         continue-on-error: true
 
       - name: Verificar acumulacions
         id: verify
         run: |
           set -euo pipefail
-
           if [ ! -s "$DADES_ACUM_DIR/manifest.json" ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            echo "ERROR: no s'ha generat manifest.json"
             exit 1
           fi
-
-          n=$(find "$DADES_ACUM_DIR" -maxdepth 1 -name "*.png" | wc -l)
-          n=$((n))
+          n=$(find "$DADES_ACUM_DIR" -maxdepth 1 -name "*.png" | wc -l); n=$((n))
           echo "Acumulacions: $n PNGs"
-
           if [ "$n" -eq 0 ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            echo "ERROR: cap PNG generat"
             exit 1
           fi
-
           echo "files_ok=true" >> "$GITHUB_OUTPUT"
-          echo "OK: $n PNGs d'acumulacions"
-
-      - name: Marcar job com a fallit si no hi ha dades
-        if: steps.verify.outputs.files_ok != 'true'
-        run: |
-          echo "::error::Cicle d'acumulacions incomplet"
-          exit 1
 
       - name: Pujar artifact acumulacions
         if: steps.verify.outputs.files_ok == 'true'
@@ -244,7 +214,7 @@ jobs:
 
 
   # ============================================================
-  # JOB 3: Publicar a R2 (espera els 2 jobs anteriors)
+  # JOB 3: Publicar a R2
   # ============================================================
   publicar:
     needs: [radar-png, acumulacions]
@@ -272,35 +242,24 @@ jobs:
           name: dades-acumulacions
           path: dades_acum/
 
-      - name: Verificar tots els fitxers abans de publicar
+      - name: Verificar abans de publicar
         run: |
           set -euo pipefail
           echo "=== radar-png ==="
           ls -la dades_png/ || echo "no existeix"
-
-          for sub in dbz lluvia; do
+          for sub in dades_radar_dbz dades_radar_nimbus; do
             if [ -d "dades_png/$sub" ]; then
-              if [ ! -s "dades_png/$sub/manifest.json" ]; then
-                echo "::error::Falta dades_png/$sub/manifest.json"
-                exit 1
-              fi
+              [ -s "dades_png/$sub/manifest.json" ] || { echo "::error::falta $sub/manifest.json"; exit 1; }
               n=$(find "dades_png/$sub" -maxdepth 1 -name "*.png" | wc -l)
               echo "  $sub: $n PNGs"
             fi
           done
-
           echo "=== acumulacions ==="
           ls -la dades_acum/ || echo "no existeix"
-          if [ ! -s "dades_acum/manifest.json" ]; then
-            echo "::error::Falta dades_acum/manifest.json"
-            exit 1
-          fi
-          n=$(find dades_acum -maxdepth 1 -name "*.png" | wc -l)
-          echo "  acumulacions: $n PNGs"
-
+          [ -s "dades_acum/manifest.json" ] || { echo "::error::falta acum/manifest.json"; exit 1; }
           echo "OK: verificació prèvia correcta"
 
-      - name: Pujar a R2 (dBZ + NIMBUS + Acumulacions)
+      - name: Pujar a R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -316,7 +275,6 @@ jobs:
                    --file="$f" --remote --content-type="$ct"; then
                 return 0
               fi
-              echo "Fallada pujant $dest, reintentant..."
               attempt=$((attempt + 1))
               sleep 3
             done
@@ -336,7 +294,6 @@ jobs:
 
             cd "$src_dir"
 
-            # Neteja si cal
             if [ -f .neteja ]; then
               echo "→ esborrant prefix $r2_prefix"
               npx wrangler r2 object delete --recursive \
@@ -344,14 +301,12 @@ jobs:
               rm -f .neteja
             fi
 
-            # Pugem PNGs
             for f in *.png; do
               [ -f "$f" ] || continue
               upload_one "$f" "image/png" "${R2_BUCKET}/${r2_prefix}$f" \
                 || fail_count=$((fail_count + 1))
             done
 
-            # Pugem manifest
             if [ -f manifest.json ]; then
               upload_one "manifest.json" "application/json" \
                 "${R2_BUCKET}/${r2_prefix}manifest.json" \
@@ -361,26 +316,12 @@ jobs:
             cd - > /dev/null
           }
 
-          # -------------------------------------------------
-          # 1) DBZ
-          # -------------------------------------------------
-          upload_dir "dades_png/dbz" "$R2_PREFIX"
-
-          # -------------------------------------------------
-          # 2) NIMBUS
-          # -------------------------------------------------
-          upload_dir "dades_png/lluvia" "$R2_PREFIX_NIMBUS"
-
-          # -------------------------------------------------
-          # 3) ACUMULACIONS
-          # -------------------------------------------------
+          upload_dir "dades_png/dades_radar_dbz" "$R2_PREFIX"
+          upload_dir "dades_png/dades_radar_nimbus" "$R2_PREFIX_NIMBUS"
           upload_dir "dades_acum" "$R2_PREFIX_ACUM"
 
-          # -------------------------------------------------
-          # RESULTAT
-          # -------------------------------------------------
           if [ "$fail_count" -gt 0 ]; then
-            echo "::error::$fail_count fitxers no s'han pogut pujar a R2"
+            echo "::error::$fail_count fitxers no s'han pogut pujar"
             exit 1
           fi
 
