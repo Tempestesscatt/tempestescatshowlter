@@ -12,16 +12,17 @@ env:
   R2_BUCKET: tempestes-radar-data
   R2_PREFIX: dades_radar/
   DADES_PNG_DIR: scripts-privats/radar_out
-  R2_PUBLIC_BASE: https://radar.tempestes.cat   # 👈 el teu domini públic R2
+  R2_PUBLIC_BASE: https://radar-data.tempestes.cat   # 👈 canvia-ho pel teu domini R2 real
 
 jobs:
 
   radar-png:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     outputs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
+      n_files: ${{ steps.verify.outputs.n_files }}
 
     steps:
 
@@ -35,13 +36,14 @@ jobs:
           DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 
-      - name: Inicialitzar submòdul privat
+      - name: Inicialitzar submòdul privat (scripts-privats)
         run: |
           git submodule sync --recursive
           git submodule update --init --recursive --depth=1
@@ -54,31 +56,63 @@ jobs:
       - name: Instal·lar dependències
         run: |
           set -euo pipefail
-          pip install requests h5py numpy pillow pyproj
+          pip install --quiet requests h5py numpy pillow pyproj
+          pip check || true
 
       - name: Executar radar-real.py
+        id: run_png
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX: ${{ env.R2_PREFIX }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
-        run: python -X faulthandler scripts-privats/radar-real.py
+        run: |
+          python -X faulthandler scripts-privats/radar-real.py
         continue-on-error: true
 
       - name: Verificar que hi ha manifest i almenys un PNG
         id: verify
         run: |
           set -euo pipefail
+
+          # 1) Comprovem manifest
           if [ ! -s "$DADES_PNG_DIR/manifest.json" ]; then
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
             echo "ERROR: no s'ha generat manifest.json"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            echo "n_files=0" >> "$GITHUB_OUTPUT"
             exit 1
           fi
-          echo "files_ok=true" >> "$GITHUB_OUTPUT"
-          ls -la "$DADES_PNG_DIR" | head -20
 
-      - name: Pujar resultat com a artifact
+          # 2) Comptem PNGs
+          n_png=$(find "$DADES_PNG_DIR" -maxdepth 1 -name "*.png" | wc -l)
+          n_png=$((n_png))
+
+          echo "Total PNGs generats: $n_png"
+
+          if [ "$n_png" -eq 0 ]; then
+            echo "ERROR: no hi ha cap PNG generat"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            echo "n_files=0" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # 3) Tot OK
+          echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          echo "n_files=$n_png" >> "$GITHUB_OUTPUT"
+          echo "OK: $n_png PNGs i manifest presents"
+
+          echo ""
+          echo "Primers fitxers:"
+          find "$DADES_PNG_DIR" -maxdepth 1 -type f | sort | sed -n '1,10p'
+
+      - name: Marcar job com a fallit si no hi ha dades
+        if: steps.verify.outputs.files_ok != 'true'
+        run: |
+          echo "::error::Cicle de radar PNG incomplet: no es publicarà a R2."
+          exit 1
+
+      - name: Pujar resultat com a artifact (temporal)
         if: steps.verify.outputs.files_ok == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -92,19 +126,35 @@ jobs:
     needs: radar-png
     if: needs.radar-png.outputs.files_ok == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     concurrency:
       group: radar-png-update
       cancel-in-progress: false
+      # Mai cancel·lar a mitges una pujada a R2
 
     steps:
 
-      - name: Descarregar artifact
+      - name: Descarregar artifact radar PNG
         uses: actions/download-artifact@v4
         with:
           name: dades-radar-png
           path: dades_png/
+
+      - name: Verificar altre cop abans de publicar
+        run: |
+          set -euo pipefail
+
+          if [ ! -s "dades_png/manifest.json" ]; then
+            echo "::error::manifest.json absent o buit just abans de publicar. Avortant."
+            exit 1
+          fi
+
+          n_png=$(find dades_png -maxdepth 1 -name "*.png" | wc -l)
+          n_png=$((n_png))
+
+          echo "Verificació prèvia a publicar: $n_png PNGs + manifest.json"
+          echo "OK: verificació prèvia correcta"
 
       - name: Pujar a R2 (o esborrar si hi ha .neteja)
         env:
@@ -130,23 +180,32 @@ jobs:
             local ct="$2"
             local dest="$3"
             local attempt=1
-            while [ "$attempt" -le 3 ]; do
-              echo "Pujant ($attempt/3): $dest"
+            local max_attempts=3
+
+            while [ "$attempt" -le "$max_attempts" ]; do
+              echo "Pujant ($attempt/$max_attempts): $dest"
               if npx wrangler r2 object put "$dest" \
-                   --file="$f" --remote --content-type="$ct"; then
+                   --file="$f" \
+                   --remote \
+                   --content-type="$ct"; then
                 return 0
               fi
+              echo "Fallada pujant $dest, reintentant..."
               attempt=$((attempt + 1))
               sleep 3
             done
+
             return 1
           }
 
           # 1) Pugem tots els PNGs
+          n_ok=0
           for f in *.png; do
             [ -f "$f" ] || continue
-            if ! upload_one "$f" "image/png" "${R2_BUCKET}/${R2_PREFIX}$f"; then
-              echo "ERROR pujant $f"
+            if upload_one "$f" "image/png" "${R2_BUCKET}/${R2_PREFIX}$f"; then
+              n_ok=$((n_ok + 1))
+            else
+              echo "ERROR: no s'ha pogut pujar $f després de tots els intents"
               fail_count=$((fail_count + 1))
             fi
           done
@@ -155,13 +214,18 @@ jobs:
           if [ -f manifest.json ]; then
             if ! upload_one "manifest.json" "application/json" \
                  "${R2_BUCKET}/${R2_PREFIX}manifest.json"; then
-              echo "ERROR pujant manifest"
+              echo "ERROR: no s'ha pogut pujar manifest.json"
               fail_count=$((fail_count + 1))
             fi
           fi
 
+          # 3) Resultat final
+          echo "----------------------------------------"
+          echo "PNGs pujats OK: $n_ok"
+          echo "Fallats: $fail_count"
+
           if [ "$fail_count" -gt 0 ]; then
-            echo "::error::$fail_count fitxers no s'han pogut pujar"
+            echo "::error::$fail_count fitxer(s) no s'han pogut pujar a R2"
             exit 1
           fi
 
