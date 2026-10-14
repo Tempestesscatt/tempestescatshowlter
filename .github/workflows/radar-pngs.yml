@@ -1,28 +1,40 @@
-name: Descarga Radar PNG
+name: Descarga Radar
 
 on:
-  # Sense 'schedule' — el cron el dispara un Cloudflare Worker
-  # via l'API de GitHub (workflow_dispatch).
-  workflow_dispatch: {}
+  workflow_dispatch: {}  # Execució manual (o cridat per un cron extern)
 
 permissions:
-  contents: read
+  contents: read  # ja no cal 'write': no tornem a commitejar res al repo
 
 env:
   R2_BUCKET: tempestes-radar-data
-  R2_PREFIX: dades_radar/
-  DADES_PNG_DIR: scripts-privats/radar_out
-  R2_PUBLIC_BASE: https://radar-data.tempestes.cat   # 👈 canvia-ho pel teu domini R2 real
+  R2_PREFIX_RAD: dades_rad/
+
+  # Ruta REAL on rad.py escriu els fitxers:
+  # rad.py viu a scripts-privats/ i escriu a la carpeta
+  # germana radar/public/dades_rad.
+  DADES_RAD_DIR: scripts-privats/radar/public/dades_rad
+
+  # Frames del radar:
+  # frame_1 = més recent
+  # frame_5 = més antic
+  # + el fitxer de metadata que escriu rad.py.
+  REQUIRED_FILES_RAD: >-
+    meteorad_ne_spain_dbz_frame_1.msgpack.gz
+    meteorad_ne_spain_dbz_frame_2.msgpack.gz
+    meteorad_ne_spain_dbz_frame_3.msgpack.gz
+    meteorad_ne_spain_dbz_frame_4.msgpack.gz
+    meteorad_ne_spain_dbz_frame_5.msgpack.gz
+    meteorad_ne_spain_metadata.msgpack.gz
 
 jobs:
 
-  radar-png:
+  radar:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
 
     outputs:
       files_ok: ${{ steps.verify.outputs.files_ok }}
-      n_files: ${{ steps.verify.outputs.n_files }}
 
     steps:
 
@@ -42,6 +54,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
           git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -T git@github.com || true
 
       - name: Inicialitzar submòdul privat (scripts-privats)
         run: |
@@ -56,122 +69,126 @@ jobs:
       - name: Instal·lar dependències
         run: |
           set -euo pipefail
-          pip install --quiet requests h5py numpy pillow pyproj
+
+          # rad.py només necessita:
+          # - requests per baixar de l'API de Meteo-France
+          # - h5py per llegir HDF5 OPERA
+          # - numpy
+          # - msgpack per serialitzar
+          # - pyproj per reprojectar coordenades
+          #
+          # Molt més lleuger perquè ja NO descarreguem ni processem satèl·lit.
+
+          pip install requests h5py numpy msgpack-python pyproj
           pip check || true
 
-      - name: Executar radar-real.py
-        id: run_png
+      - name: Executar rad.py
+        id: run_rad
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
-          R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
-          R2_PREFIX: ${{ env.R2_PREFIX }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: |
-          python -X faulthandler scripts-privats/radar-real.py
+          python -X faulthandler scripts-privats/rad.py
+
+        # rad.py viu al submòdul privat 'scripts-privats/'.
+        # S'executa des de l'arrel del repo perquè el seu OUTPUT_DIR
+        # es calcula relatiu a la seva pròpia ubicació:
+        #
+        # scripts-privats/radar/public/dades_rad
+        #
+        # No tallem el job si rad.py acaba amb un error puntual:
+        # la comprovació real de si és publicable la fa 'verify'.
+
         continue-on-error: true
 
-      - name: Verificar que hi ha manifest i almenys un PNG
+      - name: Verificar que els fitxers generats són complets i vàlids
         id: verify
         run: |
           set -euo pipefail
 
-          # 1) Comprovem manifest
-          if [ ! -s "$DADES_PNG_DIR/manifest.json" ]; then
-            echo "ERROR: no s'ha generat manifest.json"
+          cd "$DADES_RAD_DIR"
+
+          ok="true"
+          missing=""
+
+          for f in $REQUIRED_FILES_RAD; do
+            if [ ! -s "$f" ]; then
+              ok="false"
+              missing="$missing $f"
+            fi
+          done
+
+          if [ "$ok" = "false" ]; then
+            echo "ERROR: Falten fitxers o estan buits:$missing"
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            echo "n_files=0" >> "$GITHUB_OUTPUT"
-            exit 1
+          else
+            echo "OK: tots els fitxers requerits presents i amb contingut"
+            echo "files_ok=true" >> "$GITHUB_OUTPUT"
           fi
 
-          # 2) Comptem PNGs
-          n_png=$(find "$DADES_PNG_DIR" -maxdepth 1 -name "*.png" | wc -l)
-          n_png=$((n_png))
-
-          echo "Total PNGs generats: $n_png"
-
-          if [ "$n_png" -eq 0 ]; then
-            echo "ERROR: no hi ha cap PNG generat"
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            echo "n_files=0" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
-
-          # 3) Tot OK
-          echo "files_ok=true" >> "$GITHUB_OUTPUT"
-          echo "n_files=$n_png" >> "$GITHUB_OUTPUT"
-          echo "OK: $n_png PNGs i manifest presents"
-
-          echo ""
-          echo "Primers fitxers:"
-          find "$DADES_PNG_DIR" -maxdepth 1 -type f | sort | sed -n '1,10p'
-
-      - name: Marcar job com a fallit si no hi ha dades
+      - name: Marcar job com a fallit si falten dades
         if: steps.verify.outputs.files_ok != 'true'
         run: |
-          echo "::error::Cicle de radar PNG incomplet: no es publicarà a R2."
+          echo "::error::Cicle de radar incomplet: no es publicarà a R2 per evitar dades a mitges."
           exit 1
 
       - name: Pujar resultat com a artifact (temporal)
         if: steps.verify.outputs.files_ok == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: dades-radar-png
-          path: ${{ env.DADES_PNG_DIR }}/
+          name: dades-radar
+          path: ${{ env.DADES_RAD_DIR }}/
           retention-days: 1
           if-no-files-found: error
 
 
   publicar:
-    needs: radar-png
-    if: needs.radar-png.outputs.files_ok == 'true'
+    needs: radar
+
+    # NOMÉS es publica si el job del radar ha generat
+    # tots els fitxers correctament.
+    if: needs.radar.outputs.files_ok == 'true'
+
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
 
     concurrency:
-      group: radar-png-update
+      group: radar-update
       cancel-in-progress: false
-      # Mai cancel·lar a mitges una pujada a R2
+      # mai cancel·lar a mitges una pujada a R2
 
     steps:
 
-      - name: Descarregar artifact radar PNG
+      - name: Descarregar artifact radar
         uses: actions/download-artifact@v4
         with:
-          name: dades-radar-png
-          path: dades_png/
+          name: dades-radar
+          path: dades_rad/
 
       - name: Verificar altre cop abans de publicar
         run: |
           set -euo pipefail
 
-          if [ ! -s "dades_png/manifest.json" ]; then
-            echo "::error::manifest.json absent o buit just abans de publicar. Avortant."
-            exit 1
-          fi
+          cd dades_rad
 
-          n_png=$(find dades_png -maxdepth 1 -name "*.png" | wc -l)
-          n_png=$((n_png))
+          for f in $REQUIRED_FILES_RAD; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Fitxer $f absent o buit just abans de publicar. Avortant."
+              exit 1
+            fi
+          done
 
-          echo "Verificació prèvia a publicar: $n_png PNGs + manifest.json"
-          echo "OK: verificació prèvia correcta"
+          cd ..
 
-      - name: Pujar a R2 (o esborrar si hi ha .neteja)
+          echo "OK: verificació radar prèvia a publicar correcta"
+
+      - name: Pujar a R2 (només radar)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-
-          cd dades_png
-
-          # Comprovem si cal netejar tot el prefix
-          if [ -f .neteja ]; then
-            echo "→ fitxer .neteja detectat. Esborrant tot el prefix $R2_PREFIX ..."
-            npx wrangler r2 object delete --recursive \
-              "$R2_BUCKET/$R2_PREFIX" --remote || true
-            rm -f .neteja
-          fi
 
           fail_count=0
 
@@ -183,50 +200,70 @@ jobs:
             local max_attempts=3
 
             while [ "$attempt" -le "$max_attempts" ]; do
+
               echo "Pujant ($attempt/$max_attempts): $dest"
+
               if npx wrangler r2 object put "$dest" \
                    --file="$f" \
                    --remote \
                    --content-type="$ct"; then
+
                 return 0
               fi
+
               echo "Fallada pujant $dest, reintentant..."
+
               attempt=$((attempt + 1))
+
               sleep 3
+
             done
 
             return 1
           }
 
-          # 1) Pugem tots els PNGs
-          n_ok=0
-          for f in *.png; do
-            [ -f "$f" ] || continue
-            if upload_one "$f" "image/png" "${R2_BUCKET}/${R2_PREFIX}$f"; then
-              n_ok=$((n_ok + 1))
-            else
-              echo "ERROR: no s'ha pogut pujar $f després de tots els intents"
-              fail_count=$((fail_count + 1))
-            fi
-          done
 
-          # 2) Pugem el manifest
-          if [ -f manifest.json ]; then
-            if ! upload_one "manifest.json" "application/json" \
-                 "${R2_BUCKET}/${R2_PREFIX}manifest.json"; then
-              echo "ERROR: no s'ha pogut pujar manifest.json"
-              fail_count=$((fail_count + 1))
-            fi
+          # -------------------------------------------------
+          # NOMÉS RADAR
+          # -------------------------------------------------
+
+          if [ -d dades_rad ]; then
+
+            cd dades_rad
+
+            for f in *.msgpack.gz; do
+
+              [ -f "$f" ] || continue
+
+              ct="application/octet-stream"
+
+              if ! upload_one "$f" "$ct" "${R2_BUCKET}/${R2_PREFIX_RAD}$f"; then
+
+                echo "ERROR: no s'ha pogut pujar $f (radar) després de tots els intents"
+
+                fail_count=$((fail_count + 1))
+
+              fi
+
+            done
+
+            cd ..
+
           fi
 
-          # 3) Resultat final
-          echo "----------------------------------------"
-          echo "PNGs pujats OK: $n_ok"
-          echo "Fallats: $fail_count"
+
+          # -------------------------------------------------
+          # RESULTAT FINAL
+          # -------------------------------------------------
 
           if [ "$fail_count" -gt 0 ]; then
+
             echo "::error::$fail_count fitxer(s) no s'han pogut pujar a R2"
+
             exit 1
+
           fi
 
-          echo "OK: dades de radar PNG pujades a R2."
+          echo "OK: dades de radar pujades a R2."
+          echo "No s'ha descarregat ni processat cap dada de satèl·lit."
+          echo "No queda cap còpia al repositori."
