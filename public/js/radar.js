@@ -418,8 +418,11 @@ const blobCache = new Map();   // url original -> blob URL
 const frameMeta = new Map();   // url original -> { key, index }
 const queued = new Map();      // url original -> entry (a la cua)
 const inflight = new Map();    // url original -> promise (descarregant)
+const failed = new Set();      // url original -> fallit definitivament
 let queue = [];                // entries en ordre d'inserció
 let activeDownloads = 0;
+
+if (typeof window !== 'undefined') window.__radar = { state, blobCache, failed };
 
 const noop = () => {};
 
@@ -474,7 +477,10 @@ function pump() {
     if (!entry) return;
     queued.delete(entry.url);
 
-    // Frames bloquejats pel pla: no els baixem (si desprès es desbloquegen, es tornen a encuar)
+    // No reintentem frames que ja han fallat definitivament
+    if (failed.has(entry.url) && entry.prio > 0) { entry.reject(new Error('fallit')); continue; }
+
+    // Frames bloquejats pel pla: no els baixem (si després es desbloquegen, es tornen a encuar)
     if (entry.prio > 0 && isLocked(entry.url)) {
       entry.reject(new Error('bloquejat'));
       continue;
@@ -487,7 +493,11 @@ function pump() {
         blobCache.set(entry.url, objUrl);
         entry.resolve(objUrl);
       })
-      .catch((e) => entry.reject(e))
+      .catch((e) => {
+        failed.add(entry.url);
+        console.warn('[radar] no s\'ha pogut baixar', entry.url, e.message);
+        entry.reject(e);
+      })
       .finally(() => {
         activeDownloads--;
         inflight.delete(entry.url);
@@ -800,16 +810,25 @@ function showFrame(key, index, fromTick) {
 
 let intervalId = 0;
 
+function nextReadyIndex(st) {
+  const n = st.frames.length;
+  const span = n - st.minIndex;
+  if (span <= 0) return -1;
+  const cur = Math.max(st.currentIndex, st.minIndex);
+  for (let step = 1; step <= span; step++) {
+    if (!LOOP && cur + step >= n) return -1;
+    const i = st.minIndex + ((cur - st.minIndex + step) % span);
+    if (blobCache.has(st.frames[i])) return i;
+  }
+  return -1;
+}
+
 function tick() {
   for (const key of Object.keys(state.layers)) {
     const st = state.layers[key];
     if (!st.initialized || st.frames.length === 0 || !st.visible) continue;
-    let next = st.currentIndex + 1;
-    if (next >= st.frames.length) {
-      if (!LOOP) continue;
-      next = st.minIndex;
-    }
-    showFrame(key, next, true);
+    const idx = nextReadyIndex(st);
+    if (idx >= 0 && idx !== st.currentIndex) showFrame(key, idx, true);
   }
 }
 
