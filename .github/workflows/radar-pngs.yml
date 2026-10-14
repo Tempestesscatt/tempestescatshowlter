@@ -1,0 +1,168 @@
+name: Descarga Radar PNG
+
+on:
+  # Sense 'schedule' — el cron el dispara un Cloudflare Worker
+  # via l'API de GitHub (workflow_dispatch).
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX: dades_radar/
+  DADES_PNG_DIR: scripts-privats/radar_out
+  R2_PUBLIC_BASE: https://radar.tempestes.cat   # 👈 el teu domini públic R2
+
+jobs:
+
+  radar-png:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+
+      - name: Clonar repositori (sense submòduls)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+
+      - name: Inicialitzar submòdul privat
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          pip install requests h5py numpy pillow pyproj
+
+      - name: Executar radar-real.py
+        env:
+          METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
+          R2_PREFIX: ${{ env.R2_PREFIX }}
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: python -X faulthandler scripts-privats/radar-real.py
+        continue-on-error: true
+
+      - name: Verificar que hi ha manifest i almenys un PNG
+        id: verify
+        run: |
+          set -euo pipefail
+          if [ ! -s "$DADES_PNG_DIR/manifest.json" ]; then
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            echo "ERROR: no s'ha generat manifest.json"
+            exit 1
+          fi
+          echo "files_ok=true" >> "$GITHUB_OUTPUT"
+          ls -la "$DADES_PNG_DIR" | head -20
+
+      - name: Pujar resultat com a artifact
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-radar-png
+          path: ${{ env.DADES_PNG_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
+
+  publicar:
+    needs: radar-png
+    if: needs.radar-png.outputs.files_ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    concurrency:
+      group: radar-png-update
+      cancel-in-progress: false
+
+    steps:
+
+      - name: Descarregar artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dades-radar-png
+          path: dades_png/
+
+      - name: Pujar a R2 (o esborrar si hi ha .neteja)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+
+          cd dades_png
+
+          # Comprovem si cal netejar tot el prefix
+          if [ -f .neteja ]; then
+            echo "→ fitxer .neteja detectat. Esborrant tot el prefix $R2_PREFIX ..."
+            npx wrangler r2 object delete --recursive \
+              "$R2_BUCKET/$R2_PREFIX" --remote || true
+            rm -f .neteja
+          fi
+
+          fail_count=0
+
+          upload_one() {
+            local f="$1"
+            local ct="$2"
+            local dest="$3"
+            local attempt=1
+            while [ "$attempt" -le 3 ]; do
+              echo "Pujant ($attempt/3): $dest"
+              if npx wrangler r2 object put "$dest" \
+                   --file="$f" --remote --content-type="$ct"; then
+                return 0
+              fi
+              attempt=$((attempt + 1))
+              sleep 3
+            done
+            return 1
+          }
+
+          # 1) Pugem tots els PNGs
+          for f in *.png; do
+            [ -f "$f" ] || continue
+            if ! upload_one "$f" "image/png" "${R2_BUCKET}/${R2_PREFIX}$f"; then
+              echo "ERROR pujant $f"
+              fail_count=$((fail_count + 1))
+            fi
+          done
+
+          # 2) Pugem el manifest
+          if [ -f manifest.json ]; then
+            if ! upload_one "manifest.json" "application/json" \
+                 "${R2_BUCKET}/${R2_PREFIX}manifest.json"; then
+              echo "ERROR pujant manifest"
+              fail_count=$((fail_count + 1))
+            fi
+          fi
+
+          if [ "$fail_count" -gt 0 ]; then
+            echo "::error::$fail_count fitxers no s'han pogut pujar"
+            exit 1
+          fi
+
+          echo "OK: dades de radar PNG pujades a R2."
