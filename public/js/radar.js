@@ -469,74 +469,52 @@ async function initLayer(map, key) {
   addRadarLayer(map, key);
   st.initialized = true;
 
-  // 👇 PRE-CÀRREGA COMPLETA: baixem tots els frames de cop
+  // Pre-carrega TOTS els frames (sense bloquejar l'execució)
   console.log(`[radar:${key}] Pre-carregant ${st.frames.length} PNGs...`);
-  preload(st.frames, (pct) => {
-    // Opcional: pots actualitzar una barra de progrés aquí
-    // console.log(`[radar:${key}] ${Math.round(pct * 100)}%`);
-  });
+  preload(st.frames);
 
   return true;
 }
 
 // ---------------------------------------------------------------------------
-// PRE-CÀRREGA (baixa TOTS els PNGs de cop)
+// PRE-CÀRREGA
 // ---------------------------------------------------------------------------
 
 const preloaded = new Set();
 
 /**
  * Pre-carrega tots els PNGs d'un array d'URLs.
- * - Descarrega 8 en paral·lel (per no saturar la xarxa).
- * - Marca cada URL com a `preloaded` per no tornar-la a baixar.
- * - Es pot cridar diverses vegades: només baixa les que falten.
- * - Retorna una Promise que es resol quan totes han acabat (o fallat).
+ * - Descarrega 8 en paral·lel.
+ * - Marca les URLs com a `preloaded` per no tornar-les a baixar.
+ * - No bloqueja: treballa en segon pla.
  */
-function preload(all, onProgress) {
+function preload(all) {
   const urls = all.filter((u) => !preloaded.has(u));
-  if (urls.length === 0) {
-    if (onProgress) onProgress(1);
-    return Promise.resolve();
-  }
+  if (urls.length === 0) return;
 
   urls.forEach((u) => preloaded.add(u));
   const total = urls.length;
-  let done = 0;
   let ok = 0;
   let ko = 0;
   let idx = 0;
 
   const MAX_PARALLEL = 8;
 
-  return new Promise((resolve) => {
-    function worker() {
-      if (idx >= total) {
-        if (ok + ko === total) {
-          console.log(`[radar] Pre-càrrega feta: ${ok} OK, ${ko} errors (${total} en total)`);
-          resolve();
-        }
-        return;
+  function worker() {
+    if (idx >= total) {
+      if (ok + ko === total) {
+        console.log(`[radar] Pre-càrrega feta: ${ok} OK, ${ko} errors (${total} en total)`);
       }
-      const i = idx++;
-      const url = urls[i];
-      const img = new Image();
-      img.onload = () => {
-        ok++;
-        done++;
-        if (onProgress) onProgress(done / total);
-        worker();
-      };
-      img.onerror = () => {
-        ko++;
-        done++;
-        if (onProgress) onProgress(done / total);
-        worker();
-      };
-      img.src = url;
+      return;
     }
+    const url = urls[idx++];
+    const img = new Image();
+    img.onload = () => { ok++; worker(); };
+    img.onerror = () => { ko++; worker(); };
+    img.src = url;
+  }
 
-    for (let n = 0; n < MAX_PARALLEL; n++) worker();
-  });
+  for (let n = 0; n < MAX_PARALLEL; n++) worker();
 }
 
 // ---------------------------------------------------------------------------
@@ -616,20 +594,68 @@ function orderLayers(map) {
 }
 
 // ---------------------------------------------------------------------------
+// ANIMACIÓ (setInterval, no requestAnimationFrame)
+// ---------------------------------------------------------------------------
+
+let intervalId = 0;
+
+function tick() {
+  for (const key of Object.keys(state.layers)) {
+    const st = state.layers[key];
+    if (!st.initialized || st.frames.length === 0) continue;
+    let next = st.currentIndex + 1;
+    if (next >= st.frames.length) {
+      if (!LOOP) continue;
+      next = st.minIndex;
+    }
+    showFrame(key, next);
+  }
+}
+
+function showFrame(key, index) {
+  const cfg = RADAR[key];
+  const st = state.layers[key];
+  const map = state.map;
+  if (!map || !st.initialized || index < 0 || index >= st.frames.length) return;
+  if (index < st.minIndex) index = st.minIndex;
+
+  const url = st.frames[index];
+  st.currentIndex = index;
+  if (st.applied === url) return;
+
+  const source = map.getSource(cfg.sourceId);
+  if (!source) return;
+  try {
+    source.updateImage({ url, coordinates: COORDS });
+    st.applied = url;
+  } catch (e) {
+    console.warn('[radar] updateImage:', e.message);
+  }
+}
+
+function startAllAnimations() {
+  stopAllAnimations();
+  intervalId = setInterval(tick, 1000 / FPS);
+}
+
+function stopAllAnimations() {
+  if (intervalId) clearInterval(intervalId);
+  intervalId = 0;
+}
+
+// ---------------------------------------------------------------------------
 // API PÚBLICA
 // ---------------------------------------------------------------------------
 
 export async function initRadar(map) {
   state.map = map;
-  getMunicipis(); // comença a baixar el .geojson.gz (per als avisos)
+  getMunicipis();
   await addRelief(map);
   await addComarques(map);
   await addMunicipis(map);
   addAvisos(map);
   addCities(map);
 
-  // Ara no esperem que acabin les pre-càrregues: initLayer les llança
-  // en segon pla i retorna de seguida.
   const results = await Promise.all(Object.keys(RADAR).map((k) => initLayer(map, k)));
 
   orderLayers(map);
@@ -689,74 +715,11 @@ export function setComarquesVisibility(visible) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// ANIMACIÓ
-// ---------------------------------------------------------------------------
-
-function showFrame(key, index) {
-  const cfg = RADAR[key];
-  const st = state.layers[key];
-  const map = state.map;
-  if (!map || !st.initialized || index < 0 || index >= st.frames.length) return;
-  if (index < st.minIndex) index = st.minIndex;
-
-  const url = st.frames[index];
-  st.currentIndex = index;
-  if (st.applied === url) return;
-
-  const source = map.getSource(cfg.sourceId);
-  if (!source) return;
-  try {
-    source.updateImage({ url, coordinates: COORDS });
-    st.applied = url;
-  } catch (e) {
-    console.warn('[radar] updateImage:', e.message);
-  }
-}
-
-let intervalId = 0;
-
-function tick() {
-  for (const key of Object.keys(state.layers)) {
-    const st = state.layers[key];
-    if (!st.initialized || st.frames.length === 0) continue;
-    let next = st.currentIndex + 1;
-    if (next >= st.frames.length) {
-      if (!LOOP) continue;
-      next = st.minIndex;
-    }
-    showFrame(key, next);
-  }
-}
-
-export function startAllAnimations() {
-  stopAllAnimations();
-  intervalId = setInterval(tick, 1000 / FPS);
-}
-
-export function stopAllAnimations() {
-  if (intervalId) clearInterval(intervalId);
-  intervalId = 0;
-}
-
-// Primer frame permès (els anteriors queden bloquejats)
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
   st.minIndex = Math.max(0, Math.min(idx, Math.max(0, st.frames.length - 1)));
   if (st.initialized && st.currentIndex < st.minIndex) showFrame(key, st.minIndex);
-  // Ja no cal cridar preload aquí perquè ho hem fet a initLayer
-}
-
-export function startAllAnimations() {
-  if (rafId) cancelAnimationFrame(rafId);
-  lastTick = 0;
-  rafId = requestAnimationFrame(loop);
-}
-
-export function stopAllAnimations() {
-  if (rafId) cancelAnimationFrame(rafId);
-  rafId = 0;
 }
 
 export function goToFrameLayer(key, index) {
