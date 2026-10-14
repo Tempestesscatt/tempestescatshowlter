@@ -891,6 +891,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    map.on('error', (e) => console.warn('[map error]', e.error && e.error.message, e));
 
     function hideBaseLabels() {
       const style = map.getStyle();
