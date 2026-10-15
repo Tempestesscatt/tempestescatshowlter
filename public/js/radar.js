@@ -1,12 +1,13 @@
 // public/js/radar.js
-// MapLibre GL JS: radar (PNG), comarques (GeoJSON), municipis (GeoJSON.gz) i ciutats.
+// MapLibre GL JS: radar (PNG), comarques, municipis (GeoJSON.gz) i ciutats.
 //
-//  - Comarques: línies NEGRES al mapa clar, BLANQUES al mapa fosc.
-//  - Municipis: línies dibuixades directament des de /dades/municipis.geojson.gz
-//               (el mateix fitxer que fan servir els avisos).
-//  - Ciutats: capes per trams de zoom, mida adaptada al zoom i a la població.
-//  - Radar: frames des de manifest.json (a R2), baixats com a blobs a memòria
-//    amb una cua amb prioritats (el més recent primer).
+// Arrencada ràpida:
+//  - Els manifests i els primers frames es demanen en importar el mòdul,
+//    en paral·lel amb la càrrega del mapa base.
+//  - initRadar() només espera el radar. Relleu, comarques, ciutats i
+//    municipis es carreguen en segon pla després.
+//  - Els frames es baixen com a blobs (cua amb prioritats, el més recent primer).
+//    L'animació només avança entre frames que ja són a memòria.
 
 // ---------------------------------------------------------------------------
 // CONFIGURACIÓ
@@ -18,7 +19,6 @@ const COMARQUES_LINE = 'comarques-line';
 
 const CITIES_SRC = 'ciutats-src';
 const CITIES_PREFIX = 'ciutats-tier-';
-
 const FONT = ['Noto Sans Regular'];
 
 const DENSITY_KEY = 'radar.density';
@@ -40,104 +40,23 @@ const LINE_THEME = {
   clar: { color: 'rgba(0,0,0,0.70)',       opacity: 1 },
   fosc: { color: 'rgba(255,255,255,0.65)', opacity: 1 },
 };
-
 const LINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 5, 0.5, 8, 0.9, 11, 1.3, 14, 1.8];
 
-// ---------------------------------------------------------------------------
-// MUNICIPIS: GeoJSON.gz (local), per a les línies i per als avisos
-// ---------------------------------------------------------------------------
-
 const MUNICIPIS_GZ_URL = '/dades/municipis.geojson.gz';
-const MUNI_SRC  = 'municipis-src';
+const MUNI_SRC = 'municipis-src';
 const MUNI_LINE = 'municipis-line';
-
 const MUNI_THEME = {
   clar: { color: 'rgba(0,0,0,0.38)',       opacity: 1 },
   fosc: { color: 'rgba(255,255,255,0.32)', opacity: 1 },
 };
 const MUNI_WIDTH = ['interpolate', ['linear'], ['zoom'], 8, 0.4, 11, 0.7, 14, 1.2];
 
-let municipisPromise = null;
-
-// ---------------------------------------------------------------------------
-// UTILITATS: descomprimir .gz al vol (tolera servidors que ja el descomprimeixen)
-// ---------------------------------------------------------------------------
-
-async function fetchGunzip(url) {
-  const r = await fetch(url, { cache: 'no-store' });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-
-  const buf = new Uint8Array(await r.arrayBuffer());
-  const isGzip = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
-
-  // Si el servidor ja l'ha descomprimit (Content-Encoding: gzip), és text pla.
-  if (!isGzip) return new TextDecoder('utf-8').decode(buf);
-
-  const ds = new DecompressionStream('gzip');
-  const stream = new Blob([buf]).stream().pipeThrough(ds);
-  const text = await new Response(stream).text();
-  return text;
-}
-
-export function getMunicipis() {
-  if (!municipisPromise) {
-    municipisPromise = fetchGunzip(MUNICIPIS_GZ_URL)
-      .then((text) => JSON.parse(text))
-      .catch((e) => {
-        console.warn('[municipis]', e.message);
-        municipisPromise = null;
-        return null;
-      });
-  }
-  return municipisPromise;
-}
-
-async function addMunicipis(map) {
-  const data = await getMunicipis();
-  if (!data) return;
-
-  if (map.getLayer(MUNI_LINE)) map.removeLayer(MUNI_LINE);
-  if (map.getSource(MUNI_SRC)) map.removeSource(MUNI_SRC);
-
-  map.addSource(MUNI_SRC, { type: 'geojson', data, tolerance: 0.6 });
-  const t = MUNI_THEME[state.theme];
-  map.addLayer({
-    id: MUNI_LINE,
-    type: 'line',
-    source: MUNI_SRC,
-    minzoom: 8,
-    layout: { 'line-join': 'round', visibility: vis(state.municipisVisible) },
-    paint: {
-      'line-color': t.color,
-      'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0, 9.5, t.opacity],
-      'line-width': MUNI_WIDTH,
-    },
-  });
-}
-
-export function setMunicipisVisibility(visible) {
-  state.municipisVisible = visible;
-  const map = state.map;
-  if (map && map.getLayer(MUNI_LINE)) {
-    map.setLayoutProperty(MUNI_LINE, 'visibility', vis(visible));
-  }
-}
-
-function restyleMunicipis() {
-  const map = state.map;
-  if (!map || !map.getLayer(MUNI_LINE)) return;
-  map.setPaintProperty(MUNI_LINE, 'line-color', MUNI_THEME[state.theme].color);
-}
-
-// ---------------------------------------------------------------------------
-// AVISOS (fills i línies per municipi)
-// ---------------------------------------------------------------------------
-
 const AVIS_SRC = 'avisos-src';
 const AVIS_FILL = 'avisos-fill';
 const AVIS_LINE = 'avisos-line';
-
 const AVIS_COLOR = ['match', ['get', 'level'], 3, '#ef4444', 2, '#f97316', '#facc15'];
+
+const ACUM_LAYER_ID = 'acum-layer';
 
 const CITY_TEXT_SIZE = [
   'interpolate', ['linear'], ['zoom'],
@@ -146,10 +65,6 @@ const CITY_TEXT_SIZE = [
   12, ['step', ['get', 'poblacio'], 10, 1000,   11, 5000,    12, 20000,   13, 100000,  15, 500000, 18],
   16, ['step', ['get', 'poblacio'], 12, 2000,   13, 20000,   15, 100000,  18, 500000, 22],
 ];
-
-// ---------------------------------------------------------------------------
-// RADAR (configuració)
-// ---------------------------------------------------------------------------
 
 const RADAR_BASE_DBZ    = 'https://radar-data.tempestes.cat/dades_radar_dbz';
 const RADAR_BASE_NIMBUS = 'https://radar-data.tempestes.cat/dades_radar_nimbus';
@@ -184,15 +99,27 @@ const COORDS = [
 const FPS = 3;
 const LOOP = true;
 
-// Càrrega de frames
-const MAX_PARALLEL = 6;
-const FETCH_TIMEOUT_MS = 20000;
+const MAX_PARALLEL = 8;          // descàrregues simultànies
+const FETCH_TIMEOUT_MS = 15000;
 const FETCH_RETRIES = 3;
-const FIRST_FRAME_WAIT_MS = 3000;
+const FIRST_FRAME_WAIT_MS = 1500;
+const BOOT_FRAMES = 6;           // frames que es baixen abans de saber el pla de l'usuari
 
 // ---------------------------------------------------------------------------
 // ESTAT
 // ---------------------------------------------------------------------------
+
+const vis = (v) => (v ? 'visible' : 'none');
+const noop = () => {};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function loadDensity() {
+  try {
+    const k = localStorage.getItem(DENSITY_KEY);
+    if (k && DENSITY[k]) return k;
+  } catch (e) { /* ignore */ }
+  return DEFAULT_DENSITY;
+}
 
 const state = {
   map: null,
@@ -212,25 +139,300 @@ for (const key of Object.keys(RADAR)) {
     timestamps: [],
     currentIndex: 0,
     minIndex: 0,
-    initialized: false,
+    initialized: false,   // dades llestes (manifest llegit)
     visible: RADAR[key].visible,
     opacity: RADAR[key].opacity,
     applied: null,
     wanted: null,
     applyScheduled: false,
-    pendingIndex: null,
+    loaded: 0,
   };
 }
 
-function loadDensity() {
-  try {
-    const k = localStorage.getItem(DENSITY_KEY);
-    if (k && DENSITY[k]) return k;
-  } catch (e) { /* ignore */ }
-  return DEFAULT_DENSITY;
+// ---------------------------------------------------------------------------
+// CÀRREGA DE FRAMES: cua amb prioritats + cache de blobs
+// prio 0 = urgent, 1 = capa visible, 2 = capa amagada
+// ---------------------------------------------------------------------------
+
+const blobCache = new Map();   // url original -> blob URL
+const failed = new Set();
+const frameMeta = new Map();   // url original -> { key, index }
+const queued = new Map();
+const inflight = new Map();
+const queue = [];
+let activeDownloads = 0;
+
+if (typeof window !== 'undefined') window.__radar = { state, blobCache, failed };
+
+async function downloadBlob(url) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < FETCH_RETRIES; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const r = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      if (!blob.size) throw new Error('buit');
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      lastErr = e;
+      if (attempt < FETCH_RETRIES - 1) await sleep(300 * (attempt + 1));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr || new Error('error desconegut');
 }
 
-const vis = (v) => (v ? 'visible' : 'none');
+function isLocked(url) {
+  const m = frameMeta.get(url);
+  if (!m) return false;
+  const st = state.layers[m.key];
+  return !!st && m.index < st.minIndex;
+}
+
+const layerPrio = (key) => (state.layers[key] && state.layers[key].visible ? 1 : 2);
+
+function pickNext() {
+  let bestI = -1;
+  let bestPrio = 99;
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i].prio < bestPrio) {
+      bestPrio = queue[i].prio;
+      bestI = i;
+      if (bestPrio === 0) break;
+    }
+  }
+  return bestI < 0 ? null : queue.splice(bestI, 1)[0];
+}
+
+function pump() {
+  while (activeDownloads < MAX_PARALLEL) {
+    const entry = pickNext();
+    if (!entry) return;
+    queued.delete(entry.url);
+
+    if (blobCache.has(entry.url)) { entry.resolve(blobCache.get(entry.url)); continue; }
+    if (entry.prio > 0 && failed.has(entry.url)) { entry.reject(new Error('fallit')); continue; }
+    if (entry.prio > 0 && isLocked(entry.url)) { entry.reject(new Error('bloquejat')); continue; }
+
+    activeDownloads++;
+    const p = downloadBlob(entry.url)
+      .then((objUrl) => {
+        blobCache.set(entry.url, objUrl);
+        failed.delete(entry.url);
+        const m = frameMeta.get(entry.url);
+        if (m) state.layers[m.key].loaded++;
+        entry.resolve(objUrl);
+      })
+      .catch((e) => {
+        failed.add(entry.url);
+        console.warn('[radar] no s\'ha pogut baixar', entry.url, e.message);
+        entry.reject(e);
+      })
+      .finally(() => {
+        activeDownloads--;
+        inflight.delete(entry.url);
+        pump();
+      });
+    inflight.set(entry.url, p);
+  }
+}
+
+/** Demana un frame. Retorna una promesa amb el blob URL. */
+function requestFrame(url, prio) {
+  if (blobCache.has(url)) return Promise.resolve(blobCache.get(url));
+
+  const existing = queued.get(url);
+  if (existing) {
+    if (prio < existing.prio) existing.prio = prio;
+    return existing.promise;
+  }
+  if (inflight.has(url)) return inflight.get(url).then(() => blobCache.get(url));
+
+  const entry = { url, prio };
+  entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
+  entry.promise.catch(noop);
+  queued.set(url, entry);
+  queue.push(entry);
+  pump();
+  return entry.promise;
+}
+
+/** Encua els frames desbloquejats d'una capa, del més recent al més antic. */
+function enqueueLayer(key) {
+  const st = state.layers[key];
+  if (!st) return;
+  const prio = layerPrio(key);
+  for (let i = st.frames.length - 1; i >= st.minIndex; i--) {
+    const url = st.frames[i];
+    if (blobCache.has(url) || queued.has(url) || inflight.has(url)) continue;
+    requestFrame(url, prio);
+  }
+}
+
+function reprioritize() {
+  for (const e of queue) {
+    if (e.prio === 0) continue;
+    const m = frameMeta.get(e.url);
+    if (m) e.prio = layerPrio(m.key);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RADAR: manifest + preparació (arrenca en importar el mòdul)
+// ---------------------------------------------------------------------------
+
+async function fetchManifest(cfg) {
+  for (let i = 0; i < 3; i++) {
+    try {
+      const r = await fetch(`${cfg.basePath}/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+      if (r.ok) {
+        const j = await r.json();
+        if (j && Array.isArray(j.frames)) return j;
+      }
+    } catch (e) { /* reintenta */ }
+    await sleep(400 * (i + 1));
+  }
+  return null;
+}
+
+function parseTs(ts) {
+  const m = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):?(\d{2})/.exec(ts || '');
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : null;
+}
+
+async function prepareLayer(key) {
+  const cfg = RADAR[key];
+  const st = state.layers[key];
+
+  const manifest = await fetchManifest(cfg);
+  if (!manifest || manifest.frames.length === 0) return false;
+
+  const v = encodeURIComponent(manifest.updated || Date.now());
+  const ext = manifest.ext || '.png';
+  const frames = [];
+  const timestamps = [];
+  for (const item of manifest.frames) {
+    if (!item || !item.f) continue;
+    frames.push(`${cfg.basePath}/${item.f}${ext}?v=${v}`);
+    timestamps.push(parseTs(item.t));
+  }
+  if (frames.length === 0) return false;
+
+  st.frames = frames;
+  st.timestamps = timestamps;
+  st.currentIndex = frames.length - 1;
+  frames.forEach((u, i) => frameMeta.set(u, { key, index: i }));
+  st.initialized = true;
+
+  // El més recent, urgent; després els últims frames
+  requestFrame(frames[st.currentIndex], 0);
+  const prio = layerPrio(key);
+  for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
+    requestFrame(frames[i], prio);
+  }
+  return true;
+}
+
+// Arrenca ara mateix, sense esperar el mapa
+const prepared = {};
+for (const key of Object.keys(RADAR)) {
+  prepared[key] = prepareLayer(key).catch((e) => {
+    console.warn(`[radar:${key}]`, e && e.message);
+    return false;
+  });
+}
+
+function addRadarLayer(map, key) {
+  const cfg = RADAR[key];
+  const st = state.layers[key];
+  if (!st.frames.length) return;
+  if (map.getLayer(cfg.layerId)) map.removeLayer(cfg.layerId);
+  if (map.getSource(cfg.sourceId)) map.removeSource(cfg.sourceId);
+
+  const url = st.frames[st.currentIndex] || st.frames[0];
+  const src = blobCache.get(url) || url;
+  map.addSource(cfg.sourceId, { type: 'image', url: src, coordinates: COORDS });
+  map.addLayer({
+    id: cfg.layerId,
+    type: 'raster',
+    source: cfg.sourceId,
+    layout: { visibility: vis(st.visible) },
+    paint: {
+      'raster-opacity': st.opacity,
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear',
+    },
+  });
+  st.applied = url;
+  st.wanted = url;
+}
+
+// ---------------------------------------------------------------------------
+// MUNICIPIS (GeoJSON.gz)
+// ---------------------------------------------------------------------------
+
+let municipisPromise = null;
+
+async function fetchGunzip(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const isGzip = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+  // Si el servidor ja l'ha descomprimit (Content-Encoding: gzip), és text pla
+  if (!isGzip) return new TextDecoder('utf-8').decode(buf);
+  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).text();
+}
+
+export function getMunicipis() {
+  if (!municipisPromise) {
+    municipisPromise = fetchGunzip(MUNICIPIS_GZ_URL)
+      .then((text) => JSON.parse(text))
+      .catch((e) => {
+        console.warn('[municipis]', e.message);
+        municipisPromise = null;
+        return null;
+      });
+  }
+  return municipisPromise;
+}
+
+async function addMunicipis(map) {
+  const data = await getMunicipis();
+  if (!data) return;
+  if (map.getLayer(MUNI_LINE)) map.removeLayer(MUNI_LINE);
+  if (map.getSource(MUNI_SRC)) map.removeSource(MUNI_SRC);
+
+  map.addSource(MUNI_SRC, { type: 'geojson', data, tolerance: 0.6 });
+  const t = MUNI_THEME[state.theme];
+  map.addLayer({
+    id: MUNI_LINE,
+    type: 'line',
+    source: MUNI_SRC,
+    minzoom: 8,
+    layout: { 'line-join': 'round', visibility: vis(state.municipisVisible) },
+    paint: {
+      'line-color': t.color,
+      'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0, 9.5, t.opacity],
+      'line-width': MUNI_WIDTH,
+    },
+  });
+}
+
+export function setMunicipisVisibility(visible) {
+  state.municipisVisible = visible;
+  const map = state.map;
+  if (map && map.getLayer(MUNI_LINE)) map.setLayoutProperty(MUNI_LINE, 'visibility', vis(visible));
+}
+
+function restyleMunicipis() {
+  const map = state.map;
+  if (!map || !map.getLayer(MUNI_LINE)) return;
+  map.setPaintProperty(MUNI_LINE, 'line-color', MUNI_THEME[state.theme].color);
+}
 
 // ---------------------------------------------------------------------------
 // COMARQUES
@@ -259,16 +461,18 @@ async function addComarques(map) {
     type: 'line',
     source: COMARQUES_SRC,
     layout: { 'line-join': 'round', visibility: vis(state.comarquesVisible) },
-    paint: {
-      'line-color': t.color,
-      'line-opacity': t.opacity,
-      'line-width': LINE_WIDTH,
-    },
+    paint: { 'line-color': t.color, 'line-opacity': t.opacity, 'line-width': LINE_WIDTH },
   });
 }
 
+function restyleComarques() {
+  const map = state.map;
+  if (!map || !map.getLayer(COMARQUES_LINE)) return;
+  map.setPaintProperty(COMARQUES_LINE, 'line-color', LINE_THEME[state.theme].color);
+}
+
 // ---------------------------------------------------------------------------
-// AVISOS DE PLUJA (fills i línies)
+// AVISOS (fills i línies)
 // ---------------------------------------------------------------------------
 
 function addAvisos(map) {
@@ -294,7 +498,7 @@ export function setAvisosData(fc) {
 }
 
 // ---------------------------------------------------------------------------
-// CIUTATS (una capa per tram de zoom)
+// CIUTATS
 // ---------------------------------------------------------------------------
 
 let citiesCache = null;
@@ -324,9 +528,7 @@ function removeCityLayers(map) {
 function addCities(map) {
   if (!citiesCache) {
     citiesCache = buildCitiesGeoJSON();
-    if (citiesCache.features.length === 0) {
-      console.warn('[ciutats] window.CIUTATS.llista buida o inexistent');
-    }
+    if (citiesCache.features.length === 0) console.warn('[ciutats] window.CIUTATS.llista buida o inexistent');
   }
 
   removeCityLayers(map);
@@ -377,253 +579,6 @@ function restyleCities() {
   }
 }
 
-function restyleComarques() {
-  const map = state.map;
-  if (!map || !map.getLayer(COMARQUES_LINE)) return;
-  map.setPaintProperty(COMARQUES_LINE, 'line-color', LINE_THEME[state.theme].color);
-}
-
-// ---------------------------------------------------------------------------
-// CÀRREGA DE FRAMES: cua amb prioritats + cache de blobs
-// ---------------------------------------------------------------------------
-// prio 0 = urgent, 1 = capa visible, 2 = capa amagada
-
-const blobCache = new Map();   // url original -> blob URL
-const failed = new Set();      // urls que han fallat
-const frameMeta = new Map();   // url original -> { key, index }
-const queued = new Map();      // url original -> entry (a la cua)
-const inflight = new Map();    // url original -> promise
-let queue = [];
-let activeDownloads = 0;
-
-if (typeof window !== 'undefined') window.__radar = { state, blobCache, failed };
-
-const noop = () => {};
-
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-async function downloadBlob(url) {
-  let lastErr = null;
-  for (let attempt = 0; attempt < FETCH_RETRIES; attempt++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-    try {
-      const r = await fetch(url, { mode: 'cors', signal: ctrl.signal });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const blob = await r.blob();
-      if (!blob.size) throw new Error('buit');
-      return URL.createObjectURL(blob);
-    } catch (e) {
-      lastErr = e;
-      await sleep(400 * (attempt + 1));
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastErr || new Error('error desconegut');
-}
-
-function isLocked(url) {
-  const m = frameMeta.get(url);
-  if (!m) return false;
-  const st = state.layers[m.key];
-  return !!st && m.index < st.minIndex;
-}
-
-function layerPrio(key) {
-  return state.layers[key] && state.layers[key].visible ? 1 : 2;
-}
-
-function pickNext() {
-  let bestI = -1;
-  let bestPrio = 99;
-  for (let i = 0; i < queue.length; i++) {
-    const e = queue[i];
-    if (e.prio < bestPrio) { bestPrio = e.prio; bestI = i; if (bestPrio === 0) break; }
-  }
-  if (bestI < 0) return null;
-  return queue.splice(bestI, 1)[0];
-}
-
-function pump() {
-  while (activeDownloads < MAX_PARALLEL) {
-    const entry = pickNext();
-    if (!entry) return;
-    queued.delete(entry.url);
-
-    if (failed.has(entry.url) && entry.prio > 0) { entry.reject(new Error('fallit')); continue; }
-
-    // Frames bloquejats pel pla: no es baixen (si es desbloquegen, es tornen a encuar)
-    if (entry.prio > 0 && isLocked(entry.url)) {
-      entry.reject(new Error('bloquejat'));
-      continue;
-    }
-    if (blobCache.has(entry.url)) { entry.resolve(blobCache.get(entry.url)); continue; }
-
-    activeDownloads++;
-    const p = downloadBlob(entry.url)
-      .then((objUrl) => {
-        blobCache.set(entry.url, objUrl);
-        failed.delete(entry.url);
-        entry.resolve(objUrl);
-      })
-      .catch((e) => {
-        failed.add(entry.url);
-        console.warn('[radar] no s\'ha pogut baixar', entry.url, e.message);
-        entry.reject(e);
-      })
-      .finally(() => {
-        activeDownloads--;
-        inflight.delete(entry.url);
-        pump();
-      });
-    inflight.set(entry.url, p);
-  }
-}
-
-/** Demana un frame. Retorna una promesa amb el blob URL. */
-function requestFrame(url, prio) {
-  if (blobCache.has(url)) return Promise.resolve(blobCache.get(url));
-
-  const existing = queued.get(url);
-  if (existing) {
-    if (prio < existing.prio) existing.prio = prio;
-    return existing.promise;
-  }
-
-  if (inflight.has(url)) {
-    return inflight.get(url).then(() => blobCache.get(url));
-  }
-
-  const entry = { url, prio };
-  entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
-  entry.promise.catch(noop);
-  queued.set(url, entry);
-  queue.push(entry);
-  pump();
-  return entry.promise;
-}
-
-/** Encua els frames desbloquejats d'una capa, del més recent al més antic. */
-function enqueueLayer(key) {
-  const st = state.layers[key];
-  if (!st) return;
-  const prio = layerPrio(key);
-  for (let i = st.frames.length - 1; i >= st.minIndex; i--) {
-    const url = st.frames[i];
-    if (blobCache.has(url) || queued.has(url) || inflight.has(url)) continue;
-    requestFrame(url, prio);
-  }
-}
-
-function reprioritize() {
-  for (const e of queue) {
-    if (e.prio === 0) continue;
-    const m = frameMeta.get(e.url);
-    if (m) e.prio = layerPrio(m.key);
-  }
-}
-
-function releaseUnused(key, newFrames) {
-  const keep = new Set(newFrames);
-  for (const [url, meta] of frameMeta) {
-    if (meta.key !== key || keep.has(url)) continue;
-    const objUrl = blobCache.get(url);
-    if (objUrl) { URL.revokeObjectURL(objUrl); blobCache.delete(url); }
-    frameMeta.delete(url);
-    failed.delete(url);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// RADAR (càrrega)
-// ---------------------------------------------------------------------------
-
-async function fetchManifest(cfg) {
-  try {
-    const r = await fetch(`${cfg.basePath}/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return j && Array.isArray(j.frames) ? j : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function parseTs(ts) {
-  const m = /(\d{4})-(\d{2})-(\d{2})T(\d{2}):?(\d{2})/.exec(ts || '');
-  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : null;
-}
-
-function addRadarLayer(map, key) {
-  const cfg = RADAR[key];
-  const st = state.layers[key];
-  if (map.getLayer(cfg.layerId)) map.removeLayer(cfg.layerId);
-  if (map.getSource(cfg.sourceId)) map.removeSource(cfg.sourceId);
-
-  const url = st.frames[st.currentIndex] || st.frames[0];
-  const src = blobCache.get(url) || url;
-  map.addSource(cfg.sourceId, { type: 'image', url: src, coordinates: COORDS });
-  map.addLayer({
-    id: cfg.layerId,
-    type: 'raster',
-    source: cfg.sourceId,
-    layout: { visibility: vis(st.visible) },
-    paint: {
-      'raster-opacity': st.opacity,
-      'raster-fade-duration': 0,
-      'raster-resampling': 'linear',
-    },
-  });
-  st.applied = url;
-  st.wanted = url;
-}
-
-async function initLayer(map, key) {
-  const cfg = RADAR[key];
-  const st = state.layers[key];
-
-  const manifest = await fetchManifest(cfg);
-  if (!manifest || manifest.frames.length === 0) return false;
-
-  const v = encodeURIComponent(manifest.updated || Date.now());
-  const ext = manifest.ext || '.png';
-  const frames = [];
-  const timestamps = [];
-  for (const item of manifest.frames) {
-    if (!item || !item.f) continue;
-    frames.push(`${cfg.basePath}/${item.f}${ext}?v=${v}`);
-    timestamps.push(parseTs(item.t));
-  }
-  if (frames.length === 0) return false;
-
-  releaseUnused(key, frames);
-
-  st.frames = frames;
-  st.timestamps = timestamps;
-  st.applied = null;
-  st.wanted = null;
-  st.pendingIndex = null;
-  frames.forEach((u, i) => frameMeta.set(u, { key, index: i }));
-
-  st.currentIndex = frames.length - 1;
-
-  try {
-    await Promise.race([
-      requestFrame(frames[st.currentIndex], 0),
-      sleep(FIRST_FRAME_WAIT_MS),
-    ]);
-  } catch (e) { /* addRadarLayer farà servir la URL directa */ }
-
-  addRadarLayer(map, key);
-  st.initialized = true;
-
-  console.log(`[radar:${key}] Carregant ${frames.length} frames en segon pla...`);
-  enqueueLayer(key);
-
-  return true;
-}
-
 // ---------------------------------------------------------------------------
 // RELLEU
 // ---------------------------------------------------------------------------
@@ -638,7 +593,7 @@ let reliefInfo = null;
 async function addRelief(map) {
   if (!reliefInfo) {
     try {
-      const r = await fetch(RELIEF_INFO_URL, { cache: 'no-store' });
+      const r = await fetch(RELIEF_INFO_URL);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       reliefInfo = await r.json();
     } catch (e) {
@@ -676,9 +631,7 @@ function restyleRelief() {
 export function setReliefVisibility(visible) {
   state.reliefVisible = visible;
   const map = state.map;
-  if (map && map.getLayer(RELIEF_LAYER)) {
-    map.setLayoutProperty(RELIEF_LAYER, 'visibility', vis(visible));
-  }
+  if (map && map.getLayer(RELIEF_LAYER)) map.setLayoutProperty(RELIEF_LAYER, 'visibility', vis(visible));
 }
 
 // ---------------------------------------------------------------------------
@@ -686,7 +639,10 @@ export function setReliefVisibility(visible) {
 // ---------------------------------------------------------------------------
 
 function orderLayers(map) {
+  const style = map.getStyle();
+  if (!style) return;
   if (map.getLayer(RELIEF_LAYER)) map.moveLayer(RELIEF_LAYER);
+  if (map.getLayer(ACUM_LAYER_ID)) map.moveLayer(ACUM_LAYER_ID);
   for (const key of Object.keys(RADAR)) {
     if (map.getLayer(RADAR[key].layerId)) map.moveLayer(RADAR[key].layerId);
   }
@@ -694,7 +650,6 @@ function orderLayers(map) {
   if (map.getLayer(AVIS_LINE)) map.moveLayer(AVIS_LINE);
   if (map.getLayer(MUNI_LINE)) map.moveLayer(MUNI_LINE);
   if (map.getLayer(COMARQUES_LINE)) map.moveLayer(COMARQUES_LINE);
-  const style = map.getStyle();
   for (const l of style.layers) {
     if (l.id.startsWith(CITIES_PREFIX)) map.moveLayer(l.id);
   }
@@ -708,11 +663,8 @@ function scheduleApply(key) {
   const st = state.layers[key];
   if (st.applyScheduled) return;
   st.applyScheduled = true;
-  const run = () => {
-    st.applyScheduled = false;
-    applyWanted(key);
-  };
-  if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(run);
+  const run = () => { st.applyScheduled = false; applyWanted(key); };
+  if (!document.hidden && typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
   else setTimeout(run, 0);
 }
 
@@ -720,8 +672,7 @@ function applyWanted(key) {
   const cfg = RADAR[key];
   const st = state.layers[key];
   const map = state.map;
-  if (!map || !st.initialized || !st.wanted) return;
-  if (st.applied === st.wanted) return;
+  if (!map || !st.wanted || st.applied === st.wanted) return;
 
   const blobUrl = blobCache.get(st.wanted);
   if (!blobUrl) return;
@@ -736,33 +687,19 @@ function applyWanted(key) {
   }
 }
 
-/**
- * fromTick = true: només avança si el frame ja és a memòria.
- * fromTick = false (usuari): mou l'índex a l'instant i la imatge s'aplica quan arribi.
- */
-function showFrame(key, index, fromTick) {
+/** L'índex es mou a l'instant; la imatge s'aplica quan el frame és a memòria. */
+function showFrame(key, index) {
   const st = state.layers[key];
-  const map = state.map;
-  if (!map || !st.initialized || index < 0 || index >= st.frames.length) return;
+  if (!st.initialized || index < 0 || index >= st.frames.length) return;
   if (index < st.minIndex) index = st.minIndex;
 
   const url = st.frames[index];
-  const ready = blobCache.has(url);
-
-  if (fromTick) {
-    if (!ready) { requestFrame(url, 0); return; }
-    st.currentIndex = index;
-    st.wanted = url;
-    scheduleApply(key);
-    return;
-  }
-
   st.currentIndex = index;
   st.wanted = url;
-  if (ready) {
+
+  if (blobCache.has(url)) {
     scheduleApply(key);
   } else {
-    st.pendingIndex = index;
     requestFrame(url, 0).then(() => {
       if (st.wanted === url) scheduleApply(key);
     }).catch(noop);
@@ -770,7 +707,7 @@ function showFrame(key, index, fromTick) {
 }
 
 // ---------------------------------------------------------------------------
-// ANIMACIÓ (setInterval)
+// ANIMACIÓ
 // ---------------------------------------------------------------------------
 
 let intervalId = 0;
@@ -792,9 +729,9 @@ function nextReadyIndex(st) {
 function tick() {
   for (const key of Object.keys(state.layers)) {
     const st = state.layers[key];
-    if (!st.initialized || st.frames.length === 0 || !st.visible) continue;
+    if (!st.initialized || !st.visible || st.frames.length === 0) continue;
     const idx = nextReadyIndex(st);
-    if (idx >= 0 && idx !== st.currentIndex) showFrame(key, idx, true);
+    if (idx >= 0 && idx !== st.currentIndex) showFrame(key, idx);
   }
 }
 
@@ -820,40 +757,67 @@ function attachErrorHandler(map) {
   map.on('error', (e) => {
     const err = e && e.error;
     const msg = (err && err.message) || '';
+    // Les cancel·lacions d'imatges en canviar ràpid de frame són normals
     if ((err && err.name === 'AbortError') || /abort/i.test(msg)) return;
     console.warn('[map]', msg || e);
   });
 }
 
+/** Capes secundàries: en segon pla, quan el navegador estigui lliure. */
+function loadExtras(map) {
+  const run = async () => {
+    try {
+      addCities(map);
+      orderLayers(map);
+      await Promise.all([addRelief(map), addComarques(map)]);
+      orderLayers(map);
+      await addMunicipis(map);
+      orderLayers(map);
+    } catch (e) {
+      console.warn('[extras]', e && e.message);
+    }
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 800 });
+  else setTimeout(run, 50);
+}
+
+/** Només espera el radar. Tota la resta carrega en segon pla. */
 export async function initRadar(map) {
   state.map = map;
   attachErrorHandler(map);
-  await addRelief(map);
-  await addComarques(map);
   addAvisos(map);
-  addCities(map);
 
-  // El radar no ha d'esperar els municipis: es carreguen en paral·lel
-  const muniP = addMunicipis(map).catch((e) => console.warn('[municipis]', e && e.message));
-  const results = await Promise.all(Object.keys(RADAR).map((k) => initLayer(map, k)));
-  await muniP;
+  const results = await Promise.all(Object.keys(RADAR).map((k) => prepared[k]));
+
+  await Promise.all(Object.keys(RADAR).map(async (key) => {
+    const st = state.layers[key];
+    if (!st.initialized) return;
+    await Promise.race([
+      requestFrame(st.frames[st.currentIndex], 0).catch(noop),
+      sleep(FIRST_FRAME_WAIT_MS),
+    ]);
+    addRadarLayer(map, key);
+  }));
 
   orderLayers(map);
+  loadExtras(map);
   return results.some(Boolean);
 }
 
+/** Després d'un canvi d'estil base. Les parts ràpides primer. */
 export async function reapplyLayers() {
   const map = state.map;
   if (!map) return;
-  await addRelief(map);
-  await addComarques(map);
-  await addMunicipis(map);
   addAvisos(map);
   addCities(map);
-  for (const key of Object.keys(RADAR)) {
-    if (state.layers[key].frames.length) addRadarLayer(map, key);
-  }
+  for (const key of Object.keys(RADAR)) addRadarLayer(map, key);
   orderLayers(map);
+
+  await Promise.all([addRelief(map), addComarques(map)]);
+  orderLayers(map);
+
+  // Municipis: en segon pla, no bloqueja
+  addMunicipis(map).then(() => orderLayers(map)).catch(noop);
 }
 
 export function setBaseTheme(theme) {
@@ -890,22 +854,21 @@ export function setCiutatsVisibility(visible) {
 export function setComarquesVisibility(visible) {
   state.comarquesVisible = visible;
   const map = state.map;
-  if (map && map.getLayer(COMARQUES_LINE)) {
-    map.setLayoutProperty(COMARQUES_LINE, 'visibility', vis(visible));
-  }
+  if (map && map.getLayer(COMARQUES_LINE)) map.setLayoutProperty(COMARQUES_LINE, 'visibility', vis(visible));
 }
 
+/** Frames anteriors a `idx` bloquejats pel pla. Els desbloquejats es baixen. */
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
-  const prev = st.minIndex;
   st.minIndex = Math.max(0, Math.min(idx, Math.max(0, st.frames.length - 1)));
-  if (st.initialized && st.currentIndex < st.minIndex) showFrame(key, st.minIndex, false);
-  if (st.initialized && st.minIndex < prev) enqueueLayer(key);
+  if (!st.initialized) return;
+  if (st.currentIndex < st.minIndex) showFrame(key, st.minIndex);
+  enqueueLayer(key);
 }
 
 export function goToFrameLayer(key, index) {
-  if (state.layers[key]) showFrame(key, index, false);
+  if (state.layers[key]) showFrame(key, index);
 }
 
 export function setLayerVisibility(key, visible) {
@@ -913,9 +876,7 @@ export function setLayerVisibility(key, visible) {
   if (!cfg) return;
   state.layers[key].visible = visible;
   const map = state.map;
-  if (map && map.getLayer(cfg.layerId)) {
-    map.setLayoutProperty(cfg.layerId, 'visibility', vis(visible));
-  }
+  if (map && map.getLayer(cfg.layerId)) map.setLayoutProperty(cfg.layerId, 'visibility', vis(visible));
   reprioritize();
   if (visible) {
     enqueueLayer(key);
@@ -928,21 +889,17 @@ export function setLayerOpacity(key, opacity) {
   if (!cfg) return;
   state.layers[key].opacity = opacity;
   const map = state.map;
-  if (map && map.getLayer(cfg.layerId)) {
-    map.setPaintProperty(cfg.layerId, 'raster-opacity', opacity);
-  }
+  if (map && map.getLayer(cfg.layerId)) map.setPaintProperty(cfg.layerId, 'raster-opacity', opacity);
 }
 
 export function getLayerState(key) {
   const st = state.layers[key];
   if (!st) return null;
-  let loaded = 0;
-  for (const u of st.frames) if (blobCache.has(u)) loaded++;
   return {
     id: key,
     label: RADAR[key].label,
     totalFrames: st.frames.length,
-    loadedFrames: loaded,
+    loadedFrames: st.loaded,
     timestamps: st.timestamps,
     currentIndex: st.currentIndex,
     minIndex: st.minIndex,

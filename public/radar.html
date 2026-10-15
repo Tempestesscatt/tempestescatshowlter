@@ -7,8 +7,15 @@
   <title>Tempestes.cat — Radar meteorològic</title>
   <link rel="icon" href="/img/Tempestes_cat.ico" />
 
+  <!-- Connexions i mòduls anticipats -->
+  <link rel="preconnect" href="https://radar-data.tempestes.cat" crossorigin />
+  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+  <link rel="modulepreload" href="./js/radar.js" />
+
   <link href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <script src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
+  <script defer src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
+  <script defer src="/dades/ciutats.js"></script>
+  <script defer src="/dades/cobertura.js"></script>
 
   <style>
     /* ===== Base ===== */
@@ -254,45 +261,19 @@
 
     /* ===== Barra d'acumulacions ===== */
     .acum-player { gap: 8px; }
-    .acum-row {
-      display: flex; gap: 6px; flex-wrap: nowrap;
-      overflow-x: auto; scrollbar-width: none; padding: 2px 0;
-    }
+    .acum-row { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
     .acum-row::-webkit-scrollbar { display: none; }
-
     .acum-chip {
-      flex: 1 0 auto;
-      min-height: 40px;
-      padding: 8px 12px;
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      background: var(--btn);
-      color: var(--text-2);
-      border: 1px solid var(--btn-border);
-      border-radius: 9px;
-      cursor: pointer;
+      flex: 1 0 auto; min-height: 40px; padding: 8px 12px;
+      font-size: 13px; font-weight: 600; white-space: nowrap;
+      background: var(--btn); color: var(--text-2);
+      border: 1px solid var(--btn-border); border-radius: 9px; cursor: pointer;
       transition: background .15s, border-color .15s, color .15s;
     }
-    .acum-chip:hover:not(.active):not(:disabled) {
-      background: var(--btn-hover);
-      border-color: var(--btn-border-hover);
-      color: var(--text);
-    }
-    .acum-chip.active {
-      background: var(--accent-dark);
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .acum-chip:disabled {
-      opacity: .35;
-      cursor: not-allowed;
-    }
-
-    .acum-meta {
-      display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-      padding: 0 2px 2px; font-variant-numeric: tabular-nums;
-    }
+    .acum-chip:hover:not(.active):not(:disabled) { background: var(--btn-hover); border-color: var(--btn-border-hover); color: var(--text); }
+    .acum-chip.active { background: var(--accent-dark); border-color: var(--accent); color: #fff; }
+    .acum-chip:disabled { opacity: .35; cursor: not-allowed; }
+    .acum-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 0 2px 2px; font-variant-numeric: tabular-nums; }
     #acumTime { font-size: 14px; font-weight: 700; color: #fff; }
     .acum-date { font-size: 11.5px; color: var(--text-2); }
 
@@ -312,10 +293,7 @@
     .legend-body { display: flex; gap: 8px; height: 170px; }
     .legend-bar { width: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); }
     .legend-ticks { position: relative; width: 30px; }
-    .legend-tick {
-      position: absolute; left: 0; transform: translateY(50%);
-      font-size: 11px; line-height: 1; color: #cfdcf0; font-variant-numeric: tabular-nums;
-    }
+    .legend-tick { position: absolute; left: 0; transform: translateY(50%); font-size: 11px; line-height: 1; color: #cfdcf0; font-variant-numeric: tabular-nums; }
 
     /* ===== Accés (bloqueig de la línia de temps) ===== */
     .timeline-locked {
@@ -323,10 +301,7 @@
       background: repeating-linear-gradient(135deg, rgba(150,150,150,.30) 0 4px, rgba(150,150,150,.12) 4px 8px);
       border-right: 2px solid rgba(190,190,190,.6);
     }
-    .timeline-lock {
-      position: absolute; top: 0; left: 0; display: none; transform: translateX(-50%);
-      color: var(--text-3); pointer-events: none;
-    }
+    .timeline-lock { position: absolute; top: 0; left: 0; display: none; transform: translateX(-50%); color: var(--text-3); pointer-events: none; }
     .timeline-lock svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; display: block; }
     .timeline-label.locked { opacity: .35; }
 
@@ -409,14 +384,8 @@
     .avis-legend span { display: inline-flex; align-items: center; gap: 5px; }
     .avis-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
-    .avis-more {
-      padding: 14px 16px 6px; text-align: center; font-size: 12px;
-      color: var(--text-3); line-height: 1.5;
-    }
-    .avis-more a {
-      color: var(--accent); font-weight: 600; text-decoration: none;
-      display: inline-block; margin-top: 4px;
-    }
+    .avis-more { padding: 14px 16px 6px; text-align: center; font-size: 12px; color: var(--text-3); line-height: 1.5; }
+    .avis-more a { color: var(--accent); font-weight: 600; text-decoration: none; display: inline-block; margin-top: 4px; }
     .avis-more a:hover { text-decoration: underline; }
 
     @media (max-width: 768px) {
@@ -429,13 +398,8 @@
 
     /* ===== Controls MapLibre ===== */
     .maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 58px); }
-    .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right {
-      bottom: calc(var(--player-h) + max(12px, env(safe-area-inset-bottom)));
-    }
-    .maplibregl-ctrl-group {
-      background: var(--panel-bg) !important; border: 1px solid var(--panel-border) !important;
-      border-radius: 10px !important; box-shadow: var(--shadow) !important; overflow: hidden;
-    }
+    .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: calc(var(--player-h) + max(12px, env(safe-area-inset-bottom))); }
+    .maplibregl-ctrl-group { background: var(--panel-bg) !important; border: 1px solid var(--panel-border) !important; border-radius: 10px !important; box-shadow: var(--shadow) !important; overflow: hidden; }
     .maplibregl-ctrl-group button { background: transparent !important; border: none !important; border-radius: 0 !important; width: 38px !important; height: 38px !important; min-height: 0 !important; padding: 0 !important; }
     .maplibregl-ctrl-group button + button { border-top: 1px solid rgba(120,140,180,.2) !important; }
     .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(.9); }
@@ -445,62 +409,21 @@
     /* ===== Barra de càrrega ===== */
     #loader {
       position: fixed; inset: 0; z-index: 500;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 22px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
       background: radial-gradient(ellipse at center, #10141f 0%, #06080d 100%);
-      color: #eef;
-      transition: opacity .5s ease;
+      color: #eef; transition: opacity .3s ease;
     }
     #loader.hide { opacity: 0; pointer-events: none; }
-
-    .loader-logo {
-      display: flex; align-items: center; gap: 12px;
-      animation: pulse 2.4s ease-in-out infinite;
-    }
-    .loader-logo img {
-      width: 46px; height: 46px; object-fit: contain;
-      filter: drop-shadow(0 2px 10px rgba(90,157,255,.55));
-    }
-    .loader-brand {
-      font-size: 26px; font-weight: 800; letter-spacing: .5px;
-      color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.8);
-    }
+    .loader-logo { display: flex; align-items: center; gap: 12px; animation: pulse 2.4s ease-in-out infinite; }
+    .loader-logo img { width: 46px; height: 46px; object-fit: contain; filter: drop-shadow(0 2px 10px rgba(90,157,255,.55)); }
+    .loader-brand { font-size: 26px; font-weight: 800; letter-spacing: .5px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
     .loader-brand span { color: #6aa5ff; }
-
-    .loader-bar {
-      position: relative; width: min(340px, 72vw); height: 6px;
-      border-radius: 999px;
-      background: rgba(120,140,180,.16);
-      overflow: hidden;
-      box-shadow: inset 0 1px 2px rgba(0,0,0,.4);
-    }
-    .loader-bar::before {
-      content: ''; position: absolute; inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(90,157,255,.35), transparent);
-      animation: shimmer 1.8s linear infinite;
-    }
-    .loader-bar-fill {
-      position: absolute; left: 0; top: 0; bottom: 0; width: 0;
-      border-radius: 999px;
-      background: linear-gradient(90deg, #3a6ac0, #5a9dff, #8cc6ff);
-      box-shadow: 0 0 14px rgba(90,157,255,.75);
-      transition: width .35s ease;
-    }
-
-    .loader-text {
-      font-size: 12.5px; color: #8fa5cb; letter-spacing: .3px;
-      min-height: 18px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50%      { transform: scale(1.03); opacity: .92; }
-    }
-    @keyframes shimmer {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
+    .loader-bar { position: relative; width: min(340px, 72vw); height: 6px; border-radius: 999px; background: rgba(120,140,180,.16); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.4); }
+    .loader-bar::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(90,157,255,.35), transparent); animation: shimmer 1.8s linear infinite; }
+    .loader-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: linear-gradient(90deg, #3a6ac0, #5a9dff, #8cc6ff); box-shadow: 0 0 14px rgba(90,157,255,.75); transition: width .25s ease; }
+    .loader-text { font-size: 12.5px; color: #8fa5cb; letter-spacing: .3px; min-height: 18px; font-variant-numeric: tabular-nums; }
+    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.03); opacity: .92; } }
+    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 
     /* ===== Responsive ===== */
     @media (max-width: 768px) {
@@ -649,16 +572,17 @@
 
     <div class="section">
       <div class="section-title">Estat</div>
+      <div id="statusText" class="info-text"></div>
+    </div>
+
+    <div class="section">
       <div class="section-title">Crèdits</div>
-<div class="info-text" style="line-height:1.6">
-  Dades radar: <b>OPERA</b> (EUMETNET) <b>- Météo-France</b>.<br>
-  
-Dades radar: <b>OPERA</b> (EUMETNET) i <b>Météo-France</b>.
-Productes <i>CIRRUS</i> (dBZ) i <i>NIMBUS</i> (mm/h).
-Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/" target="_blank">eumetnet.eu/opera</a>.
-Ús autoritzat segons els termes d'EUMETNET.
-</div>
-      
+      <div class="info-text" style="line-height:1.6">
+        Dades radar: <b>OPERA</b> (EUMETNET) i <b>Météo-France</b>.
+        Productes <i>CIRRUS</i> (dBZ) i <i>NIMBUS</i> (mm/h).
+        Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/" target="_blank" rel="noopener">eumetnet.eu/opera</a>.
+        Ús autoritzat segons els termes d'EUMETNET.
+      </div>
     </div>
   </aside>
 
@@ -673,7 +597,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
 
   <!-- Reproductor / Barra d'acumulacions -->
   <div id="bottomBar">
-    <!-- Reproductor normal (radar) -->
     <div class="player" id="playerRadar">
       <div class="player-top">
         <div class="player-actions">
@@ -698,7 +621,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       </div>
     </div>
 
-    <!-- Barra d'acumulacions (amagada per defecte) -->
     <div class="player acum-player" id="playerAcum" style="display:none">
       <div class="acum-row">
         <button class="acum-chip" data-min="30">30 min</button>
@@ -740,63 +662,40 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     </div>
   </div>
 
-  <!-- Ciutats (window.CIUTATS.llista) ABANS del mòdul principal -->
-  <script src="/dades/ciutats.js"></script>
-  <script src="/dades/cobertura.js"></script>
-
   <script type="module">
     import radar from './js/radar.js';
     import { initValor } from './dades/valor.js';
     import { computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN } from './js/avisos.js';
+    import { loadManifest, periodsFromManifest, regioCoordinates, ACUM_SCALE } from './dades/acumulacions.js';
 
-    import {
-      loadManifest,
-      periodsFromManifest,
-      regioCoordinates,
-      valorEnUrl,
-      colorAt,
-      formatMm,
-      ACUM_SCALE,
-      STD_PERIODS,
-    } from './dades/acumulacions.js';
-
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    // ------------------------------------------------------------------
+    // Utilitats
+    // ------------------------------------------------------------------
+    const $ = (id) => document.getElementById(id);
+    const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+    const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const setStatus = (t) => { const el = $('statusText'); if (el) el.textContent = t || ''; };
 
     // ------------------------------------------------------------------
     // Barra de càrrega
     // ------------------------------------------------------------------
-    const loader = document.getElementById('loader');
-    const loaderFill = document.getElementById('loaderFill');
-    const loaderText = document.getElementById('loaderText');
-
-    const loadSteps = [
-      { pct: 8,   text: 'Preparant el mapa…' },
-      { pct: 22,  text: 'Carregant el radar…' },
-      { pct: 45,  text: 'Carregant capes…' },
-      { pct: 62,  text: 'Carregant ciutats…' },
-      { pct: 78,  text: 'Carregant acumulacions…' },
-      { pct: 92,  text: 'Engegant animacions…' },
-      { pct: 100, text: 'A punt!' },
-    ];
-
+    const loader = $('loader'), loaderFill = $('loaderFill'), loaderText = $('loaderText');
     function setLoad(pct, text) {
       loaderFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
       if (text) loaderText.textContent = text;
     }
-    setLoad(loadSteps[0].pct, loadSteps[0].text);
-
     function hideLoader() {
       loader.classList.add('hide');
-      setTimeout(() => loader.remove(), 600);
+      setTimeout(() => loader.remove(), 400);
     }
+    setLoad(10, 'Preparant el mapa…');
 
     // ------------------------------------------------------------------
     // Configuració
     // ------------------------------------------------------------------
     const MAP_CENTER = [1.5, 41.7];
     const MAP_ZOOM = 6.4;
-
     const BASEMAPS = {
       clar: 'https://tiles.openfreemap.org/styles/positron',
       fosc: 'https://tiles.openfreemap.org/styles/dark',
@@ -804,53 +703,45 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
 
     const PRODUCTS = {
       dbz: {
-        label: 'Reflectivitat (dBZ)',
-        title: 'dBZ',
-        scale: 'linear',
-        min: -4,
-        max: 68,
+        label: 'Reflectivitat (dBZ)', title: 'dBZ', scale: 'linear', min: -4, max: 68,
         stops: [
-          [-4,  '240,240,240'], [-2, '225,225,225'], [0,  '205,205,205'],
-          [ 2,  '185,185,185'], [ 4, '160,160,160'], [6,  '220,220,220'],
-          [ 8,  '255,255,255'], [10, '0,235,235'],   [12, '0,210,235'],
-          [14,  '0,180,235'],   [16, '0,140,235'],   [18, '0,100,235'],
-          [20,  '0,60,235'],    [22, '0,130,130'],   [24, '0,180,100'],
-          [26,  '0,210,50'],    [28, '40,220,20'],   [30, '0,200,0'],
-          [32,  '0,170,0'],     [34, '0,140,0'],     [36, '80,210,0'],
-          [38,  '140,230,0'],   [40, '200,240,0'],   [42, '235,250,0'],
-          [44,  '255,250,0'],   [46, '255,235,0'],   [48, '255,210,0'],
-          [50,  '255,180,0'],   [52, '255,150,0'],   [54, '255,110,0'],
-          [56,  '255,70,0'],    [58, '255,30,0'],    [60, '255,0,0'],
-          [62,  '200,0,0'],     [64, '160,0,0'],     [66, '230,0,200'],
-          [68,  '200,0,230'],
+          [-4, '240,240,240'], [-2, '225,225,225'], [0, '205,205,205'],
+          [2, '185,185,185'], [4, '160,160,160'], [6, '220,220,220'],
+          [8, '255,255,255'], [10, '0,235,235'], [12, '0,210,235'],
+          [14, '0,180,235'], [16, '0,140,235'], [18, '0,100,235'],
+          [20, '0,60,235'], [22, '0,130,130'], [24, '0,180,100'],
+          [26, '0,210,50'], [28, '40,220,20'], [30, '0,200,0'],
+          [32, '0,170,0'], [34, '0,140,0'], [36, '80,210,0'],
+          [38, '140,230,0'], [40, '200,240,0'], [42, '235,250,0'],
+          [44, '255,250,0'], [46, '255,235,0'], [48, '255,210,0'],
+          [50, '255,180,0'], [52, '255,150,0'], [54, '255,110,0'],
+          [56, '255,70,0'], [58, '255,30,0'], [60, '255,0,0'],
+          [62, '200,0,0'], [64, '160,0,0'], [66, '230,0,200'],
+          [68, '200,0,230'],
         ],
         ticks: [-4, 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68],
       },
       lluvia: {
-        label: 'Pluja (mm/h)',
-        title: 'mm/h',
-        scale: 'log',
-        min: 0.1,
-        max: 650,
+        label: 'Pluja (mm/h)', title: 'mm/h', scale: 'log', min: 0.1, max: 650,
         stops: [
-          [0.1,  '0,230,230'],  [0.15, '0,200,240'],  [0.2,  '0,170,250'],
-          [0.3,  '0,120,250'],  [0.4,  '0,80,250'],   [0.5,  '0,40,250'],
-          [0.6,  '0,0,250'],    [0.9,  '0,160,120'],  [1.2,  '0,220,40'],
-          [1.5,  '60,230,0'],   [2,    '0,200,0'],    [2.7,  '0,150,0'],
-          [3.7,  '0,110,0'],    [4.8,  '0,80,0'],     [6,    '160,220,0'],
-          [9,    '230,240,0'],  [12,   '250,250,0'],  [15,   '250,220,0'],
-          [21,   '250,180,0'],  [27,   '250,140,0'],  [37,   '250,100,0'],
-          [49,   '250,60,0'],   [65,   '250,0,0'],    [86,   '220,0,0'],
-          [120,  '190,0,0'],    [153,  '210,0,80'],   [210,  '240,0,180'],
-          [273,  '220,0,230'],  [370,  '180,40,220'], [486,  '160,90,200'],
-          [650,  '240,230,255'],
+          [0.1, '0,230,230'], [0.15, '0,200,240'], [0.2, '0,170,250'],
+          [0.3, '0,120,250'], [0.4, '0,80,250'], [0.5, '0,40,250'],
+          [0.6, '0,0,250'], [0.9, '0,160,120'], [1.2, '0,220,40'],
+          [1.5, '60,230,0'], [2, '0,200,0'], [2.7, '0,150,0'],
+          [3.7, '0,110,0'], [4.8, '0,80,0'], [6, '160,220,0'],
+          [9, '230,240,0'], [12, '250,250,0'], [15, '250,220,0'],
+          [21, '250,180,0'], [27, '250,140,0'], [37, '250,100,0'],
+          [49, '250,60,0'], [65, '250,0,0'], [86, '220,0,0'],
+          [120, '190,0,0'], [153, '210,0,80'], [210, '240,0,180'],
+          [273, '220,0,230'], [370, '180,40,220'], [486, '160,90,200'],
+          [650, '240,230,255'],
         ],
         ticks: [0.1, 0.2, 0.4, 0.6, 1.2, 2, 3.7, 6, 12, 21, 37, 65, 120, 210, 370, 650],
       },
     };
 
     // ------------------------------------------------------------------
-    // Estat inicial
+    // Estat
     // ------------------------------------------------------------------
     let currentTheme = 'fosc';
     try { currentTheme = localStorage.getItem('radar.theme') === 'clar' ? 'clar' : 'fosc'; } catch (e) {}
@@ -865,6 +756,20 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     let dragging = false;
     let minIndex = 0;
     let lockPct = 0;
+    let lockPrompted = false;
+    let appReady = false;
+
+    // Accés
+    const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
+    const ACCESS = {
+      anon:         { minutes: 25,       name: 'Sense sessió', window: '25 minuts' },
+      free:         { minutes: 60,       name: 'Compte gratuït', window: '1 hora' },
+      entusiasta:   { minutes: 180,      name: 'Entusiasta', window: '3 hores' },
+      professional: { minutes: Infinity, name: 'Professional', window: '24 hores i arxiu' },
+    };
+    let tier = 'anon';
+    let planLabel = '';
+    let currentUser = null;
 
     // Acumulacions
     let acumManifest = null;
@@ -876,8 +781,13 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     const ACUM_SOURCE_ID = 'acum-src';
     const ACUM_BASE = 'https://radar-data.tempestes.cat/dades_radar_acumulacions';
 
-    // Avisos (capa al mapa)
+    // Avisos
     let avisosLayerOn = true;
+    let avisKey = '';
+    let avisBusy = false;
+    let avisItems = [];
+    let avisLatest = null;
+    let avisFilter = 0;
 
     // ------------------------------------------------------------------
     // Mapa
@@ -891,7 +801,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
-    map.on('error', (e) => console.warn('[map error]', e.error && e.error.message, e));
 
     function hideBaseLabels() {
       const style = map.getStyle();
@@ -906,20 +815,18 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     // ------------------------------------------------------------------
     // DOM
     // ------------------------------------------------------------------
-    const $ = (id) => document.getElementById(id);
     const sidePanel = $('sidePanel'), sideBackdrop = $('sideBackdrop');
     const legend = $('legend'), legendToggle = $('legendToggle');
     const themeClarBtn = $('themeClar'), themeFoscBtn = $('themeFosc');
     const prodDbzBtn = $('prodDbz'), prodLluviaBtn = $('prodLluvia'), prodAcumBtn = $('prodAcum');
-    const statusText = $('statusText');
     const playPauseBtn = $('playPauseBtn');
     const timelineEl = $('timeline'), timelineProg = $('timelineProgress'), timelineThumb = $('timelineThumb'), timelineLabels = $('timelineLabels');
     const timeCurrent = $('timeCurrent'), timeDate = $('timeDate');
     const searchInput = $('searchInput'), searchClear = $('searchClear'), searchResults = $('searchResults');
     const playerRadar = $('playerRadar'), playerAcum = $('playerAcum');
     const acumTime = $('acumTime'), acumDate = $('acumDate');
-
-    const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+    const accountBox = $('accountBox'), userBtn = $('userBtn');
+    const upsell = $('upsell');
 
     // ------------------------------------------------------------------
     // Menú lateral
@@ -947,29 +854,22 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       }
       return ((v - p.min) / (p.max - p.min)) * 100;
     }
-
     function renderLegend(key) {
       const p = PRODUCTS[key];
       $('legendTitle').textContent = p.title;
       const stops = p.stops.map(([v, rgb]) => `rgb(${rgb}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
       $('legendBar').style.background = `linear-gradient(to top, ${stops})`;
       $('legendTicks').innerHTML = p.ticks
-        .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`)
-        .join('');
+        .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`).join('');
     }
-
     function renderLegendAcum() {
       const p = ACUM_SCALE;
       $('legendTitle').textContent = `${acumPeriod} min · mm`;
-      const stops = p.stops.map(([v, rgb]) =>
-        `rgb(${rgb[0]},${rgb[1]},${rgb[2]}) ${legendPct(p, v).toFixed(1)}%`
-      ).join(', ');
+      const stops = p.stops.map(([v, rgb]) => `rgb(${rgb[0]},${rgb[1]},${rgb[2]}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
       $('legendBar').style.background = `linear-gradient(to top, ${stops})`;
       $('legendTicks').innerHTML = p.ticks
-        .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`)
-        .join('');
+        .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`).join('');
     }
-
     legendToggle.addEventListener('click', () => {
       legend.classList.toggle('hidden');
       legendToggle.classList.toggle('on', !legend.classList.contains('hidden'));
@@ -1004,7 +904,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     themeFoscBtn.addEventListener('click', () => applyTheme('fosc'));
 
     // ------------------------------------------------------------------
-    // Línia de temps (radar)
+    // Línia de temps
     // ------------------------------------------------------------------
     function rebuildTimelineLabels() {
       timelineLabels.innerHTML = '';
@@ -1107,13 +1007,10 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     // Producte
     // ------------------------------------------------------------------
     function selectProduct(key) {
-      // Si sortim d'acumulació, amaguem la capa
-      if (key !== 'acum') {
-        hideAcumOnMap();
-        prodAcumBtn.classList.remove('active');
-        playerRadar.style.display = '';
-        playerAcum.style.display = 'none';
-      }
+      hideAcumOnMap();
+      prodAcumBtn.classList.remove('active');
+      playerRadar.style.display = '';
+      playerAcum.style.display = 'none';
 
       const st = radar.getLayerState(key);
       if (!st || !st.initialized) return;
@@ -1136,7 +1033,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       computeAccess();
       lastRendered = -1;
       updateUI(st.currentIndex);
-     
     }
 
     prodDbzBtn.addEventListener('click', () => { selectProduct('dbz'); if (isMobile()) closePanel(); });
@@ -1150,7 +1046,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       prodLluviaBtn.classList.remove('active');
       prodAcumBtn.classList.add('active');
 
-      // Amaguem el reproductor del radar i mostrem la barra d'acumulacions
       playerRadar.style.display = 'none';
       playerAcum.style.display = '';
 
@@ -1161,6 +1056,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       renderLegendAcum();
 
       await refreshAcumulacions();
+      if (activeKey !== 'acum') return;
       showAcumOnMap(acumPeriod);
       renderLegendAcum();
       updateAcumChipsUI();
@@ -1168,7 +1064,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       if (isMobile()) closePanel();
     });
 
-    // 🆕 botons de període
     document.querySelectorAll('.acum-chip').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const mins = Number(btn.dataset.min);
@@ -1185,29 +1080,25 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       });
     });
 
-    function updateAcumChipsUI() {
-      document.querySelectorAll('.acum-chip').forEach((b) => {
-        b.classList.toggle('active', Number(b.dataset.min) === acumPeriod);
-        // marquem els períodes no disponibles al manifest
-        const min = Number(b.dataset.min);
-        const available = acumPeriods.some((x) => x.min === min);
-        b.disabled = acumPeriods.length > 0 && !available;
-      });
-      // Meta (data i hora del radar més recent)
-      if (acumManifest && acumManifest.last_timestamp) {
-        const d = new Date(acumManifest.last_timestamp);
-        acumTime.textContent = `Acumulació ${formatPeriodLabel(acumPeriod)}`;
-        acumDate.textContent = `fins ${hourFmt.format(d)} · ${dayFmt.format(d)}`;
-      } else {
-        acumTime.textContent = `Acumulació ${formatPeriodLabel(acumPeriod)}`;
-        acumDate.textContent = '';
-      }
-    }
-
     function formatPeriodLabel(mins) {
       if (mins < 60) return `${mins} min`;
       const h = mins / 60;
       return h === 1 ? '1 hora' : `${h} hores`;
+    }
+
+    function updateAcumChipsUI() {
+      document.querySelectorAll('.acum-chip').forEach((b) => {
+        const min = Number(b.dataset.min);
+        b.classList.toggle('active', min === acumPeriod);
+        b.disabled = acumPeriods.length > 0 && !acumPeriods.some((x) => x.min === min);
+      });
+      acumTime.textContent = `Acumulació ${formatPeriodLabel(acumPeriod)}`;
+      if (acumManifest && acumManifest.last_timestamp) {
+        const d = new Date(acumManifest.last_timestamp);
+        acumDate.textContent = `fins ${hourFmt.format(d)} · ${dayFmt.format(d)}`;
+      } else {
+        acumDate.textContent = '';
+      }
     }
 
     async function refreshAcumulacions() {
@@ -1220,10 +1111,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
           return;
         }
         const key = manifest.last_timestamp || String(manifest.updated);
-        if (key === acumKey && acumPeriods.length) {
-          updateAcumChipsUI();
-          return;
-        }
+        if (key === acumKey && acumPeriods.length) { updateAcumChipsUI(); return; }
         acumManifest = manifest;
         acumPeriods = periodsFromManifest(manifest, ACUM_BASE);
         acumKey = key;
@@ -1240,12 +1128,10 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       const p = acumPeriods.find((x) => x.min === minutes);
       if (!p) return;
 
-      const coords = regioCoordinates();
-
       if (map.getLayer(ACUM_LAYER_ID)) map.removeLayer(ACUM_LAYER_ID);
       if (map.getSource(ACUM_SOURCE_ID)) map.removeSource(ACUM_SOURCE_ID);
 
-      map.addSource(ACUM_SOURCE_ID, { type: 'image', url: p.url, coordinates: coords });
+      map.addSource(ACUM_SOURCE_ID, { type: 'image', url: p.url, coordinates: regioCoordinates() });
 
       let before;
       for (const id of ['radar-layer-dbz', 'radar-layer-lluvia', 'radar-layer']) {
@@ -1256,11 +1142,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
         id: ACUM_LAYER_ID,
         type: 'raster',
         source: ACUM_SOURCE_ID,
-        paint: {
-          'raster-opacity': 0.9,
-          'raster-fade-duration': 0,
-          'raster-resampling': 'nearest',
-        },
+        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
       }, before);
     }
 
@@ -1283,7 +1165,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     $('densitySelect').addEventListener('change', (e) => radar.setDensity(e.target.value));
     $('densitySelect').value = radar.getDensity();
 
-    // Valor sota el cursor (dBZ, mm/h i acumulació)
     const valor = initValor({
       map,
       getLayerState: radar.getLayerState,
@@ -1303,9 +1184,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     const cities = (window.CIUTATS && Array.isArray(window.CIUTATS.llista)) ? window.CIUTATS.llista : [];
     let matches = [];
     let selIndex = -1;
-
-    const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
     function searchCities(query) {
       const q = norm(query).trim();
@@ -1388,47 +1266,19 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     });
 
     // ------------------------------------------------------------------
-    // Poll de la línia de temps
+    // Poll de la línia de temps (lleuger: 10 cops/s)
     // ------------------------------------------------------------------
-    (function poll() {
-      if (!dragging && activeKey !== 'acum') {
-        const s = radar.getLayerState(activeKey);
-        if (s) updateUI(s.currentIndex);
-      }
-      requestAnimationFrame(poll);
-    })();
+    setInterval(() => {
+      if (dragging || activeKey === 'acum') return;
+      const s = radar.getLayerState(activeKey);
+      if (s) updateUI(s.currentIndex);
+    }, 100);
 
     // ------------------------------------------------------------------
-    // Firebase
+    // Accés per pla
     // ------------------------------------------------------------------
     const PREUS_URL = 'https://tempestes.cat/privacitat/preus';
     const DB_URL = 'https://tempestescat-default-rtdb.europe-west1.firebasedatabase.app';
-
-    const auth = getAuth(initializeApp({
-      apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
-      authDomain: "tempestescat.firebaseapp.com",
-      projectId: "tempestescat",
-      storageBucket: "tempestescat.firebasestorage.app",
-      messagingSenderId: "683240351775",
-      appId: "1:683240351775:web:bc65d73249537b9cc28d2a",
-    }));
-
-    const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
-    const ACCESS = {
-      anon:         { minutes: 25,       name: 'Sense sessió', window: '25 minuts' },
-      free:         { minutes: 60,       name: 'Compte gratuït', window: '1 hora' },
-      entusiasta:   { minutes: 180,      name: 'Entusiasta', window: '3 hores' },
-      professional: { minutes: Infinity, name: 'Professional', window: '24 hores i arxiu' },
-    };
-
-    let tier = 'anon';
-    let planLabel = '';
-    let currentUser = null;
-    let lockPrompted = false;
-
-    const accountBox = $('accountBox'), userBtn = $('userBtn');
-    const upsell = $('upsell');
-
     const userName = (u) => (u.displayName || '').trim() || (u.email ? u.email.split('@')[0] : 'Usuari');
 
     async function fetchPlan(u) {
@@ -1450,12 +1300,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
         return admins[email.toLowerCase().replace(/\./g, ',')] === true;
       } catch (e) { return false; }
     }
-
-    const loginGoogle = async () => {
-      try { await signInWithPopup(auth, new GoogleAuthProvider()); closeUpsell(); }
-      catch (e) { console.error(e); }
-    };
-    const logout = async () => { try { await signOut(auth); } catch (e) { console.error(e); } };
 
     function minIndexFor(key) {
       const st = radar.getLayerState(key);
@@ -1485,7 +1329,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
         el.classList.toggle('locked', parseFloat(el.style.left) < lockPct - 0.01);
       });
       lastRendered = -1;
-      if (st) updateUI(Math.max(st.currentIndex, minIndex));
+      if (st && st.initialized) updateUI(Math.max(st.currentIndex, minIndex));
     }
 
     function requiredTierFor(idx) {
@@ -1545,6 +1389,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     $('upsellX').addEventListener('click', closeUpsell);
     $('upsellSecondary').addEventListener('click', closeUpsell);
     upsell.addEventListener('click', (e) => { if (e.target === upsell) closeUpsell(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUpsell(); });
 
     function updateAccountUI() {
       const u = currentUser;
@@ -1586,28 +1431,9 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     function accessChanged() {
       computeAccess();
       updateAccountUI();
-      refreshAvisos();
       paintAvisTierBadge();
+      if (appReady) refreshAvisos();
     }
-
-    onAuthStateChanged(auth, async (u) => {
-      currentUser = u;
-      if (!u) { tier = 'anon'; planLabel = ''; accessChanged(); return; }
-
-      tier = 'free'; planLabel = 'Gratuït';
-      accessChanged();
-
-      const [plan, admin] = await Promise.all([fetchPlan(u), fetchIsAdmin(u.email)]);
-      if (currentUser !== u) return;
-
-      if (admin) { tier = 'professional'; planLabel = 'Admin'; }
-      else if (plan === 'entusiasta') { tier = 'entusiasta'; planLabel = 'Entusiasta'; }
-      else if (plan === 'professional' || plan === 'equips') { tier = 'professional'; planLabel = plan === 'equips' ? 'Equips' : 'Professional'; }
-      else { tier = 'free'; planLabel = 'Gratuït'; }
-      accessChanged();
-    });
-
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUpsell(); });
 
     // ------------------------------------------------------------------
     // Avisos de pluja — dos nivells: basic (free) i full (entusiasta+)
@@ -1618,12 +1444,6 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     const chkAvisos = $('chkAvisos');
     const avisBadgeTier = $('avisBadgeTier');
 
-    let avisKey = '';
-    let avisBusy = false;
-    let avisItems = [];
-    let avisLatest = null;
-    let avisFilter = 0;
-
     function avisAccessLevel() {
       const i = TIERS.indexOf(tier);
       if (i >= TIERS.indexOf('entusiasta')) return 'full';
@@ -1631,23 +1451,15 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       return 'none';
     }
     const hasAvisos = () => avisAccessLevel() !== 'none';
-
     const levelInfo = (id) => LEVELS.find((l) => l.id === id) || LEVELS[0];
 
     $('avisLegend').innerHTML = LEVELS.map((l) => `<span><i style="background:${l.color}"></i>${l.name} ≥ ${l.min} mm/h</span>`).join('');
 
     function paintAvisTierBadge() {
       const lvl = avisAccessLevel();
-      if (lvl === 'full') {
-        avisBadgeTier.className = 'pro';
-        avisBadgeTier.textContent = 'Pro';
-      } else if (lvl === 'basic') {
-        avisBadgeTier.className = 'free';
-        avisBadgeTier.textContent = 'Free';
-      } else {
-        avisBadgeTier.className = 'free';
-        avisBadgeTier.textContent = 'Login';
-      }
+      if (lvl === 'full') { avisBadgeTier.className = 'pro'; avisBadgeTier.textContent = 'Pro'; }
+      else if (lvl === 'basic') { avisBadgeTier.className = 'free'; avisBadgeTier.textContent = 'Free'; }
+      else { avisBadgeTier.className = 'free'; avisBadgeTier.textContent = 'Login'; }
     }
 
     function applyAvisosVisibility() {
@@ -1659,11 +1471,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       const on = e.target.checked;
       const lvl = avisAccessLevel();
 
-      if (!on) {
-        avisosLayerOn = false;
-        applyAvisosVisibility();
-        return;
-      }
+      if (!on) { avisosLayerOn = false; applyAvisosVisibility(); return; }
 
       if (lvl === 'none') {
         chkAvisos.checked = false;
@@ -1680,8 +1488,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     });
 
     function openAvis() {
-      const lvl = avisAccessLevel();
-      avisTitle.textContent = lvl === 'basic'
+      avisTitle.textContent = avisAccessLevel() === 'basic'
         ? 'Top 3 comarques amb pluja · ara mateix'
         : 'Avisos de pluja · ara mateix';
       avisPanel.classList.add('open');
@@ -1690,8 +1497,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
     $('avisX').addEventListener('click', closeAvis);
 
     avisBtn.addEventListener('click', () => {
-      const lvl = avisAccessLevel();
-      if (lvl === 'none') {
+      if (avisAccessLevel() === 'none') {
         openUpsell('free', {
           title: 'Avisos de pluja',
           text: 'Inicia sessió gratis per veure les 3 comarques amb més pluja ara mateix. Amb el pla Entusiasta desbloqueges la llista completa per municipi.',
@@ -1706,9 +1512,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       avisBtn.classList.toggle('locked', lvl === 'none');
       avisBtn.title = lvl === 'none'
         ? 'Avisos de pluja (inicia sessió)'
-        : lvl === 'basic'
-          ? 'Avisos de pluja · Top 3 comarques'
-          : 'Avisos de pluja per municipi';
+        : lvl === 'basic' ? 'Avisos de pluja · Top 3 comarques' : 'Avisos de pluja per municipi';
 
       if (lvl !== 'none' && avisItems.length) {
         const top = Math.max(...avisItems.map((i) => i.level));
@@ -1743,9 +1547,8 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
         for (const it of avisItems) {
           const key = it.comarca || '—';
           const prev = byComarca.get(key);
-          if (!prev) {
-            byComarca.set(key, { comarca: key, max: it.max, level: it.level, count: 1 });
-          } else {
+          if (!prev) byComarca.set(key, { comarca: key, max: it.max, level: it.level, count: 1 });
+          else {
             prev.count += 1;
             if (it.max > prev.max) { prev.max = it.max; prev.level = it.level; }
           }
@@ -1778,7 +1581,7 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
           : `Vols veure més informació exacte?<br><a href="#" id="avisUpgrade">Fes-te Entusiasta →</a>`;
         avisList.appendChild(more);
 
-        const up = document.getElementById('avisUpgrade');
+        const up = $('avisUpgrade');
         if (up) up.addEventListener('click', (e) => {
           e.preventDefault();
           openUpsell('entusiasta', {
@@ -1876,28 +1679,25 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       }
     }
 
+    // ------------------------------------------------------------------
+    // Càrrega inicial: arrenca en style.load (no espera els tiles del mapa base)
+    // ------------------------------------------------------------------
     paintThemeUI(currentTheme);
     radar.setBaseTheme(currentTheme);
     paintAvisTierBadge();
+    updateAccountUI();
 
-    // ------------------------------------------------------------------
-    // Càrrega inicial amb barra de progrés
-    // ------------------------------------------------------------------
-    map.on('load', async () => {
-      setLoad(loadSteps[0].pct, loadSteps[0].text);
-
-      // PRIMER amaguem les etiquetes del mapa base
+    map.once('style.load', async () => {
+      setLoad(35, 'Carregant el radar…');
       hideBaseLabels();
 
       try {
-        setLoad(loadSteps[1].pct, loadSteps[1].text);
         await radar.initRadar(map);
-        setLoad(loadSteps[2].pct, loadSteps[2].text);
       } catch (e) {
         console.error('[radar]', e);
-        statusText.textContent = 'No s\'ha pogut carregar el radar.';
+        setStatus('No s\'ha pogut carregar el radar.');
         setLoad(100, 'Error carregant el radar');
-        setTimeout(hideLoader, 1200);
+        setTimeout(hideLoader, 800);
         return;
       }
 
@@ -1910,24 +1710,24 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       prodAcumBtn.disabled = false;
 
       if (available.length === 0) {
-        statusText.textContent = 'No hi ha cap imatge disponible.';
+        setStatus('No hi ha cap imatge disponible.');
         setLoad(100, 'Sense dades');
-        setTimeout(hideLoader, 1200);
+        setTimeout(hideLoader, 800);
         return;
       }
 
-      setLoad(loadSteps[3].pct, loadSteps[3].text);
       selectProduct(available[0]);
       radar.startAllAnimations();
 
-      setLoad(loadSteps[4].pct, loadSteps[4].text);
-      refreshAcumulacions().catch(() => {});
+      setLoad(100, 'A punt!');
+      hideLoader();
 
-      setLoad(loadSteps[5].pct, loadSteps[5].text);
-      refreshAvisos().catch(() => {});
-
-      setLoad(loadSteps[6].pct, loadSteps[6].text);
-      setTimeout(hideLoader, 350);
+      // Tot el que no és crític, després de mostrar el radar
+      appReady = true;
+      setTimeout(() => {
+        refreshAcumulacions().catch(() => {});
+        refreshAvisos().catch(() => {});
+      }, 1200);
     });
 
     // ------------------------------------------------------------------
@@ -1946,8 +1746,59 @@ Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current
       else if (e.key === 'Escape') closePanel();
     });
 
+    // ------------------------------------------------------------------
+    // Firebase: càrrega dinàmica, NO bloqueja el radar
+    // ------------------------------------------------------------------
+    let auth = null, fb = null;
 
-    
+    const authReady = (async () => {
+      const [appMod, authMod] = await Promise.all([
+        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'),
+      ]);
+      fb = authMod;
+      auth = authMod.getAuth(appMod.initializeApp({
+        apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
+        authDomain: "tempestescat.firebaseapp.com",
+        projectId: "tempestescat",
+        storageBucket: "tempestescat.firebasestorage.app",
+        messagingSenderId: "683240351775",
+        appId: "1:683240351775:web:bc65d73249537b9cc28d2a",
+      }));
+
+      authMod.onAuthStateChanged(auth, async (u) => {
+        currentUser = u;
+        if (!u) { tier = 'anon'; planLabel = ''; accessChanged(); return; }
+
+        tier = 'free'; planLabel = 'Gratuït';
+        accessChanged();
+
+        const [plan, admin] = await Promise.all([fetchPlan(u), fetchIsAdmin(u.email)]);
+        if (currentUser !== u) return;
+
+        if (admin) { tier = 'professional'; planLabel = 'Admin'; }
+        else if (plan === 'entusiasta') { tier = 'entusiasta'; planLabel = 'Entusiasta'; }
+        else if (plan === 'professional' || plan === 'equips') { tier = 'professional'; planLabel = plan === 'equips' ? 'Equips' : 'Professional'; }
+        else { tier = 'free'; planLabel = 'Gratuït'; }
+        accessChanged();
+      });
+    })().catch((e) => console.warn('[firebase]', e));
+
+    async function loginGoogle() {
+      try {
+        await authReady;
+        if (!auth || !fb) return;
+        await fb.signInWithPopup(auth, new fb.GoogleAuthProvider());
+        closeUpsell();
+      } catch (e) { console.error(e); }
+    }
+
+    async function logout() {
+      try {
+        await authReady;
+        if (auth && fb) await fb.signOut(auth);
+      } catch (e) { console.error(e); }
+    }
   </script>
 </body>
 </html>
