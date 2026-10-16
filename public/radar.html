@@ -277,6 +277,9 @@
     #acumTime { font-size: 14px; font-weight: 700; color: #fff; }
     .acum-date { font-size: 11.5px; color: var(--text-2); }
 
+    .acum-chip.locked { opacity: .55; border-style: dashed; }
+    .acum-chip.partial::after { content: '*'; margin-left: 2px; color: #facc15; }
+
     /* ===== Llegenda ===== */
     #legend {
       position: absolute; z-index: 15;
@@ -666,7 +669,8 @@
     import radar from './js/radar.js';
     import { initValor } from './dades/valor.js';
     import { computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN } from './js/avisos.js';
-    import { loadManifest, periodsFromManifest, regioCoordinates, ACUM_SCALE } from './dades/acumulacions.js';
+    import { loadManifest, periodsFromManifest } from './dades/acumulacions.js';
+    import { SCALES, regioCoordinates } from './dades/escales.js';
 
     // ------------------------------------------------------------------
     // Utilitats
@@ -701,44 +705,8 @@
       fosc: 'https://tiles.openfreemap.org/styles/dark',
     };
 
-    const PRODUCTS = {
-      dbz: {
-        label: 'Reflectivitat (dBZ)', title: 'dBZ', scale: 'linear', min: -4, max: 68,
-        stops: [
-          [-4, '240,240,240'], [-2, '225,225,225'], [0, '205,205,205'],
-          [2, '185,185,185'], [4, '160,160,160'], [6, '220,220,220'],
-          [8, '255,255,255'], [10, '0,235,235'], [12, '0,210,235'],
-          [14, '0,180,235'], [16, '0,140,235'], [18, '0,100,235'],
-          [20, '0,60,235'], [22, '0,130,130'], [24, '0,180,100'],
-          [26, '0,210,50'], [28, '40,220,20'], [30, '0,200,0'],
-          [32, '0,170,0'], [34, '0,140,0'], [36, '80,210,0'],
-          [38, '140,230,0'], [40, '200,240,0'], [42, '235,250,0'],
-          [44, '255,250,0'], [46, '255,235,0'], [48, '255,210,0'],
-          [50, '255,180,0'], [52, '255,150,0'], [54, '255,110,0'],
-          [56, '255,70,0'], [58, '255,30,0'], [60, '255,0,0'],
-          [62, '200,0,0'], [64, '160,0,0'], [66, '230,0,200'],
-          [68, '200,0,230'],
-        ],
-        ticks: [-4, 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68],
-      },
-      lluvia: {
-        label: 'Pluja (mm/h)', title: 'mm/h', scale: 'log', min: 0.1, max: 650,
-        stops: [
-          [0.1, '0,230,230'], [0.15, '0,200,240'], [0.2, '0,170,250'],
-          [0.3, '0,120,250'], [0.4, '0,80,250'], [0.5, '0,40,250'],
-          [0.6, '0,0,250'], [0.9, '0,160,120'], [1.2, '0,220,40'],
-          [1.5, '60,230,0'], [2, '0,200,0'], [2.7, '0,150,0'],
-          [3.7, '0,110,0'], [4.8, '0,80,0'], [6, '160,220,0'],
-          [9, '230,240,0'], [12, '250,250,0'], [15, '250,220,0'],
-          [21, '250,180,0'], [27, '250,140,0'], [37, '250,100,0'],
-          [49, '250,60,0'], [65, '250,0,0'], [86, '220,0,0'],
-          [120, '190,0,0'], [153, '210,0,80'], [210, '240,0,180'],
-          [273, '220,0,230'], [370, '180,40,220'], [486, '160,90,200'],
-          [650, '240,230,255'],
-        ],
-        ticks: [0.1, 0.2, 0.4, 0.6, 1.2, 2, 3.7, 6, 12, 21, 37, 65, 120, 210, 370, 650],
-      },
-    };
+    // Escales (colors, ticks, formats) definides a dades/escales.js
+    const PRODUCTS = { dbz: SCALES.dbz, lluvia: SCALES.lluvia };
 
     // ------------------------------------------------------------------
     // Estat
@@ -775,7 +743,7 @@
     let acumManifest = null;
     let acumPeriods = [];
     let acumPeriod = 60;
-    let acumBusy = false;
+    let acumPromise = null;   // refresc en curs (evita carreres)
     let acumKey = '';
     const ACUM_LAYER_ID = 'acum-layer';
     const ACUM_SOURCE_ID = 'acum-src';
@@ -849,27 +817,20 @@
     // Llegenda
     // ------------------------------------------------------------------
     function legendPct(p, v) {
-      if (p.scale === 'log' || p.log) {
+      if (p.log) {
         return ((Math.log10(v) - Math.log10(p.min)) / (Math.log10(p.max) - Math.log10(p.min))) * 100;
       }
       return ((v - p.min) / (p.max - p.min)) * 100;
     }
-    function renderLegend(key) {
-      const p = PRODUCTS[key];
-      $('legendTitle').textContent = p.title;
-      const stops = p.stops.map(([v, rgb]) => `rgb(${rgb}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
+    function paintLegend(p, title) {
+      $('legendTitle').textContent = title;
+      const stops = p.stops.map(([v, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
       $('legendBar').style.background = `linear-gradient(to top, ${stops})`;
       $('legendTicks').innerHTML = p.ticks
         .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`).join('');
     }
-    function renderLegendAcum() {
-      const p = ACUM_SCALE;
-      $('legendTitle').textContent = `${acumPeriod} min · mm`;
-      const stops = p.stops.map(([v, rgb]) => `rgb(${rgb[0]},${rgb[1]},${rgb[2]}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
-      $('legendBar').style.background = `linear-gradient(to top, ${stops})`;
-      $('legendTicks').innerHTML = p.ticks
-        .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`).join('');
-    }
+    const renderLegend = (key) => paintLegend(PRODUCTS[key], PRODUCTS[key].title);
+    const renderLegendAcum = () => paintLegend(SCALES.acum, `${formatPeriodLabel(acumPeriod)} · mm`);
     legendToggle.addEventListener('click', () => {
       legend.classList.toggle('hidden');
       legendToggle.classList.toggle('on', !legend.classList.contains('hidden'));
@@ -1006,6 +967,19 @@
     // ------------------------------------------------------------------
     // Producte
     // ------------------------------------------------------------------
+    // Sincronitza la línia de temps amb la capa activa (també després d'un refresc del manifest)
+    function syncTimeline(key) {
+      const st = radar.getLayerState(key);
+      if (!st || !st.initialized) return false;
+      totalFrames = st.totalFrames;
+      timestamps = st.timestamps || [];
+      intervalMin = timestamps.length >= 2 && timestamps[0] && timestamps[1]
+        ? Math.max(1, Math.round((timestamps[1] - timestamps[0]) / 60000)) : 5;
+      rebuildTimelineLabels();
+      computeAccess();
+      return true;
+    }
+
     function selectProduct(key) {
       hideAcumOnMap();
       prodAcumBtn.classList.remove('active');
@@ -1023,16 +997,8 @@
       prodDbzBtn.classList.toggle('active', key === 'dbz');
       prodLluviaBtn.classList.toggle('active', key === 'lluvia');
 
-      totalFrames = st.totalFrames;
-      timestamps = st.timestamps || [];
-      intervalMin = timestamps.length >= 2 && timestamps[0] && timestamps[1]
-        ? Math.max(1, Math.round((timestamps[1] - timestamps[0]) / 60000)) : 5;
-
       renderLegend(key);
-      rebuildTimelineLabels();
-      computeAccess();
-      lastRendered = -1;
-      updateUI(st.currentIndex);
+      syncTimeline(key);
     }
 
     prodDbzBtn.addEventListener('click', () => { selectProduct('dbz'); if (isMobile()) closePanel(); });
@@ -1041,6 +1007,10 @@
     // ------------------------------------------------------------------
     // Acumulació de pluja
     // ------------------------------------------------------------------
+    // Accés per pla (només de client: els PNG són públics a R2)
+    const acumAllowed = (m) => m <= Math.max(30, ACCESS[tier].minutes);
+    const acumNeeded = (m) => (m <= 30 ? 'anon' : m <= 60 ? 'free' : m <= 180 ? 'entusiasta' : 'professional');
+
     prodAcumBtn.addEventListener('click', async () => {
       prodDbzBtn.classList.remove('active');
       prodLluviaBtn.classList.remove('active');
@@ -1053,7 +1023,9 @@
       hideAcumOnMap();
 
       activeKey = 'acum';
+      if (!acumAllowed(acumPeriod)) acumPeriod = 30;
       renderLegendAcum();
+      updateAcumChipsUI();
 
       await refreshAcumulacions();
       if (activeKey !== 'acum') return;
@@ -1068,12 +1040,14 @@
       btn.addEventListener('click', async () => {
         const mins = Number(btn.dataset.min);
         if (!Number.isFinite(mins)) return;
+        if (!acumAllowed(mins)) { openUpsell(acumNeeded(mins)); return; }
 
         acumPeriod = mins;
         updateAcumChipsUI();
 
         if (activeKey !== 'acum') return;
         if (!acumPeriods.length) await refreshAcumulacions();
+        if (activeKey !== 'acum') return;
 
         showAcumOnMap(acumPeriod);
         renderLegendAcum();
@@ -1081,47 +1055,64 @@
     });
 
     function formatPeriodLabel(mins) {
-      if (mins < 60) return `${mins} min`;
+      if (mins < 60) return `${Math.round(mins)} min`;
       const h = mins / 60;
-      return h === 1 ? '1 hora' : `${h} hores`;
+      if (Number.isInteger(h)) return h === 1 ? '1 hora' : `${h} hores`;
+      return `${h.toFixed(1)} hores`;
     }
 
     function updateAcumChipsUI() {
       document.querySelectorAll('.acum-chip').forEach((b) => {
         const min = Number(b.dataset.min);
+        const p = acumPeriods.find((x) => x.min === min);
+        const allowed = acumAllowed(min);
         b.classList.toggle('active', min === acumPeriod);
-        b.disabled = acumPeriods.length > 0 && !acumPeriods.some((x) => x.min === min);
+        b.classList.toggle('locked', !allowed);
+        b.classList.toggle('partial', !!(p && p.parcial));
+        b.title = !allowed ? 'Requereix un pla superior' : (p && p.parcial ? 'Dades parcials: historial incomplet' : '');
+        b.disabled = acumPeriods.length > 0 && !p;
       });
       acumTime.textContent = `Acumulació ${formatPeriodLabel(acumPeriod)}`;
+
       if (acumManifest && acumManifest.last_timestamp) {
         const d = new Date(acumManifest.last_timestamp);
-        acumDate.textContent = `fins ${hourFmt.format(d)} · ${dayFmt.format(d)}`;
+        const base = `fins ${hourFmt.format(d)} · ${dayFmt.format(d)}`;
+        const p = acumPeriods.find((x) => x.min === acumPeriod);
+        acumDate.textContent = p && p.parcial
+          ? `${base} · només ${formatPeriodLabel(p.cobertura_min)} de dades`
+          : base;
       } else {
         acumDate.textContent = '';
       }
     }
 
-    async function refreshAcumulacions() {
-      if (acumBusy) return;
-      acumBusy = true;
-      try {
-        const manifest = await loadManifest(ACUM_BASE);
-        if (!manifest || !Array.isArray(manifest.frames) || manifest.frames.length === 0) {
-          acumDate.textContent = "Sense dades d'acumulació";
-          return;
+    // Una sola petició alhora: qui arriba mentre n'hi ha una en curs n'espera el resultat.
+    function refreshAcumulacions() {
+      if (acumPromise) return acumPromise;
+      acumPromise = (async () => {
+        try {
+          const manifest = await loadManifest(ACUM_BASE);
+          if (!manifest || !Array.isArray(manifest.frames) || manifest.frames.length === 0) {
+            if (!acumPeriods.length) acumDate.textContent = "Sense dades d'acumulació";
+            return;
+          }
+          const key = manifest.last_timestamp || String(manifest.updated);
+          const changed = key !== acumKey || !acumPeriods.length;
+          acumManifest = manifest;
+          if (changed) {
+            acumPeriods = periodsFromManifest(manifest, ACUM_BASE);
+            acumKey = key;
+          }
+          updateAcumChipsUI();
+          if (changed && activeKey === 'acum') { showAcumOnMap(acumPeriod); renderLegendAcum(); }
+        } catch (e) {
+          console.error('[acumulacions]', e);
+          if (!acumPeriods.length) acumDate.textContent = "No s'han pogut carregar";
+        } finally {
+          acumPromise = null;
         }
-        const key = manifest.last_timestamp || String(manifest.updated);
-        if (key === acumKey && acumPeriods.length) { updateAcumChipsUI(); return; }
-        acumManifest = manifest;
-        acumPeriods = periodsFromManifest(manifest, ACUM_BASE);
-        acumKey = key;
-        updateAcumChipsUI();
-      } catch (e) {
-        console.error('[acumulacions]', e);
-        acumDate.textContent = "No s'han pogut carregar";
-      } finally {
-        acumBusy = false;
-      }
+      })();
+      return acumPromise;
     }
 
     function showAcumOnMap(minutes) {
@@ -1142,7 +1133,7 @@
         id: ACUM_LAYER_ID,
         type: 'raster',
         source: ACUM_SOURCE_ID,
-        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' },
+        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
       }, before);
     }
 
@@ -1291,13 +1282,15 @@
       } catch (e) { return 'gratuït'; }
     }
 
-    async function fetchIsAdmin(email) {
-      if (!email) return false;
+    // Llegeix NOMÉS la pròpia entrada /admin/<email> amb el token de l'usuari
+    // (les regles de Firebase han de denegar la lectura de /admin sencer).
+    async function fetchIsAdmin(u) {
+      if (!u || !u.email) return false;
       try {
-        const r = await fetch(`${DB_URL}/admin.json`, { cache: 'no-store' });
-        if (!r.ok) return false;
-        const admins = (await r.json()) || {};
-        return admins[email.toLowerCase().replace(/\./g, ',')] === true;
+        const token = await u.getIdToken();
+        const k = u.email.toLowerCase().replace(/\./g, ',');
+        const r = await fetch(`${DB_URL}/admin/${encodeURIComponent(k)}.json?auth=${token}`, { cache: 'no-store' });
+        return r.ok && (await r.json()) === true;
       } catch (e) { return false; }
     }
 
@@ -1432,6 +1425,11 @@
       computeAccess();
       updateAccountUI();
       paintAvisTierBadge();
+      if (!acumAllowed(acumPeriod)) {
+        acumPeriod = 30;
+        if (activeKey === 'acum' && acumPeriods.length) { showAcumOnMap(acumPeriod); renderLegendAcum(); }
+      }
+      updateAcumChipsUI();
       if (appReady) refreshAvisos();
     }
 
@@ -1682,6 +1680,17 @@
     // ------------------------------------------------------------------
     // Càrrega inicial: arrenca en style.load (no espera els tiles del mapa base)
     // ------------------------------------------------------------------
+    // Frames nous / retirats (el manifest es torna a llegir cada minut a radar.js)
+    radar.onLayerUpdate((key) => {
+      for (const [btn, k] of [[prodDbzBtn, 'dbz'], [prodLluviaBtn, 'lluvia']]) {
+        const s = radar.getLayerState(k);
+        btn.disabled = !(s && s.initialized && s.totalFrames > 0);
+      }
+      if (key === activeKey && key !== 'acum') syncTimeline(key);
+      else computeAccess();
+      if (key === 'lluvia' && appReady) refreshAvisos().catch(() => {});
+    });
+
     paintThemeUI(currentTheme);
     radar.setBaseTheme(currentTheme);
     paintAvisTierBadge();
@@ -1728,6 +1737,9 @@
         refreshAcumulacions().catch(() => {});
         refreshAvisos().catch(() => {});
       }, 1200);
+
+      // Acumulacions: nou càlcul cada ~15 min al servidor; es comprova cada 2 min
+      setInterval(() => { if (!document.hidden) refreshAcumulacions().catch(() => {}); }, 120000);
     });
 
     // ------------------------------------------------------------------
@@ -1773,7 +1785,7 @@
         tier = 'free'; planLabel = 'Gratuït';
         accessChanged();
 
-        const [plan, admin] = await Promise.all([fetchPlan(u), fetchIsAdmin(u.email)]);
+        const [plan, admin] = await Promise.all([fetchPlan(u), fetchIsAdmin(u)]);
         if (currentUser !== u) return;
 
         if (admin) { tier = 'professional'; planLabel = 'Admin'; }

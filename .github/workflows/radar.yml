@@ -2,6 +2,9 @@ name: Descarga Radar PNG
 
 on:
   workflow_dispatch: {}
+  # Si vols execució periòdica, descomenta:
+  # schedule:
+  #   - cron: '*/5 * * * *'   # cada 5 min (dBZ)
 
 permissions:
   contents: read
@@ -64,9 +67,12 @@ jobs:
       - name: Executar radar-real.py
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
+          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}        # 👈 AFEGIT
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX: ${{ env.R2_PREFIX }}
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
+          RADAR_FINESTRA_HORES: '26'                                 # 👈 opcional
+          RADAR_RECUPERA_SLOTS: '36'                                 # 👈 opcional
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: python -X faulthandler scripts-privats/radar-real.py
@@ -171,6 +177,7 @@ jobs:
 
       - name: Executar cumul.py
         env:
+          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}        # 👈 AFEGIT
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
           PYTHONUNBUFFERED: "1"
@@ -214,16 +221,14 @@ jobs:
           name: dades-acumulacions
           path: ${{ env.DADES_ACUM_DIR }}/
           retention-days: 1
-          if-no-files-found: error
+          if-no-files-found: warn                              # 👈 canviat de error
 
 
   # ============================================================
-  # JOB 3: Publicar a R2 (només depèn de radar-png)
+  # JOB 3: Publicar a R2
   # ============================================================
   publicar:
     needs: [radar-png, acumulacions]
-    # 👇 Només exigeix que radar-png hagi acabat bé.
-    # Les acumulacions són opcionals (es poden saltar).
     if: |
       always() &&
       needs.radar-png.outputs.files_ok == 'true'
@@ -291,6 +296,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ env.R2_BUCKET }}                        # 👈 AFEGIT (per si de cas)
+          R2_PREFIX: ${{ env.R2_PREFIX }}                        # 👈 AFEGIT
+          R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}          # 👈 AFEGIT
+          R2_PREFIX_ACUM: ${{ env.R2_PREFIX_ACUM }}              # 👈 AFEGIT
         run: |
           set -euo pipefail
 
@@ -309,6 +318,21 @@ jobs:
             return 1
           }
 
+          delete_one() {
+            local dest="$1"
+            local attempt=1
+            while [ "$attempt" -le 3 ]; do
+              echo "Esborrant ($attempt/3): $dest"
+              if npx wrangler r2 object delete "$dest" --remote; then
+                return 0
+              fi
+              attempt=$((attempt + 1))
+              sleep 3
+            done
+            echo "AVIS: no s'ha pogut esborrar $dest"
+            return 0   # no bloquegem la publicació per un esborrat fallit
+          }
+
           fail_count=0
 
           upload_dir() {
@@ -321,6 +345,16 @@ jobs:
             fi
 
             cd "$src_dir"
+
+            # 👇 NOVA GESTIÓ: esborrar els PNG que ja no són al manifest
+            if [ -f .esborrar.txt ]; then
+              echo "→ esborrant $(wc -l < .esborrar.txt) fitxers antics de $r2_prefix"
+              while IFS= read -r nom; do
+                [ -z "$nom" ] && continue
+                delete_one "$R2_BUCKET/${r2_prefix}${nom}"
+              done < .esborrar.txt
+              rm -f .esborrar.txt
+            fi
 
             if [ -f .neteja ]; then
               echo "→ esborrant prefix $r2_prefix"

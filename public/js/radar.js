@@ -9,6 +9,8 @@
 //  - Els frames es baixen com a blobs (cua amb prioritats, el més recent primer).
 //    L'animació només avança entre frames que ja són a memòria.
 
+import { regioCoordinates } from '../dades/escales.js';
+
 // ---------------------------------------------------------------------------
 // CONFIGURACIÓ
 // ---------------------------------------------------------------------------
@@ -88,13 +90,7 @@ const RADAR = {
   },
 };
 
-const BBOX = { west: -4.554099, east: 5.003083, south: 38.1, north: 45.302098 };
-const COORDS = [
-  [BBOX.west, BBOX.north],
-  [BBOX.east, BBOX.north],
-  [BBOX.east, BBOX.south],
-  [BBOX.west, BBOX.south],
-];
+const COORDS = regioCoordinates();
 
 const FPS = 3;
 const LOOP = true;
@@ -104,6 +100,7 @@ const FETCH_TIMEOUT_MS = 15000;
 const FETCH_RETRIES = 3;
 const FIRST_FRAME_WAIT_MS = 1500;
 const BOOT_FRAMES = 6;           // frames que es baixen abans de saber el pla de l'usuari
+const REFRESH_MS = 60000;        // cada quant es torna a llegir el manifest
 
 // ---------------------------------------------------------------------------
 // ESTAT
@@ -146,6 +143,10 @@ for (const key of Object.keys(RADAR)) {
     wanted: null,
     applyScheduled: false,
     loaded: 0,
+    manifestSig: null,    // signatura del darrer manifest aplicat
+    minTime: null,        // timestamp (ms) del primer frame permès pel pla
+    orphans: [],          // frames retirats del manifest pendents d'alliberar
+    syncing: false,
   };
 }
 
@@ -216,6 +217,7 @@ function pump() {
     if (blobCache.has(entry.url)) { entry.resolve(blobCache.get(entry.url)); continue; }
     if (entry.prio > 0 && failed.has(entry.url)) { entry.reject(new Error('fallit')); continue; }
     if (entry.prio > 0 && isLocked(entry.url)) { entry.reject(new Error('bloquejat')); continue; }
+    if (entry.prio > 0 && !frameMeta.has(entry.url)) { entry.reject(new Error('retirat')); continue; }
 
     activeDownloads++;
     const p = downloadBlob(entry.url)
@@ -303,43 +305,148 @@ function parseTs(ts) {
   return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : null;
 }
 
-async function prepareLayer(key) {
+const listeners = new Set();
+let bootDone = false;
+
+/** Avisa quan una capa rep frames nous (o retira els antics). Retorna la funció per desubscriure's. */
+export function onLayerUpdate(cb) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+function notify(key) {
+  for (const cb of listeners) {
+    try { cb(key); } catch (e) { console.warn('[radar] listener:', e && e.message); }
+  }
+}
+
+/** Un frame ha sortit del manifest: el seu blob s'allibera (si no és el que es veu ara). */
+function releaseFrame(url, st) {
+  failed.delete(url);
+  if (blobCache.has(url)) st.orphans.push(url);
+}
+
+function flushOrphans(st) {
+  if (!st.orphans.length) return;
+  const keep = [];
+  for (const url of st.orphans) {
+    if (url === st.applied || url === st.wanted) { keep.push(url); continue; }
+    const blob = blobCache.get(url);
+    if (blob) URL.revokeObjectURL(blob);
+    blobCache.delete(url);
+  }
+  st.orphans = keep;
+}
+
+async function doSync(key, initial) {
   const cfg = RADAR[key];
   const st = state.layers[key];
 
   const manifest = await fetchManifest(cfg);
   if (!manifest || manifest.frames.length === 0) return false;
 
-  const v = encodeURIComponent(manifest.updated || Date.now());
+  const lastItem = manifest.frames[manifest.frames.length - 1] || {};
+  const sig = `${manifest.updated || ''}|${manifest.frames.length}|${lastItem.f || ''}`;
+  if (!initial && sig === st.manifestSig) return false;
+
   const ext = manifest.ext || '.png';
   const frames = [];
   const timestamps = [];
   for (const item of manifest.frames) {
     if (!item || !item.f) continue;
-    frames.push(`${cfg.basePath}/${item.f}${ext}?v=${v}`);
+    // El nom del fitxer ja és únic per frame: no cal cap paràmetre de versió
+    frames.push(`${cfg.basePath}/${item.f}${ext}`);
     timestamps.push(parseTs(item.t));
   }
   if (frames.length === 0) return false;
 
+  const first = !st.initialized;
+  const late = first && bootDone && !!state.map;     // primera càrrega correcta després d'un error inicial
+  const oldFrames = st.frames;
+  const prevUrl = oldFrames[st.currentIndex];
+  const wasLive = first || st.currentIndex >= oldFrames.length - 1;
+
+  for (const u of oldFrames) frameMeta.delete(u);
+  frames.forEach((u, i) => { frameMeta.set(u, { key, index: i }); failed.delete(u); });
+  const keep = new Set(frames);
+  for (const u of oldFrames) if (!keep.has(u)) releaseFrame(u, st);
+
+  st.manifestSig = sig;
   st.frames = frames;
   st.timestamps = timestamps;
-  st.currentIndex = frames.length - 1;
-  frames.forEach((u, i) => frameMeta.set(u, { key, index: i }));
-  st.initialized = true;
 
-  // El més recent, urgent; després els últims frames
-  requestFrame(frames[st.currentIndex], 0);
-  const prio = layerPrio(key);
-  for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
-    requestFrame(frames[i], prio);
+  let idx = wasLive ? frames.length - 1 : frames.indexOf(prevUrl);
+  if (idx < 0) idx = frames.length - 1;
+  st.currentIndex = idx;
+
+  // El límit del pla es manté per temps, no per posició (els índexos es desplacen en podar)
+  if (st.minTime != null) {
+    const k = timestamps.findIndex((d) => d && d.getTime() >= st.minTime);
+    st.minIndex = k < 0 ? 0 : k;
+  } else {
+    st.minIndex = 0;
   }
+  st.minIndex = Math.min(st.minIndex, frames.length - 1);
+  if (st.currentIndex < st.minIndex) st.currentIndex = st.minIndex;
+
+  st.initialized = true;
+  st.loaded = frames.reduce((n, u) => n + (blobCache.has(u) ? 1 : 0), 0);
+
+  if (first) {
+    // El més recent, urgent; després els últims frames
+    requestFrame(frames[st.currentIndex], 0);
+    const prio = layerPrio(key);
+    for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
+      requestFrame(frames[i], prio);
+    }
+    if (late) {
+      await Promise.race([requestFrame(frames[st.currentIndex], 0).catch(noop), sleep(FIRST_FRAME_WAIT_MS)]);
+      addRadarLayer(state.map, key);
+      orderLayers(state.map);
+      notify(key);
+    }
+    return true;
+  }
+
+  // Refresc: es mostra el frame actual i es baixen els nous
+  const url = frames[st.currentIndex];
+  st.wanted = url;
+  requestFrame(url, 0).then(() => { if (st.wanted === url) scheduleApply(key); }).catch(noop);
+  enqueueLayer(key);
+  flushOrphans(st);
+  notify(key);
   return true;
+}
+
+async function syncLayer(key, initial = false) {
+  const st = state.layers[key];
+  if (st.syncing) return false;
+  st.syncing = true;
+  try {
+    return await doSync(key, initial);
+  } finally {
+    st.syncing = false;
+  }
+}
+
+let refreshTimer = 0;
+
+function startRefresh() {
+  if (refreshTimer) return;
+  const run = () => {
+    if (document.hidden) return;
+    for (const key of Object.keys(RADAR)) {
+      syncLayer(key).catch((e) => console.warn(`[radar:${key}] refresc`, e && e.message));
+    }
+  };
+  refreshTimer = setInterval(run, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) run(); });
 }
 
 // Arrenca ara mateix, sense esperar el mapa
 const prepared = {};
 for (const key of Object.keys(RADAR)) {
-  prepared[key] = prepareLayer(key).catch((e) => {
+  prepared[key] = syncLayer(key, true).catch((e) => {
     console.warn(`[radar:${key}]`, e && e.message);
     return false;
   });
@@ -682,6 +789,7 @@ function applyWanted(key) {
   try {
     source.updateImage({ url: blobUrl, coordinates: COORDS });
     st.applied = st.wanted;
+    flushOrphans(st);
   } catch (e) {
     console.warn('[radar] updateImage:', e.message);
   }
@@ -801,6 +909,8 @@ export async function initRadar(map) {
 
   orderLayers(map);
   loadExtras(map);
+  bootDone = true;
+  startRefresh();
   return results.some(Boolean);
 }
 
@@ -862,6 +972,8 @@ export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
   st.minIndex = Math.max(0, Math.min(idx, Math.max(0, st.frames.length - 1)));
+  const d = st.timestamps[st.minIndex];
+  st.minTime = d ? d.getTime() : null;
   if (!st.initialized) return;
   if (st.currentIndex < st.minIndex) showFrame(key, st.minIndex);
   enqueueLayer(key);
@@ -904,6 +1016,7 @@ export function getLayerState(key) {
     currentIndex: st.currentIndex,
     minIndex: st.minIndex,
     currentUrl: st.frames[st.currentIndex],
+    currentBlob: blobCache.get(st.frames[st.currentIndex]) || null,
     frames: st.frames,
     visible: st.visible,
     opacity: st.opacity,
@@ -935,4 +1048,5 @@ export default {
   setLayerOpacity,
   setMinIndex,
   getLayerState,
+  onLayerUpdate,
 };
