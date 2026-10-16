@@ -2,12 +2,18 @@ name: Descarga Radar PNG
 
 on:
   workflow_dispatch: {}
-  # Si vols execució periòdica, descomenta:
+  # Si vols execució periòrica, descomenta:
   # schedule:
-  #   - cron: '*/5 * * * *'   # cada 5 min (dBZ)
+  #   - cron: '*/5 * * * *'
 
 permissions:
   contents: read
+
+# 👇 NOMÉS UN WORKFLOW ALHORA PER GRUP. Els que arribin mentre n'hi ha un
+# en curs quedaran en cua (no es cancel·len).
+concurrency:
+  group: descarga-radar-png
+  cancel-in-progress: false
 
 env:
   R2_BUCKET: tempestes-radar-data
@@ -67,12 +73,12 @@ jobs:
       - name: Executar radar-real.py
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
-          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}        # 👈 AFEGIT
+          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
+          RADAR_FINESTRA_HORES: '26'
+          RADAR_TIMEZONE: 'Europe/Madrid'
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX: ${{ env.R2_PREFIX }}
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
-          RADAR_FINESTRA_HORES: '24'                                 # 👈 opcional
-          RADAR_RECUPERA_SLOTS: '36'                                 # 👈 opcional
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: python -X faulthandler scripts-privats/radar-real.py
@@ -177,7 +183,7 @@ jobs:
 
       - name: Executar cumul.py
         env:
-          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}        # 👈 AFEGIT
+          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
           PYTHONUNBUFFERED: "1"
@@ -221,7 +227,7 @@ jobs:
           name: dades-acumulacions
           path: ${{ env.DADES_ACUM_DIR }}/
           retention-days: 1
-          if-no-files-found: warn                              # 👈 canviat de error
+          if-no-files-found: warn
 
 
   # ============================================================
@@ -234,10 +240,6 @@ jobs:
       needs.radar-png.outputs.files_ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-
-    concurrency:
-      group: radar-png-update
-      cancel-in-progress: false
 
     steps:
 
@@ -296,10 +298,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          R2_BUCKET: ${{ env.R2_BUCKET }}                        # 👈 AFEGIT (per si de cas)
-          R2_PREFIX: ${{ env.R2_PREFIX }}                        # 👈 AFEGIT
-          R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}          # 👈 AFEGIT
-          R2_PREFIX_ACUM: ${{ env.R2_PREFIX_ACUM }}              # 👈 AFEGIT
+          R2_BUCKET: ${{ env.R2_BUCKET }}
+          R2_PREFIX: ${{ env.R2_PREFIX }}
+          R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
+          R2_PREFIX_ACUM: ${{ env.R2_PREFIX_ACUM }}
         run: |
           set -euo pipefail
 
@@ -330,7 +332,7 @@ jobs:
               sleep 3
             done
             echo "AVIS: no s'ha pogut esborrar $dest"
-            return 0   # no bloquegem la publicació per un esborrat fallit
+            return 0
           }
 
           fail_count=0
@@ -346,7 +348,7 @@ jobs:
 
             cd "$src_dir"
 
-            # 👇 NOVA GESTIÓ: esborrar els PNG que ja no són al manifest
+            # Esborrar els PNG que ja no són al manifest
             if [ -f .esborrar.txt ]; then
               echo "→ esborrant $(wc -l < .esborrar.txt) fitxers antics de $r2_prefix"
               while IFS= read -r nom; do
@@ -378,11 +380,9 @@ jobs:
             cd - > /dev/null
           }
 
-          # Sempre pugem dBZ i NIMBUS (obligatoris)
           upload_dir "dades_png/dades_radar_dbz" "$R2_PREFIX"
           upload_dir "dades_png/dades_radar_nimbus" "$R2_PREFIX_NIMBUS"
 
-          # Acumulacions: només si existeixen (opcionals)
           if [ -d "dades_acum" ] && [ -s "dades_acum/manifest.json" ]; then
             upload_dir "dades_acum" "$R2_PREFIX_ACUM"
           else
