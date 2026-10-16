@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 // Cobertura del PNG (REGIO del Python). La imatge és Mercator.
-const BOUNDS = { west: -4.554099, east: 5.003083, south: 38.1, north: 45.302098 };
+const BOUNDS = { west: -10.0, east: 30.0, south: 35.0, north: 71.0 };
 
 // Per sota d'aquesta opacitat considerem que "no hi ha eco"
 const MIN_ALPHA = 30;
