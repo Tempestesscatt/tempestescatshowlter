@@ -1203,8 +1203,11 @@
 
     chkAutoReload.addEventListener('change', (e) => setAutoReload(e.target.checked));
 
-    // Activat per URL: ?autoreload=1
-    if (new URLSearchParams(location.search).get('autoreload') === '1') {
+    // Activat per defecte. Es pot desactivar amb ?autoreload=0
+    // o desmarcant la casella "Mode directe" al menú lateral.
+    const arParam = new URLSearchParams(location.search).get('autoreload');
+    const arDefault = arParam !== '0';   // per defecte ON; ?autoreload=0 per apagar
+    if (arDefault) {
       // Esperem que el radar estigui llest per no barrejar càrregues
       setTimeout(() => setAutoReload(true), 2000);
     }

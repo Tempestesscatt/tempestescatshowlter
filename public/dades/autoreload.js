@@ -5,7 +5,8 @@
 // Com funciona:
 //   1) Llegeix els manifests de R2 cada N segons.
 //   2) Compara la signatura (nº frames + últim timestamp + últim hash).
-//   3) Si ha canviat, mostra un comptador de 10 s i recarrega la pàgina.
+//   3) Si ha canviat, mostra un bàner discret a dalt amb compte enrere i
+//      recarrega la pàgina.
 //
 // Pensat per a pantalles de radar "en directe" (kiosk, monitor, TV).
 //
@@ -24,7 +25,7 @@ const MANIFESTS = {
 };
 
 // ---------------------------------------------------------------------------
-// ESTILS DEL COMPTADOR
+// ESTILS DEL BÀNER
 // ---------------------------------------------------------------------------
 
 function injectStyles() {
@@ -32,94 +33,106 @@ function injectStyles() {
   const css = document.createElement('style');
   css.id = 'autoreload-styles';
   css.textContent = `
-    #autoreloadOverlay {
-      position: fixed; inset: 0; z-index: 9999;
-      display: none; align-items: center; justify-content: center;
-      background: rgba(6, 8, 13, 0.78);
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      color: #eef;
-    }
-    #autoreloadOverlay.show { display: flex; }
-    #autoreloadCard {
-      display: flex; flex-direction: column; align-items: center; gap: 18px;
-      padding: 32px 44px;
+    #autoreloadBanner {
+      position: fixed;
+      top: max(12px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%) translateY(-120%);
+      z-index: 9999;
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px 10px 12px;
       background: rgba(10, 12, 20, 0.92);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
       border: 1px solid rgba(120, 140, 180, 0.28);
-      border-radius: 18px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
-      text-align: center;
-      animation: autoreloadPulse 2s ease-in-out infinite;
+      border-radius: 999px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+      color: #eef;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      line-height: 1;
+      pointer-events: none;
+      opacity: 0;
+      transition: transform .35s cubic-bezier(.4, 0, .2, 1), opacity .35s ease;
+      max-width: calc(100vw - 24px);
+    }
+    #autoreloadBanner.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    #autoreloadBanner .ar-dot {
+      position: relative;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #5a9dff;
+      flex-shrink: 0;
+      box-shadow: 0 0 0 0 rgba(90, 157, 255, 0.6);
+      animation: autoreloadPulse 1.6s ease-out infinite;
     }
     @keyframes autoreloadPulse {
-      0%, 100% { transform: scale(1); }
-      50%      { transform: scale(1.02); }
+      0%   { box-shadow: 0 0 0 0 rgba(90, 157, 255, 0.6); }
+      70%  { box-shadow: 0 0 0 10px rgba(90, 157, 255, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(90, 157, 255, 0); }
     }
-    #autoreloadCard .ar-icon {
-      width: 54px; height: 54px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
+
+    #autoreloadBanner .ar-text {
+      font-weight: 500;
+      color: #cfe0ff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #autoreloadBanner .ar-text b {
+      color: #fff;
+      font-weight: 700;
+    }
+
+    #autoreloadBanner .ar-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 26px; height: 26px; padding: 0 6px;
+      border-radius: 999px;
       background: rgba(90, 157, 255, 0.18);
-      border: 1px solid rgba(90, 157, 255, 0.5);
+      border: 1px solid rgba(90, 157, 255, 0.45);
+      color: #5a9dff;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      flex-shrink: 0;
     }
-    #autoreloadCard .ar-icon svg {
-      width: 28px; height: 28px;
-      stroke: #5a9dff; fill: none; stroke-width: 2;
-      stroke-linecap: round; stroke-linejoin: round;
-      animation: autoreloadSpin 2.4s linear infinite;
-    }
-    @keyframes autoreloadSpin {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
-    }
-    #autoreloadCard .ar-title {
-      font-size: 20px; font-weight: 700; letter-spacing: .3px;
-    }
-    #autoreloadCard .ar-sub {
-      font-size: 13px; color: #8fa5cb; max-width: 300px; line-height: 1.5;
-    }
-    #autoreloadCard .ar-count {
-      font-size: 56px; font-weight: 800; line-height: 1;
-      color: #5a9dff; font-variant-numeric: tabular-nums;
-      text-shadow: 0 0 24px rgba(90, 157, 255, 0.5);
-    }
-    #autoreloadCard .ar-bar {
-      width: 220px; height: 5px; border-radius: 999px;
-      background: rgba(120, 140, 180, 0.2);
+
+    #autoreloadBanner .ar-bar {
+      position: absolute;
+      left: 12px; right: 12px; bottom: 4px;
+      height: 2px; border-radius: 999px;
+      background: rgba(120, 140, 180, 0.18);
       overflow: hidden;
     }
-    #autoreloadCard .ar-bar-fill {
+    #autoreloadBanner .ar-bar-fill {
       height: 100%; width: 100%;
       background: linear-gradient(90deg, #3a6ac0, #5a9dff);
       border-radius: 999px;
       transform-origin: left center;
     }
+
     @media (prefers-reduced-motion: reduce) {
-      #autoreloadCard { animation: none; }
-      #autoreloadCard .ar-icon svg { animation: none; }
+      #autoreloadBanner .ar-dot { animation: none; }
     }
   `;
   document.head.appendChild(css);
 }
 
-function buildOverlay() {
-  let el = document.getElementById('autoreloadOverlay');
+function buildBanner() {
+  let el = document.getElementById('autoreloadBanner');
   if (el) return el;
 
   el = document.createElement('div');
-  el.id = 'autoreloadOverlay';
+  el.id = 'autoreloadBanner';
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
   el.innerHTML = `
-    <div id="autoreloadCard">
-      <div class="ar-icon">
-        <svg viewBox="0 0 24 24">
-          <path d="M21 12a9 9 0 1 1-3-6.7"/>
-          <polyline points="21 3 21 9 15 9"/>
-        </svg>
-      </div>
-      <div class="ar-title">Actualitzant el radar</div>
-      <div class="ar-sub">Hi ha dades noves. La pàgina es recarregarà automàticament.</div>
-      <div class="ar-count" id="autoreloadCount">10</div>
-      <div class="ar-bar"><div class="ar-bar-fill" id="autoreloadBar"></div></div>
-    </div>
+    <span class="ar-dot"></span>
+    <span class="ar-text">Dades noves · actualitzant en <b id="autoreloadCount">10</b> s</span>
+    <span class="ar-count" id="autoreloadCountBadge">10</span>
+    <span class="ar-bar"><span class="ar-bar-fill" id="autoreloadBar"></span></span>
   `;
   document.body.appendChild(el);
   return el;
@@ -148,25 +161,29 @@ async function fetchSignature(url) {
 
 function showCountdown(seconds, onDone) {
   injectStyles();
-  const overlay = buildOverlay();
+  const banner = buildBanner();
   const countEl = document.getElementById('autoreloadCount');
+  const badgeEl = document.getElementById('autoreloadCountBadge');
   const barEl = document.getElementById('autoreloadBar');
 
-  overlay.classList.add('show');
+  banner.classList.add('show');
 
   let remaining = seconds;
   countEl.textContent = String(remaining);
-  barEl.style.transform = 'scaleX(1)';
+  badgeEl.textContent = String(remaining);
 
-  // Transició suau de la barra
-  barEl.style.transition = `transform ${seconds}s linear`;
-  // Forcem un reflow perquè la transició s'apliqui
+  // Transició de la barra
+  barEl.style.transition = 'none';
+  barEl.style.transform = 'scaleX(1)';
   void barEl.offsetWidth;
+  barEl.style.transition = `transform ${seconds}s linear`;
   barEl.style.transform = 'scaleX(0)';
 
   const timer = setInterval(() => {
     remaining -= 1;
-    countEl.textContent = String(Math.max(0, remaining));
+    const v = Math.max(0, remaining);
+    countEl.textContent = String(v);
+    badgeEl.textContent = String(v);
     if (remaining <= 0) {
       clearInterval(timer);
       onDone();
@@ -175,7 +192,7 @@ function showCountdown(seconds, onDone) {
 
   return () => {
     clearInterval(timer);
-    overlay.classList.remove('show');
+    banner.classList.remove('show');
   };
 }
 
@@ -205,7 +222,7 @@ export function initAutoReload({
     return () => {};
   }
 
-  let signatures = null;   // primera lectura
+  let signatures = null;
   let stopped = false;
   let timer = 0;
   let counting = false;
@@ -238,7 +255,6 @@ export function initAutoReload({
       return;
     }
 
-    // Hi ha canvi: parem el watcher i mostrem el comptador
     stopped = true;
     if (timer) clearInterval(timer);
     counting = true;
@@ -256,19 +272,15 @@ export function initAutoReload({
 
     cancelCountdown = showCountdown(countdownS, () => {
       counting = false;
-      // Recàrrega forçada (ignora caché)
       const url = new URL(location.href);
       url.searchParams.set('_r', Date.now().toString());
       location.replace(url.toString());
     });
   }
 
-  // Primera lectura immediata per inicialitzar signatures
   check();
-
   timer = setInterval(check, intervalMs);
 
-  // Quan la pestanya torna a ser visible, comprova de seguida
   const onVisible = () => { if (!document.hidden) check(); };
   document.addEventListener('visibilitychange', onVisible);
 
