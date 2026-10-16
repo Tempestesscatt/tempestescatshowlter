@@ -140,7 +140,7 @@ for (const key of Object.keys(RADAR)) {
     timestamps: [],
     currentIndex: 0,
     minIndex: 0,
-    initialized: false,   // dades llestes (manifest llegit)
+    initialized: false,
     visible: RADAR[key].visible,
     opacity: RADAR[key].opacity,
     applied: null,
@@ -152,12 +152,11 @@ for (const key of Object.keys(RADAR)) {
 
 // ---------------------------------------------------------------------------
 // CÀRREGA DE FRAMES: cua amb prioritats + cache de blobs
-// prio 0 = urgent, 1 = capa visible, 2 = capa amagada
 // ---------------------------------------------------------------------------
 
-const blobCache = new Map();   // url original -> blob URL
+const blobCache = new Map();
 const failed = new Set();
-const frameMeta = new Map();   // url original -> { key, index }
+const frameMeta = new Map();
 const queued = new Map();
 const inflight = new Map();
 const queue = [];
@@ -241,7 +240,6 @@ function pump() {
   }
 }
 
-/** Demana un frame. Retorna una promesa amb el blob URL. */
 function requestFrame(url, prio) {
   if (blobCache.has(url)) return Promise.resolve(blobCache.get(url));
 
@@ -261,7 +259,6 @@ function requestFrame(url, prio) {
   return entry.promise;
 }
 
-/** Encua els frames desbloquejats d'una capa, del més recent al més antic. */
 function enqueueLayer(key) {
   const st = state.layers[key];
   if (!st) return;
@@ -282,7 +279,7 @@ function reprioritize() {
 }
 
 // ---------------------------------------------------------------------------
-// RADAR: manifest + preparació (arrenca en importar el mòdul)
+// RADAR: manifest + preparació
 // ---------------------------------------------------------------------------
 
 async function fetchManifest(cfg) {
@@ -328,7 +325,6 @@ async function prepareLayer(key) {
   frames.forEach((u, i) => frameMeta.set(u, { key, index: i }));
   st.initialized = true;
 
-  // El més recent, urgent; després els últims frames
   requestFrame(frames[st.currentIndex], 0);
   const prio = layerPrio(key);
   for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
@@ -337,7 +333,6 @@ async function prepareLayer(key) {
   return true;
 }
 
-// Arrenca ara mateix, sense esperar el mapa
 const prepared = {};
 for (const key of Object.keys(RADAR)) {
   prepared[key] = prepareLayer(key).catch((e) => {
@@ -372,7 +367,7 @@ function addRadarLayer(map, key) {
 }
 
 // ---------------------------------------------------------------------------
-// MUNICIPIS (GeoJSON.gz)
+// MUNICIPIS
 // ---------------------------------------------------------------------------
 
 let municipisPromise = null;
@@ -382,7 +377,6 @@ async function fetchGunzip(url) {
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const buf = new Uint8Array(await r.arrayBuffer());
   const isGzip = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
-  // Si el servidor ja l'ha descomprimit (Content-Encoding: gzip), és text pla
   if (!isGzip) return new TextDecoder('utf-8').decode(buf);
   const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Response(stream).text();
@@ -473,7 +467,7 @@ function restyleComarques() {
 }
 
 // ---------------------------------------------------------------------------
-// AVISOS (fills i línies)
+// AVISOS
 // ---------------------------------------------------------------------------
 
 function addAvisos(map) {
@@ -581,34 +575,33 @@ function restyleCities() {
 }
 
 // ---------------------------------------------------------------------------
-// RELLEU
+// RELLEU — fitxer PNG directe, sense JSON
 // ---------------------------------------------------------------------------
 
-const RELIEF_INFO_URL = '/dades/relleu_espanya.json';
 const RELIEF_SRC = 'relief-src';
 const RELIEF_LAYER = 'relief-layer';
 const RELIEF_THEME = { clar: { opacity: 1 }, fosc: { opacity: 1 } };
 
-let reliefInfo = null;
+// Fitxer PNG del relleu (dins /public/dades/)
+const RELIEF_PNG_URL = '/dades/relleu_catalunya.png';
+
+// Coordenades del PNG del relleu (bounding box de Catalunya amb marge)
+// Han de coincidir amb les que va fer servir el relleu.py al generar el PNG.
+const RELIEF_COORDS = [
+  [0.10, 42.95],   // NW (lon_min, lat_max)
+  [3.40, 42.95],   // NE (lon_max, lat_max)
+  [3.40, 40.45],   // SE (lon_max, lat_min)
+  [0.10, 40.45],   // SW (lon_min, lat_min)
+];
 
 async function addRelief(map) {
-  if (!reliefInfo) {
-    try {
-      const r = await fetch(RELIEF_INFO_URL);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      reliefInfo = await r.json();
-    } catch (e) {
-      console.warn('[relleu]', e.message);
-      return;
-    }
-  }
   if (map.getLayer(RELIEF_LAYER)) map.removeLayer(RELIEF_LAYER);
   if (map.getSource(RELIEF_SRC)) map.removeSource(RELIEF_SRC);
 
   map.addSource(RELIEF_SRC, {
     type: 'image',
-    url: '/dades/' + reliefInfo.file,
-    coordinates: reliefInfo.coordinates,
+    url: RELIEF_PNG_URL,
+    coordinates: RELIEF_COORDS,
   });
   map.addLayer({
     id: RELIEF_LAYER,
@@ -688,7 +681,6 @@ function applyWanted(key) {
   }
 }
 
-/** L'índex es mou a l'instant; la imatge s'aplica quan el frame és a memòria. */
 function showFrame(key, index) {
   const st = state.layers[key];
   if (!st.initialized || index < 0 || index >= st.frames.length) return;
@@ -713,7 +705,6 @@ function showFrame(key, index) {
 
 let intervalId = 0;
 
-/** Següent frame que ja és a memòria (salta els que encara no han arribat). */
 function nextReadyIndex(st) {
   const n = st.frames.length;
   const span = n - st.minIndex;
@@ -758,13 +749,11 @@ function attachErrorHandler(map) {
   map.on('error', (e) => {
     const err = e && e.error;
     const msg = (err && err.message) || '';
-    // Les cancel·lacions d'imatges en canviar ràpid de frame són normals
     if ((err && err.name === 'AbortError') || /abort/i.test(msg)) return;
     console.warn('[map]', msg || e);
   });
 }
 
-/** Capes secundàries: en segon pla, quan el navegador estigui lliure. */
 function loadExtras(map) {
   const run = async () => {
     try {
@@ -782,7 +771,6 @@ function loadExtras(map) {
   else setTimeout(run, 50);
 }
 
-/** Només espera el radar. Tota la resta carrega en segon pla. */
 export async function initRadar(map) {
   state.map = map;
   attachErrorHandler(map);
@@ -805,7 +793,6 @@ export async function initRadar(map) {
   return results.some(Boolean);
 }
 
-/** Després d'un canvi d'estil base. Les parts ràpides primer. */
 export async function reapplyLayers() {
   const map = state.map;
   if (!map) return;
@@ -817,7 +804,6 @@ export async function reapplyLayers() {
   await Promise.all([addRelief(map), addComarques(map)]);
   orderLayers(map);
 
-  // Municipis: en segon pla, no bloqueja
   addMunicipis(map).then(() => orderLayers(map)).catch(noop);
 }
 
@@ -858,7 +844,6 @@ export function setComarquesVisibility(visible) {
   if (map && map.getLayer(COMARQUES_LINE)) map.setLayoutProperty(COMARQUES_LINE, 'visibility', vis(visible));
 }
 
-/** Frames anteriors a `idx` bloquejats pel pla. Els desbloquejats es baixen. */
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
