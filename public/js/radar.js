@@ -88,7 +88,7 @@ const RADAR = {
   },
 };
 
-const BBOX = { west: -4.554099, east: 5.003083, south: 38.1, north: 45.302098 };
+const BBOX = { west: -10.0, east: 30.0, south: 35.0, north: 71.0 };
 const COORDS = [
   [BBOX.west, BBOX.north],
   [BBOX.east, BBOX.north],
