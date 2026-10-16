@@ -88,6 +88,7 @@ const RADAR = {
   },
 };
 
+// BBOX ara cobreix tota Europa occidental i central (coincideix amb REGIO del Python)
 const BBOX = { west: -10.0, east: 30.0, south: 35.0, north: 71.0 };
 const COORDS = [
   [BBOX.west, BBOX.north],
@@ -327,7 +328,6 @@ async function prepareLayer(key) {
   frames.forEach((u, i) => frameMeta.set(u, { key, index: i }));
   st.initialized = true;
 
-  // El més recent, urgent; després els últims frames
   requestFrame(frames[st.currentIndex], 0);
   const prio = layerPrio(key);
   for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
@@ -336,7 +336,6 @@ async function prepareLayer(key) {
   return true;
 }
 
-// Arrenca ara mateix, sense esperar el mapa
 const prepared = {};
 for (const key of Object.keys(RADAR)) {
   prepared[key] = prepareLayer(key).catch((e) => {
@@ -363,7 +362,7 @@ function addRadarLayer(map, key) {
     paint: {
       'raster-opacity': st.opacity,
       'raster-fade-duration': 0,
-      'raster-resampling': 'linear',
+      'raster-resampling': 'nearest',
     },
   });
   st.applied = url;
@@ -381,7 +380,6 @@ async function fetchGunzip(url) {
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const buf = new Uint8Array(await r.arrayBuffer());
   const isGzip = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
-  // Si el servidor ja l'ha descomprimit (Content-Encoding: gzip), és text pla
   if (!isGzip) return new TextDecoder('utf-8').decode(buf);
   const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Response(stream).text();
@@ -580,58 +578,122 @@ function restyleCities() {
 }
 
 // ---------------------------------------------------------------------------
-// RELLEU
+// RELLEU — DUES CAPES: Europa (fons) + Catalunya (detall)
 // ---------------------------------------------------------------------------
 
-const RELIEF_INFO_URL = '/dades/relleu_catalunya.json';
-const RELIEF_SRC = 'relief-src';
-const RELIEF_LAYER = 'relief-layer';
+const RELIEF_EUROPA_INFO_URL = '/dades/relleu_europa.json';
+const RELIEF_EUROPA_SRC = 'relief-europa-src';
+const RELIEF_EUROPA_LAYER = 'relief-europa-layer';
+
+const RELIEF_CAT_INFO_URL = '/dades/relleu_catalunya.json';
+const RELIEF_CAT_SRC = 'relief-cat-src';
+const RELIEF_CAT_LAYER = 'relief-cat-layer';
+
 const RELIEF_THEME = { clar: { opacity: 1 }, fosc: { opacity: 1 } };
 
-let reliefInfo = null;
+let reliefEuropaInfo = null;
+let reliefCatInfo = null;
+
+async function loadReliefInfo(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (e) {
+    console.warn('[relleu]', url, e.message);
+    return null;
+  }
+}
 
 async function addRelief(map) {
-  if (!reliefInfo) {
-    try {
-      const r = await fetch(RELIEF_INFO_URL);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      reliefInfo = await r.json();
-    } catch (e) {
-      console.warn('[relleu]', e.message);
-      return;
-    }
+  // Carrega els dos JSON en paral·lel
+  if (!reliefEuropaInfo || !reliefCatInfo) {
+    const [eu, cat] = await Promise.all([
+      reliefEuropaInfo ? Promise.resolve(reliefEuropaInfo) : loadReliefInfo(RELIEF_EUROPA_INFO_URL),
+      reliefCatInfo ? Promise.resolve(reliefCatInfo) : loadReliefInfo(RELIEF_CAT_INFO_URL),
+    ]);
+    reliefEuropaInfo = eu;
+    reliefCatInfo = cat;
   }
-  if (map.getLayer(RELIEF_LAYER)) map.removeLayer(RELIEF_LAYER);
-  if (map.getSource(RELIEF_SRC)) map.removeSource(RELIEF_SRC);
 
-  map.addSource(RELIEF_SRC, {
-    type: 'image',
-    url: '/dades/' + reliefInfo.file,
-    coordinates: reliefInfo.coordinates,
-  });
-  map.addLayer({
-    id: RELIEF_LAYER,
-    type: 'raster',
-    source: RELIEF_SRC,
-    layout: { visibility: vis(state.reliefVisible) },
-    paint: {
-      'raster-opacity': RELIEF_THEME[state.theme].opacity,
-      'raster-fade-duration': 0,
-      'raster-resampling': 'linear',
-    },
-  });
+  // --- Capa d'Europa (fons) ---
+  if (reliefEuropaInfo) {
+    if (map.getLayer(RELIEF_EUROPA_LAYER)) map.removeLayer(RELIEF_EUROPA_LAYER);
+    if (map.getSource(RELIEF_EUROPA_SRC)) map.removeSource(RELIEF_EUROPA_SRC);
+    map.addSource(RELIEF_EUROPA_SRC, {
+      type: 'image',
+      url: '/dades/' + reliefEuropaInfo.file,
+      coordinates: reliefEuropaInfo.coordinates,
+    });
+    map.addLayer({
+      id: RELIEF_EUROPA_LAYER,
+      type: 'raster',
+      source: RELIEF_EUROPA_SRC,
+      layout: { visibility: vis(state.reliefVisible) },
+      paint: {
+        'raster-opacity': RELIEF_THEME[state.theme].opacity,
+        'raster-fade-duration': 0,
+        'raster-resampling': 'linear',
+      },
+    });
+  }
+
+  // --- Capa de Catalunya (detall, només a zoom alt) ---
+  if (reliefCatInfo) {
+    if (map.getLayer(RELIEF_CAT_LAYER)) map.removeLayer(RELIEF_CAT_LAYER);
+    if (map.getSource(RELIEF_CAT_SRC)) map.removeSource(RELIEF_CAT_SRC);
+    map.addSource(RELIEF_CAT_SRC, {
+      type: 'image',
+      url: '/dades/' + reliefCatInfo.file,
+      coordinates: reliefCatInfo.coordinates,
+    });
+    map.addLayer({
+      id: RELIEF_CAT_LAYER,
+      type: 'raster',
+      source: RELIEF_CAT_SRC,
+      minzoom: 7,                        // apareix a partir de zoom 7
+      layout: { visibility: vis(state.reliefVisible) },
+      paint: {
+        // Es fon suaument entre zoom 7 i 9
+        'raster-opacity': [
+          'interpolate', ['linear'], ['zoom'],
+          7, 0,
+          8.5, 0.6,
+          9.5, RELIEF_THEME[state.theme].opacity,
+        ],
+        'raster-fade-duration': 0,
+        'raster-resampling': 'linear',
+      },
+    });
+  }
 }
 
 function restyleRelief() {
   const map = state.map;
-  if (!map || !map.getLayer(RELIEF_LAYER)) return;
-  map.setPaintProperty(RELIEF_LAYER, 'raster-opacity', RELIEF_THEME[state.theme].opacity);
+  if (!map) return;
+  if (map.getLayer(RELIEF_EUROPA_LAYER)) {
+    map.setPaintProperty(RELIEF_EUROPA_LAYER, 'raster-opacity', RELIEF_THEME[state.theme].opacity);
+  }
+  if (map.getLayer(RELIEF_CAT_LAYER)) {
+    map.setPaintProperty(RELIEF_CAT_LAYER, 'raster-opacity', [
+      'interpolate', ['linear'], ['zoom'],
+      7, 0,
+      8.5, 0.6,
+      9.5, RELIEF_THEME[state.theme].opacity,
+    ]);
+  }
 }
 
 export function setReliefVisibility(visible) {
   state.reliefVisible = visible;
   const map = state.map;
-  if (map && map.getLayer(RELIEF_LAYER)) map.setLayoutProperty(RELIEF_LAYER, 'visibility', vis(visible));
+  if (!map) return;
+  if (map.getLayer(RELIEF_EUROPA_LAYER)) {
+    map.setLayoutProperty(RELIEF_EUROPA_LAYER, 'visibility', vis(visible));
+  }
+  if (map.getLayer(RELIEF_CAT_LAYER)) {
+    map.setLayoutProperty(RELIEF_CAT_LAYER, 'visibility', vis(visible));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -641,11 +703,15 @@ export function setReliefVisibility(visible) {
 function orderLayers(map) {
   const style = map.getStyle();
   if (!style) return;
-  if (map.getLayer(RELIEF_LAYER)) map.moveLayer(RELIEF_LAYER);
+  // Relleus al fons
+  if (map.getLayer(RELIEF_EUROPA_LAYER)) map.moveLayer(RELIEF_EUROPA_LAYER);
+  if (map.getLayer(RELIEF_CAT_LAYER)) map.moveLayer(RELIEF_CAT_LAYER);
   if (map.getLayer(ACUM_LAYER_ID)) map.moveLayer(ACUM_LAYER_ID);
+  // Radar a sobre
   for (const key of Object.keys(RADAR)) {
     if (map.getLayer(RADAR[key].layerId)) map.moveLayer(RADAR[key].layerId);
   }
+  // Avisos, municipis, comarques, ciutats
   if (map.getLayer(AVIS_FILL)) map.moveLayer(AVIS_FILL);
   if (map.getLayer(AVIS_LINE)) map.moveLayer(AVIS_LINE);
   if (map.getLayer(MUNI_LINE)) map.moveLayer(MUNI_LINE);
@@ -757,13 +823,11 @@ function attachErrorHandler(map) {
   map.on('error', (e) => {
     const err = e && e.error;
     const msg = (err && err.message) || '';
-    // Les cancel·lacions d'imatges en canviar ràpid de frame són normals
     if ((err && err.name === 'AbortError') || /abort/i.test(msg)) return;
     console.warn('[map]', msg || e);
   });
 }
 
-/** Capes secundàries: en segon pla, quan el navegador estigui lliure. */
 function loadExtras(map) {
   const run = async () => {
     try {
@@ -781,7 +845,6 @@ function loadExtras(map) {
   else setTimeout(run, 50);
 }
 
-/** Només espera el radar. Tota la resta carrega en segon pla. */
 export async function initRadar(map) {
   state.map = map;
   attachErrorHandler(map);
@@ -804,7 +867,6 @@ export async function initRadar(map) {
   return results.some(Boolean);
 }
 
-/** Després d'un canvi d'estil base. Les parts ràpides primer. */
 export async function reapplyLayers() {
   const map = state.map;
   if (!map) return;
@@ -816,7 +878,6 @@ export async function reapplyLayers() {
   await Promise.all([addRelief(map), addComarques(map)]);
   orderLayers(map);
 
-  // Municipis: en segon pla, no bloqueja
   addMunicipis(map).then(() => orderLayers(map)).catch(noop);
 }
 
@@ -857,7 +918,6 @@ export function setComarquesVisibility(visible) {
   if (map && map.getLayer(COMARQUES_LINE)) map.setLayoutProperty(COMARQUES_LINE, 'visibility', vis(visible));
 }
 
-/** Frames anteriors a `idx` bloquejats pel pla. Els desbloquejats es baixen. */
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;
