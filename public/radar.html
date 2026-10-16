@@ -563,6 +563,15 @@
     </div>
 
     <div class="section">
+      <div class="section-title">Mode directe</div>
+      <label class="check">
+        <input type="checkbox" id="chkAutoReload" />
+        <span>Recarregar automàticament quan hi hagi dades noves</span>
+      </label>
+      <div class="info-text">Mostra un compte enrere de 10 s i recarrega la pàgina quan el radar publica frames nous. Ideal per a pantalles o monitors en directe.</div>
+    </div>
+
+    <div class="section">
       <div class="section-title">Informació</div>
       <div class="legal-links">
         <a href="https://tempestes.cat/privacitat/preus">Plans i preus</a>
@@ -671,6 +680,7 @@
     import { computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN } from './js/avisos.js';
     import { loadManifest, periodsFromManifest } from './dades/acumulacions.js';
     import { SCALES, regioCoordinates } from './dades/escales.js';
+    import { initAutoReload } from './dades/autoreload.js';
 
     // ------------------------------------------------------------------
     // Utilitats
@@ -705,7 +715,6 @@
       fosc: 'https://tiles.openfreemap.org/styles/dark',
     };
 
-    // Escales (colors, ticks, formats) definides a dades/escales.js
     const PRODUCTS = { dbz: SCALES.dbz, lluvia: SCALES.lluvia };
 
     // ------------------------------------------------------------------
@@ -743,7 +752,7 @@
     let acumManifest = null;
     let acumPeriods = [];
     let acumPeriod = 60;
-    let acumPromise = null;   // refresc en curs (evita carreres)
+    let acumPromise = null;
     let acumKey = '';
     const ACUM_LAYER_ID = 'acum-layer';
     const ACUM_SOURCE_ID = 'acum-src';
@@ -756,6 +765,9 @@
     let avisItems = [];
     let avisLatest = null;
     let avisFilter = 0;
+
+    // Auto-reload
+    let stopAutoReload = null;
 
     // ------------------------------------------------------------------
     // Mapa
@@ -967,7 +979,6 @@
     // ------------------------------------------------------------------
     // Producte
     // ------------------------------------------------------------------
-    // Sincronitza la línia de temps amb la capa activa (també després d'un refresc del manifest)
     function syncTimeline(key) {
       const st = radar.getLayerState(key);
       if (!st || !st.initialized) return false;
@@ -1007,7 +1018,6 @@
     // ------------------------------------------------------------------
     // Acumulació de pluja
     // ------------------------------------------------------------------
-    // Accés per pla (només de client: els PNG són públics a R2)
     const acumAllowed = (m) => m <= Math.max(30, ACCESS[tier].minutes);
     const acumNeeded = (m) => (m <= 30 ? 'anon' : m <= 60 ? 'free' : m <= 180 ? 'entusiasta' : 'professional');
 
@@ -1086,7 +1096,6 @@
       }
     }
 
-    // Una sola petició alhora: qui arriba mentre n'hi ha una en curs n'espera el resultat.
     function refreshAcumulacions() {
       if (acumPromise) return acumPromise;
       acumPromise = (async () => {
@@ -1168,6 +1177,37 @@
       },
     });
     $('chkValor').addEventListener('change', (e) => valor.setEnabled(e.target.checked));
+
+    // ------------------------------------------------------------------
+    // Mode directe (auto-reload)
+    // ------------------------------------------------------------------
+    const chkAutoReload = $('chkAutoReload');
+
+    function setAutoReload(on) {
+      if (on) {
+        if (stopAutoReload) return;   // ja actiu
+        stopAutoReload = initAutoReload({
+          intervalMs: 60000,
+          countdownS: 10,
+          watch: ['dbz', 'lluvia'],
+          reload: true,
+        });
+        chkAutoReload.checked = true;
+        console.log('[autoreload] activat');
+      } else {
+        if (stopAutoReload) { stopAutoReload(); stopAutoReload = null; }
+        chkAutoReload.checked = false;
+        console.log('[autoreload] desactivat');
+      }
+    }
+
+    chkAutoReload.addEventListener('change', (e) => setAutoReload(e.target.checked));
+
+    // Activat per URL: ?autoreload=1
+    if (new URLSearchParams(location.search).get('autoreload') === '1') {
+      // Esperem que el radar estigui llest per no barrejar càrregues
+      setTimeout(() => setAutoReload(true), 2000);
+    }
 
     // ------------------------------------------------------------------
     // Buscador
@@ -1257,7 +1297,7 @@
     });
 
     // ------------------------------------------------------------------
-    // Poll de la línia de temps (lleuger: 10 cops/s)
+    // Poll de la línia de temps
     // ------------------------------------------------------------------
     setInterval(() => {
       if (dragging || activeKey === 'acum') return;
@@ -1282,8 +1322,6 @@
       } catch (e) { return 'gratuït'; }
     }
 
-    // Llegeix NOMÉS la pròpia entrada /admin/<email> amb el token de l'usuari
-    // (les regles de Firebase han de denegar la lectura de /admin sencer).
     async function fetchIsAdmin(u) {
       if (!u || !u.email) return false;
       try {
@@ -1434,7 +1472,7 @@
     }
 
     // ------------------------------------------------------------------
-    // Avisos de pluja — dos nivells: basic (free) i full (entusiasta+)
+    // Avisos de pluja
     // ------------------------------------------------------------------
     const avisBtn = $('avisBtn'), avisBadge = $('avisBadge'), avisPanel = $('avisPanel');
     const avisList = $('avisList'), avisMsg = $('avisMsg'), avisMeta = $('avisMeta');
@@ -1678,9 +1716,8 @@
     }
 
     // ------------------------------------------------------------------
-    // Càrrega inicial: arrenca en style.load (no espera els tiles del mapa base)
+    // Càrrega inicial
     // ------------------------------------------------------------------
-    // Frames nous / retirats (el manifest es torna a llegir cada minut a radar.js)
     radar.onLayerUpdate((key) => {
       for (const [btn, k] of [[prodDbzBtn, 'dbz'], [prodLluviaBtn, 'lluvia']]) {
         const s = radar.getLayerState(k);
@@ -1731,14 +1768,12 @@
       setLoad(100, 'A punt!');
       hideLoader();
 
-      // Tot el que no és crític, després de mostrar el radar
       appReady = true;
       setTimeout(() => {
         refreshAcumulacions().catch(() => {});
         refreshAvisos().catch(() => {});
       }, 1200);
 
-      // Acumulacions: nou càlcul cada ~15 min al servidor; es comprova cada 2 min
       setInterval(() => { if (!document.hidden) refreshAcumulacions().catch(() => {}); }, 120000);
     });
 
@@ -1759,7 +1794,7 @@
     });
 
     // ------------------------------------------------------------------
-    // Firebase: càrrega dinàmica, NO bloqueja el radar
+    // Firebase
     // ------------------------------------------------------------------
     let auth = null, fb = null;
 
@@ -1808,7 +1843,7 @@
     async function logout() {
       try {
         await authReady;
-        if (auth && fb) await fb.signOut(auth);
+        if (auth && fb) await auth.signOut(auth);
       } catch (e) { console.error(e); }
     }
   </script>
