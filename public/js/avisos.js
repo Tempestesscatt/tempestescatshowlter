@@ -1,10 +1,13 @@
 // public/js/avisos.js
-// Avisos de pluja intensa per municipi.
+// Avisos de pluja intensa per municipi + alertes AEMET per Catalunya.
 //
-// Agafa els frames de pluja (mm/h) de l'última finestra (que ara venen de R2),
-// llegeix els colors del PNG en uns punts de mostra dins de cada municipi i
-// els converteix a mm/h (mateixa escala que valor.js). Retorna els municipis
-// que passen els llindars.
+// 1) Avisos de pluja: agafa els frames de pluja (mm/h) de l'última finestra
+//    (que ara venen de R2), llegeix els colors del PNG en uns punts de mostra
+//    dins de cada municipi i els converteix a mm/h. Retorna els municipis
+//    que passen els llindars.
+//
+// 2) Alertes AEMET: llegeix /dades/alertes/avisos.json i retorna les alertes
+//    que afecten Catalunya (filtrant per bbox dins la regió de Catalunya).
 //
 // Els municipis els rep del radar.getMunicipis(), que ara llegeix el
 // municipis.geojson.gz descomprimit al vol.
@@ -15,22 +18,32 @@ import { colorToValue, lngLatToUV, SCALES } from '../dades/escales.js';
 // CONFIGURACIÓ
 // ---------------------------------------------------------------------------
 
-// Finestra d'anàlisi (minuts) respecte al frame més recent.
-// El Nimbus surt cada 15 min, així que amb 20 min agafem 2 frames (el més
-// nou i el previ). Amb 5 min només n'agafaríem 1 i perdíem context.
 export const WINDOW_MIN = 20;
 
-// Llindars d'intensitat instantània (mm/h) per al Nimbus.
-// Aquests valors són els "instantani" del radar, no acumulats.
 export const LEVELS = [
   { id: 1, min: 5,  name: 'Pluja moderada',   color: '#facc15' },
   { id: 2, min: 15, name: 'Pluja forta',      color: '#f97316' },
   { id: 3, min: 30, name: 'Pluja torrencial', color: '#ef4444' },
 ];
 
-const MIN_ALPHA = 30;     // per sota, considerem que no hi ha eco
-const STEP_DEG = 0.012;   // separació dels punts de mostra (~1,3 km)
-const MAX_POINTS = 90;    // màxim de punts per municipi
+// Bounding box de Catalunya (aproximat, prou ample per incloure-hi tot)
+const CATALUNYA_BBOX = {
+  west: 0.15,      // límit oest (Osca)
+  east: 3.35,      // límit est (mar)
+  south: 40.50,    // límit sud (delta de l'Ebre)
+  north: 42.90,    // límit nord (Pirineu)
+};
+
+// Rutes del manifest i avisos d'alertes
+const ALERTES_MANIFEST = '/dades/alertes/manifest.json';
+const ALERTES_AVISOS = '/dades/alertes/avisos.json';
+
+// Cache per no repetir la càrrega
+let cachedAlertes = null;
+
+const MIN_ALPHA = 30;
+const STEP_DEG = 0.012;
+const MAX_POINTS = 90;
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -108,13 +121,13 @@ async function getSamples(geojson) {
 }
 
 // ---------------------------------------------------------------------------
-// LECTURA DELS FRAMES (ara des de R2)
+// LECTURA DELS FRAMES
 // ---------------------------------------------------------------------------
 
 function loadImage(url) {
   return new Promise((res, rej) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';   // imprescindible per a CORS de R2
+    img.crossOrigin = 'anonymous';
     img.onload = () => res(img);
     img.onerror = () => rej(new Error("No s'ha pogut carregar " + url));
     img.src = url;
@@ -221,4 +234,88 @@ export function toFeatureCollection(items) {
       geometry: it.feature.geometry,
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// ALERTES AEMET PER CATALUNYA
+// ---------------------------------------------------------------------------
+
+/**
+ * Comprova si un bbox toca la regió de Catalunya.
+ * Retorna true si es superposen.
+ */
+function bboxTocaCatalunya(bbox) {
+  if (!bbox || bbox.length !== 4) return false;
+  const [w, s, e, n] = bbox;
+  const cat = CATALUNYA_BBOX;
+
+  // No es toquen si un està completament a l'esquerra/dreta/a sota/a sobre
+  if (e < cat.west) return false;
+  if (w > cat.east) return false;
+  if (n < cat.south) return false;
+  if (s > cat.north) return false;
+
+  return true;
+}
+
+/**
+ * Carrega les alertes AEMET i filtra les que afecten Catalunya.
+ * Retorna una llista d'objectes { zona, severity, rank, dies, detalls }.
+ */
+export async function getAlertesCatalunya() {
+  if (cachedAlertes) return cachedAlertes;
+
+  try {
+    const r = await fetch(`${ALERTES_AVISOS}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    if (!j || !Array.isArray(j.avisos)) throw new Error('avisos.json no vàlid');
+
+    const catalunya = j.avisos.filter((a) => bboxTocaCatalunya(a.bbox));
+    cachedAlertes = catalunya;
+    return catalunya;
+  } catch (e) {
+    console.warn('[alertes] no s\'han pogut carregar:', e.message);
+    cachedAlertes = [];
+    return cachedAlertes;
+  }
+}
+
+/**
+ * Retorna un resum de les alertes de Catalunya:
+ *   - total: número d'alertes
+ *   - per_severitat: { Minor: N, Moderate: N, Severe: N, Extreme: N }
+ *   - zones: llista de noms de zona amb la seva severitat
+ */
+export async function getResumAlertesCatalunya() {
+  const alertes = await getAlertesCatalunya();
+
+  const per_severitat = { Minor: 0, Moderate: 0, Severe: 0, Extreme: 0 };
+  const zones = [];
+
+  for (const a of alertes) {
+    if (per_severitat[a.severity] != null) {
+      per_severitat[a.severity] += 1;
+    }
+    zones.push({
+      zona: a.zona,
+      severity: a.severity,
+      rank: a.rank,
+      dies: a.dies || [],
+    });
+  }
+
+  // Ordenem per rank desc
+  zones.sort((a, b) => (b.rank || 0) - (a.rank || 0));
+
+  return {
+    total: alertes.length,
+    per_severitat,
+    zones,
+  };
+}
+
+/** Buidar la caché (útil si es refresca) */
+export function resetAlertesCatalunya() {
+  cachedAlertes = null;
 }

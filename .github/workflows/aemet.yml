@@ -1,0 +1,344 @@
+name: Descarga AEMET (estacions + alertes)
+
+on:
+  workflow_dispatch: {}
+  # Si vols execució periòrica, descomenta:
+  # schedule:
+  #   - cron: '*/30 * * * *'   # cada 30 min
+
+permissions:
+  contents: read
+
+# NOMÉS UN WORKFLOW ALHORA PER GRUP
+concurrency:
+  group: descarga-aemet
+  cancel-in-progress: false
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX_AEMET: dades_aemet/
+  R2_PREFIX_ALERTES: dades_alertes/
+  DADES_AEMET_DIR: public/dades/aemet
+  DADES_ALERTES_DIR: public/dades/alertes
+  R2_PUBLIC_BASE: https://radar-data.tempestes.cat
+
+jobs:
+
+  # ============================================================
+  # JOB 1: Estacions AEMET
+  # ============================================================
+  estacions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+
+      - name: Clonar repositori (sense submòduls)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+
+      - name: Inicialitzar submòdul privat
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          pip install --quiet requests numpy pillow
+          pip check || true
+
+      - name: Executar generar_estaciones.py
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: python -X faulthandler scripts-privats/generar_estaciones.py
+        continue-on-error: true
+
+      - name: Verificar sortida
+        id: verify
+        run: |
+          set -euo pipefail
+
+          if [ ! -d "$DADES_AEMET_DIR" ]; then
+            echo "AVIS: no existeix $DADES_AEMET_DIR"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ ! -s "$DADES_AEMET_DIR/estaciones_meta.js" ]; then
+            echo "ERROR: falta estaciones_meta.js"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "Fitxers a $DADES_AEMET_DIR:"
+          ls -la "$DADES_AEMET_DIR/"
+
+          echo "files_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Pujar artifact estacions
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-aemet
+          path: ${{ env.DADES_AEMET_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
+
+  # ============================================================
+  # JOB 2: Alertes AEMET (en paral·lel amb estacions)
+  # ============================================================
+  alertes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+
+      - name: Clonar repositori (sense submòduls)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+
+      - name: Inicialitzar submòdul privat
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          pip install --quiet requests numpy pillow
+          pip check || true
+
+      - name: Executar alertes.py
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: python -X faulthandler scripts-privats/alertes.py
+        continue-on-error: true
+
+      - name: Verificar sortida
+        id: verify
+        run: |
+          set -euo pipefail
+
+          if [ ! -d "$DADES_ALERTES_DIR" ]; then
+            echo "AVIS: no existeix $DADES_ALERTES_DIR"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ ! -s "$DADES_ALERTES_DIR/manifest.json" ]; then
+            echo "AVIS: no s'ha generat manifest.json"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ ! -s "$DADES_ALERTES_DIR/avisos.json" ]; then
+            echo "AVIS: no s'ha generat avisos.json"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          n=$(find "$DADES_ALERTES_DIR" -maxdepth 1 -name "*.png" | wc -l)
+          n=$((n))
+          echo "Alertes: $n PNGs"
+          ls -la "$DADES_ALERTES_DIR/"
+
+          if [ "$n" -eq 0 ]; then
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "files_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Pujar artifact alertes
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-alertes
+          path: ${{ env.DADES_ALERTES_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
+
+  # ============================================================
+  # JOB 3: Publicar a R2
+  # ============================================================
+  publicar:
+    needs: [estacions, alertes]
+    if: |
+      always() &&
+      (needs.estacions.outputs.files_ok == 'true' || needs.alertes.outputs.files_ok == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+
+      - name: Descarregar artifact estacions
+        if: needs.estacions.outputs.files_ok == 'true'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: dades-aemet
+          path: dades_aemet/
+
+      - name: Descarregar artifact alertes
+        if: needs.alertes.outputs.files_ok == 'true'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: dades-alertes
+          path: dades_alertes/
+
+      - name: Verificar què tenim
+        id: check
+        run: |
+          set -euo pipefail
+
+          echo "=== estacions ==="
+          ls -la dades_aemet/ || echo "no existeix"
+
+          ok_aemet=false
+          if [ -d "dades_aemet" ] && [ -s "dades_aemet/estaciones_meta.js" ]; then
+            ok_aemet=true
+            echo "  estacions: OK"
+          fi
+
+          echo "=== alertes ==="
+          ls -la dades_alertes/ || echo "no existeix"
+
+          ok_alertes=false
+          if [ -d "dades_alertes" ] && [ -s "dades_alertes/manifest.json" ]; then
+            ok_alertes=true
+            echo "  alertes: OK"
+          fi
+
+          echo "aemet_ok=$ok_aemet" >> "$GITHUB_OUTPUT"
+          echo "alertes_ok=$ok_alertes" >> "$GITHUB_OUTPUT"
+
+          if [ "$ok_aemet" != "true" ] && [ "$ok_alertes" != "true" ]; then
+            echo "::error::No hi ha res per publicar"
+            exit 1
+          fi
+
+      - name: Pujar a R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ env.R2_BUCKET }}
+          R2_PREFIX_AEMET: ${{ env.R2_PREFIX_AEMET }}
+          R2_PREFIX_ALERTES: ${{ env.R2_PREFIX_ALERTES }}
+        run: |
+          set -euo pipefail
+
+          upload_one() {
+            local f="$1"; local ct="$2"; local dest="$3"
+            local attempt=1
+            while [ "$attempt" -le 3 ]; do
+              echo "Pujant ($attempt/3): $dest"
+              if npx wrangler r2 object put "$dest" \
+                   --file="$f" --remote --content-type="$ct"; then
+                return 0
+              fi
+              attempt=$((attempt + 1))
+              sleep 3
+            done
+            return 1
+          }
+
+          fail_count=0
+
+          # ---- AEMET estacions ----
+          if [ -d "dades_aemet" ] && [ -s "dades_aemet/estaciones_meta.js" ]; then
+            echo "=== Pujant estacions AEMET ==="
+            cd dades_aemet
+            for f in *.js *.json; do
+              [ -f "$f" ] || continue
+              ct="application/json"
+              case "$f" in
+                *.js) ct="application/javascript" ;;
+              esac
+              upload_one "$f" "$ct" "${R2_BUCKET}/${R2_PREFIX_AEMET}$f" \
+                || fail_count=$((fail_count + 1))
+            done
+            cd - > /dev/null
+          fi
+
+          # ---- Alertes AEMET ----
+          if [ -d "dades_alertes" ] && [ -s "dades_alertes/manifest.json" ]; then
+            echo "=== Pujant alertes AEMET ==="
+            cd dades_alertes
+
+            # Neteja opcional
+            if [ -f .neteja ]; then
+              echo "→ esborrant prefix $R2_PREFIX_ALERTES"
+              npx wrangler r2 object delete --recursive \
+                "$R2_BUCKET/$R2_PREFIX_ALERTES" --remote || true
+              rm -f .neteja
+            fi
+
+            for f in *.png; do
+              [ -f "$f" ] || continue
+              upload_one "$f" "image/png" "${R2_BUCKET}/${R2_PREFIX_ALERTES}$f" \
+                || fail_count=$((fail_count + 1))
+            done
+
+            for f in *.json; do
+              [ -f "$f" ] || continue
+              upload_one "$f" "application/json" "${R2_BUCKET}/${R2_PREFIX_ALERTES}$f" \
+                || fail_count=$((fail_count + 1))
+            done
+
+            cd - > /dev/null
+          fi
+
+          if [ "$fail_count" -gt 0 ]; then
+            echo "::error::$fail_count fitxers no s'han pogut pujar"
+            exit 1
+          fi
+
+          echo "OK: dades AEMET pujades a R2."

@@ -11,6 +11,8 @@
   <link rel="preconnect" href="https://radar-data.tempestes.cat" crossorigin />
   <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
   <link rel="modulepreload" href="./js/radar.js" />
+  <link rel="modulepreload" href="./js/estacions.js" />
+  <link rel="modulepreload" href="./js/alertes.js" />
 
   <link href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script defer src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
@@ -492,7 +494,7 @@
     </div>
 
     <div class="right-slot">
-      <button id="avisBtn" class="icon-btn" title="Avisos de pluja" aria-label="Avisos de pluja">
+      <button id="avisBtn" class="icon-btn" title="Avisos" aria-label="Avisos">
         <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
         <span id="avisBadge" class="avis-badge"></span>
       </button>
@@ -544,6 +546,8 @@
       <label class="check"><input type="checkbox" id="chkComarques" checked /><span>Comarques</span></label>
       <label class="check"><input type="checkbox" id="chkMunicipis" checked /><span>Municipis</span></label>
       <label class="check"><input type="checkbox" id="chkCiutats" checked /><span>Ciutats i pobles</span></label>
+      <label class="check"><input type="checkbox" id="chkEstacions" /><span>Estacions AEMET</span></label>
+      <label class="check"><input type="checkbox" id="chkAlertes" checked /><span>Alertes AEMET</span></label>
       <label class="check">
         <input type="checkbox" id="chkAvisos" checked />
         <span>Avisos de pluja</span>
@@ -592,8 +596,9 @@
       <div class="info-text" style="line-height:1.6">
         Dades radar: <b>OPERA</b> (EUMETNET) i <b>Météo-France</b>.
         Productes <i>CIRRUS</i> (dBZ) i <i>NIMBUS</i> (mm/h).
+        Estacions i alertes: <b>AEMET</b> (OpenData).
         Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/" target="_blank" rel="noopener">eumetnet.eu/opera</a>.
-        Ús autoritzat segons els termes d'EUMETNET.
+        Ús autoritzat segons els termes d'EUMETNET i AEMET.
       </div>
     </div>
   </aside>
@@ -649,9 +654,9 @@
     </div>
   </div>
 
-  <!-- Avisos de pluja per municipi -->
-  <div id="avisPanel" class="avis-panel" role="dialog" aria-label="Avisos de pluja">
-    <div class="avis-head"><h3 id="avisTitle">Avisos de pluja · ara mateix</h3><button id="avisX" class="avis-x" aria-label="Tancar">&times;</button></div>
+  <!-- Panell d'avisos i alertes -->
+  <div id="avisPanel" class="avis-panel" role="dialog" aria-label="Avisos">
+    <div class="avis-head"><h3 id="avisTitle">Avisos · ara mateix</h3><button id="avisX" class="avis-x" aria-label="Tancar">&times;</button></div>
     <div id="avisMeta" class="avis-meta"></div>
     <div id="avisChips" class="avis-chips"></div>
     <div id="avisMsg" class="avis-msg"></div>
@@ -677,10 +682,15 @@
   <script type="module">
     import radar from './js/radar.js';
     import { initValor } from './dades/valor.js';
-    import { computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN } from './js/avisos.js';
+    import {
+      computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN,
+      getResumAlertesCatalunya,
+    } from './js/avisos.js';
     import { loadManifest, periodsFromManifest } from './dades/acumulacions.js';
     import { SCALES, regioCoordinates } from './dades/escales.js';
     import { initAutoReload } from './dades/autoreload.js';
+    import { initEstacions } from './js/estacions.js';
+    import { initAlertes } from './js/alertes.js';
 
     // ------------------------------------------------------------------
     // Utilitats
@@ -736,7 +746,6 @@
     let lockPrompted = false;
     let appReady = false;
 
-    // Accés
     const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
     const ACCESS = {
       anon:         { minutes: 25,       name: 'Sense sessió', window: '25 minuts' },
@@ -766,6 +775,9 @@
     let avisLatest = null;
     let avisFilter = 0;
 
+    // Alertes AEMET (Catalunya)
+    let alertesCatalunya = null;
+
     // Auto-reload
     let stopAutoReload = null;
 
@@ -791,6 +803,22 @@
         }
       }
     }
+
+    // ------------------------------------------------------------------
+    // Estacions AEMET (desactivades per defecte)
+    // ------------------------------------------------------------------
+    const estacions = initEstacions({
+      map,
+      visible: false,
+    });
+
+    // ------------------------------------------------------------------
+    // Alertes AEMET
+    // ------------------------------------------------------------------
+    const alertes = initAlertes({
+      map,
+      visible: true,
+    });
 
     // ------------------------------------------------------------------
     // DOM
@@ -871,6 +899,11 @@
         await radar.reapplyLayers();
         if (activeKey === 'acum' && acumPeriods.length) showAcumOnMap(acumPeriod);
         applyAvisosVisibility();
+        // Reafegir estacions i alertes
+        await estacions.start().catch((e) => console.warn('[estacions]', e));
+        await alertes.start().catch((e) => console.warn('[alertes]', e));
+        $('chkEstacions').checked = estacions.isVisible();
+        $('chkAlertes').checked = alertes.isVisible();
       });
     }
     themeClarBtn.addEventListener('click', () => applyTheme('clar'));
@@ -1162,6 +1195,8 @@
     $('chkMunicipis').addEventListener('change', (e) => radar.setMunicipisVisibility(e.target.checked));
     $('chkRelleu').addEventListener('change', (e) => radar.setReliefVisibility(e.target.checked));
     $('chkCiutats').addEventListener('change', (e) => radar.setCiutatsVisibility(e.target.checked));
+    $('chkEstacions').addEventListener('change', (e) => estacions.setVisible(e.target.checked));
+    $('chkAlertes').addEventListener('change', (e) => alertes.setVisible(e.target.checked));
     $('densitySelect').addEventListener('change', (e) => radar.setDensity(e.target.value));
     $('densitySelect').value = radar.getDensity();
 
@@ -1185,7 +1220,7 @@
 
     function setAutoReload(on) {
       if (on) {
-        if (stopAutoReload) return;   // ja actiu
+        if (stopAutoReload) return;
         stopAutoReload = initAutoReload({
           intervalMs: 60000,
           countdownS: 10,
@@ -1203,12 +1238,9 @@
 
     chkAutoReload.addEventListener('change', (e) => setAutoReload(e.target.checked));
 
-    // Activat per defecte. Es pot desactivar amb ?autoreload=0
-    // o desmarcant la casella "Mode directe" al menú lateral.
     const arParam = new URLSearchParams(location.search).get('autoreload');
-    const arDefault = arParam !== '0';   // per defecte ON; ?autoreload=0 per apagar
+    const arDefault = arParam !== '0';
     if (arDefault) {
-      // Esperem que el radar estigui llest per no barrejar càrregues
       setTimeout(() => setAutoReload(true), 2000);
     }
 
@@ -1475,7 +1507,7 @@
     }
 
     // ------------------------------------------------------------------
-    // Avisos de pluja
+    // Avisos de pluja + alertes AEMET
     // ------------------------------------------------------------------
     const avisBtn = $('avisBtn'), avisBadge = $('avisBadge'), avisPanel = $('avisPanel');
     const avisList = $('avisList'), avisMsg = $('avisMsg'), avisMeta = $('avisMeta');
@@ -1527,9 +1559,27 @@
     });
 
     function openAvis() {
-      avisTitle.textContent = avisAccessLevel() === 'basic'
-        ? 'Top 3 comarques amb pluja · ara mateix'
-        : 'Avisos de pluja · ara mateix';
+      // Actualitzem el títol i afegim el resum d'alertes AEMET
+      const lvl = avisAccessLevel();
+      let titol = lvl === 'basic' ? 'Top 3 comarques amb pluja · ara mateix' : 'Avisos · ara mateix';
+
+      // Resum alertes Catalunya
+      let resumHtml = '';
+      if (alertesCatalunya && alertesCatalunya.total > 0) {
+        const sev = alertesCatalunya.per_severitat;
+        const parts = [];
+        if (sev.Minor) parts.push(`${sev.Minor} groc${sev.Minor > 1 ? 's' : ''}`);
+        if (sev.Moderate) parts.push(`${sev.Moderate} taronja${sev.Moderate > 1 ? 's' : ''}`);
+        if (sev.Severe) parts.push(`${sev.Severe} vermell${sev.Severe > 1 ? 's' : ''}`);
+        if (sev.Extreme) parts.push(`${sev.Extreme} extrem${sev.Extreme > 1 ? 's' : ''}`);
+        resumHtml = `<div class="avis-meta" style="color:#fb923c">⚠ Alertes AEMET a Catalunya: ${parts.join(' · ')}</div>`;
+      }
+
+      avisTitle.textContent = titol;
+      if (resumHtml) {
+        avisMeta.innerHTML = resumHtml;
+      }
+
       avisPanel.classList.add('open');
     }
     function closeAvis() { avisPanel.classList.remove('open'); }
@@ -1538,8 +1588,8 @@
     avisBtn.addEventListener('click', () => {
       if (avisAccessLevel() === 'none') {
         openUpsell('free', {
-          title: 'Avisos de pluja',
-          text: 'Inicia sessió gratis per veure les 3 comarques amb més pluja ara mateix. Amb el pla Entusiasta desbloqueges la llista completa per municipi.',
+          title: 'Avisos',
+          text: 'Inicia sessió gratis per veure les alertes i avisos.',
         });
         return;
       }
@@ -1550,13 +1600,25 @@
       const lvl = avisAccessLevel();
       avisBtn.classList.toggle('locked', lvl === 'none');
       avisBtn.title = lvl === 'none'
-        ? 'Avisos de pluja (inicia sessió)'
-        : lvl === 'basic' ? 'Avisos de pluja · Top 3 comarques' : 'Avisos de pluja per municipi';
+        ? 'Avisos (inicia sessió)'
+        : lvl === 'basic' ? 'Avisos · Top 3 comarques' : 'Avisos per municipi';
 
-      if (lvl !== 'none' && avisItems.length) {
-        const top = Math.max(...avisItems.map((i) => i.level));
-        avisBadge.textContent = avisItems.length > 99 ? '99+' : avisItems.length;
-        avisBadge.style.background = levelInfo(top).color;
+      // Prioritat: alertes AEMET per sobre d'avisos de pluja
+      const teAlertes = alertesCatalunya && alertesCatalunya.total > 0;
+      const teAvisos = avisItems.length > 0;
+
+      if (teAlertes || (lvl !== 'none' && teAvisos)) {
+        const num = (teAlertes ? alertesCatalunya.total : 0) + (teAvisos ? avisItems.length : 0);
+        avisBadge.textContent = num > 99 ? '99+' : num;
+        // Color segons la severitat màxima d'alertes
+        if (teAlertes) {
+          const maxSev = alertesCatalunya.zones[0]?.severity;
+          const colors = { Minor: '#facc15', Moderate: '#fb923c', Severe: '#ef4444', Extreme: '#c2185b' };
+          avisBadge.style.background = colors[maxSev] || '#facc15';
+        } else {
+          const top = Math.max(...avisItems.map((i) => i.level));
+          avisBadge.style.background = levelInfo(top).color;
+        }
         avisBadge.classList.add('on');
       } else {
         avisBadge.classList.remove('on');
@@ -1574,9 +1636,33 @@
       if (avisLatest) {
         const edat = Math.round((Date.now() - avisLatest.getTime()) / 60000);
         avisMeta.textContent = `Radar de les ${hourFmt.format(avisLatest)}${edat > 20 ? ` (fa ${edat} min)` : ''} · estimació, pot diferir de la pluja real.`;
-      } else {
-        avisMeta.textContent = '';
       }
+
+      // Si tenim alertes AEMET, les mostrem primer
+      if (alertesCatalunya && alertesCatalunya.total > 0) {
+        const alertesHtml = alertesCatalunya.zones.slice(0, 10).map((z) => {
+          const colors = { Minor: '#facc15', Moderate: '#fb923c', Severe: '#ef4444', Extreme: '#c2185b' };
+          const names = { Minor: 'Groc', Moderate: 'Taronja', Severe: 'Vermell', Extreme: 'Extrem' };
+          return `<button class="avis-item" disabled>
+            <span class="avis-dot" style="background:${colors[z.severity] || '#facc15'}"></span>
+            <span class="avis-txt">
+              <span class="avis-name">${escapeHtml(z.zona)}</span>
+              <span class="avis-sub">${escapeHtml(names[z.severity] || z.severity)}</span>
+            </span>
+            <span class="avis-val">⚠<small>AEMET</small></span>
+          </button>`;
+        }).join('');
+
+        const alertHeader = `<div style="padding:10px 14px 6px;font-size:11px;color:#fb923c;font-weight:600;letter-spacing:.3px">ALERTES AEMET · CATALUNYA (${alertesCatalunya.total})</div>`;
+        avisList.innerHTML = alertHeader + alertesHtml;
+
+        if (alertesCatalunya.total > 10) {
+          avisList.innerHTML += `<div class="avis-more">I ${alertesCatalunya.total - 10} zones més amb alerta.</div>`;
+        }
+
+        avisList.innerHTML += `<div style="padding:10px 14px 6px;font-size:11px;color:#7f94b4;font-weight:600;letter-spacing:.3px">AVISOS DE PLUJA</div>`;
+      }
+
       if (message) { $('avisChips').innerHTML = ''; return; }
 
       if (lvl === 'basic') {
@@ -1595,12 +1681,11 @@
         const top = [...byComarca.values()].sort((a, b) => b.max - a.max).slice(0, 3);
 
         if (top.length === 0) {
-          avisMsg.style.display = 'block';
-          avisMsg.textContent = 'Cap comarca amb pluja intensa ara mateix.';
+          avisList.innerHTML += `<div class="avis-msg" style="display:block">Cap comarca amb pluja intensa ara mateix.</div>`;
           return;
         }
 
-        avisList.innerHTML = top.map((it) => {
+        const plujaHtml = top.map((it) => {
           const l = levelInfo(it.level);
           return `<button class="avis-item" disabled>
             <span class="avis-dot" style="background:${l.color}"></span>
@@ -1611,26 +1696,11 @@
             <span class="avis-val">${Math.round(it.max)}<small>mm/h</small></span>
           </button>`;
         }).join('');
-
-        const restants = Math.max(0, byComarca.size - top.length);
-        const more = document.createElement('div');
-        more.className = 'avis-more';
-        more.innerHTML = restants > 0
-          ? `I ${restants} comarca${restants > 1 ? 'es' : ''} més amb pluja.<br><a href="#" id="avisUpgrade">Fes-te Entusiasta →</a>`
-          : `Vols veure més informació exacte?<br><a href="#" id="avisUpgrade">Fes-te Entusiasta →</a>`;
-        avisList.appendChild(more);
-
-        const up = $('avisUpgrade');
-        if (up) up.addEventListener('click', (e) => {
-          e.preventDefault();
-          openUpsell('entusiasta', {
-            title: 'Avisos complets per municipi',
-            text: 'Amb el pla Entusiasta veuràs la llista completa de municipis amb pluja intensa, amb filtres per nivell i el valor exacte de cada un.',
-          });
-        });
+        avisList.innerHTML += plujaHtml;
         return;
       }
 
+      // Nivell complet
       const counts = {};
       avisItems.forEach((it) => { counts[it.level] = (counts[it.level] || 0) + 1; });
       $('avisChips').innerHTML =
@@ -1638,7 +1708,7 @@
         LEVELS.filter((l) => counts[l.id]).map((l) =>
           `<button class="avis-chip${avisFilter === l.id ? ' active' : ''}" data-l="${l.id}"><i style="background:${l.color}"></i>${l.name.replace('Pluja ', '')} (${counts[l.id]})</button>`).join('');
 
-      avisList.innerHTML = avisItems.map((it, i) => ({ it, i }))
+      const plujaHtml = avisItems.map((it, i) => ({ it, i }))
         .filter(({ it }) => !avisFilter || it.level === avisFilter)
         .map(({ it, i }) => {
           const l = levelInfo(it.level);
@@ -1649,6 +1719,7 @@
             <span class="avis-val">${Math.round(it.max)}<small>mm/h</small></span>
           </button>`;
         }).join('');
+      avisList.innerHTML += plujaHtml;
     }
 
     $('avisChips').addEventListener('click', (e) => {
@@ -1675,7 +1746,18 @@
     }
 
     async function refreshAvisos() {
+      // Carreguem les alertes AEMET de Catalunya
+      try {
+        alertesCatalunya = await getResumAlertesCatalunya();
+        if (alertesCatalunya.total > 0) {
+          console.log(`[alertes] ${alertesCatalunya.total} alertes a Catalunya`);
+        }
+      } catch (e) {
+        console.warn('[alertes]', e);
+      }
+
       paintAvisBtn();
+
       if (!hasAvisos()) { clearAvisos(); return; }
       if (avisBusy) return;
 
@@ -1739,6 +1821,9 @@
     map.once('style.load', async () => {
       setLoad(35, 'Carregant el radar…');
       hideBaseLabels();
+
+      // Alertes AEMET (en paral·lel)
+      alertes.start().catch((e) => console.warn('[alertes]', e));
 
       try {
         await radar.initRadar(map);
