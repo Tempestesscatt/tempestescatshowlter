@@ -4,8 +4,17 @@ const PREFIXES = {
   'dades_radar_acumulacions/': 26 * 3600 * 1000,
 };
 
-// Només aquestes carpetes es poden esborrar amb la URL
-const BORRABLES = ['radar/', 'dades_radar/', 'dades_rad/'];
+// Totes les carpetes que existeixen al bucket i es poden esborrar per URL
+const BORRABLES = [
+  'radar/',
+  'dades_rad/',
+  'dades_radar/',
+  'dades_radar_dbz/',
+  'dades_radar_nimbus/',
+  'dades_radar_acumulacions/',
+  'dades_sat/',
+  'dades_sfc/',
+];
 
 async function purge(env) {
   let esborrats = 0;
