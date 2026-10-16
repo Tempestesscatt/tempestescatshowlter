@@ -68,8 +68,16 @@ const CITY_TEXT_SIZE = [
   16, ['step', ['get', 'poblacio'], 12, 2000,   13, 20000,   15, 100000,  18, 500000, 22],
 ];
 
-const RADAR_BASE_DBZ    = 'https://radar-data.tempestes.cat/dades_radar_dbz';
-const RADAR_BASE_NIMBUS = 'https://radar-data.tempestes.cat/dades_radar_nimbus';
+// ===========================================================================
+// URLs DE R2
+// ===========================================================================
+// Totes les dades de radar, acumulacions i alertes vénen de R2.
+// Les dades d'AEMET (estacions, alertes CAP) viuen a estacions.js i alertes.js.
+
+const R2_BASE = 'https://radar-data.tempestes.cat';
+
+const RADAR_BASE_DBZ    = `${R2_BASE}/dades_radar_dbz`;
+const RADAR_BASE_NIMBUS = `${R2_BASE}/dades_radar_nimbus`;
 
 const RADAR = {
   dbz: {
@@ -136,16 +144,16 @@ for (const key of Object.keys(RADAR)) {
     timestamps: [],
     currentIndex: 0,
     minIndex: 0,
-    initialized: false,   // dades llestes (manifest llegit)
+    initialized: false,
     visible: RADAR[key].visible,
     opacity: RADAR[key].opacity,
     applied: null,
     wanted: null,
     applyScheduled: false,
     loaded: 0,
-    manifestSig: null,    // signatura del darrer manifest aplicat
-    minTime: null,        // timestamp (ms) del primer frame permès pel pla
-    orphans: [],          // frames retirats del manifest pendents d'alliberar
+    manifestSig: null,
+    minTime: null,
+    orphans: [],
     syncing: false,
   };
 }
@@ -155,9 +163,9 @@ for (const key of Object.keys(RADAR)) {
 // prio 0 = urgent, 1 = capa visible, 2 = capa amagada
 // ---------------------------------------------------------------------------
 
-const blobCache = new Map();   // url original -> blob URL
+const blobCache = new Map();
 const failed = new Set();
-const frameMeta = new Map();   // url original -> { key, index }
+const frameMeta = new Map();
 const queued = new Map();
 const inflight = new Map();
 const queue = [];
@@ -242,7 +250,6 @@ function pump() {
   }
 }
 
-/** Demana un frame. Retorna una promesa amb el blob URL. */
 function requestFrame(url, prio) {
   if (blobCache.has(url)) return Promise.resolve(blobCache.get(url));
 
@@ -262,7 +269,6 @@ function requestFrame(url, prio) {
   return entry.promise;
 }
 
-/** Encua els frames desbloquejats d'una capa, del més recent al més antic. */
 function enqueueLayer(key) {
   const st = state.layers[key];
   if (!st) return;
@@ -283,7 +289,7 @@ function reprioritize() {
 }
 
 // ---------------------------------------------------------------------------
-// RADAR: manifest + preparació (arrenca en importar el mòdul)
+// RADAR: manifest + preparació
 // ---------------------------------------------------------------------------
 
 async function fetchManifest(cfg) {
@@ -308,7 +314,6 @@ function parseTs(ts) {
 const listeners = new Set();
 let bootDone = false;
 
-/** Avisa quan una capa rep frames nous (o retira els antics). Retorna la funció per desubscriure's. */
 export function onLayerUpdate(cb) {
   listeners.add(cb);
   return () => listeners.delete(cb);
@@ -320,7 +325,6 @@ function notify(key) {
   }
 }
 
-/** Un frame ha sortit del manifest: el seu blob s'allibera (si no és el que es veu ara). */
 function releaseFrame(url, st) {
   failed.delete(url);
   if (blobCache.has(url)) st.orphans.push(url);
@@ -354,14 +358,13 @@ async function doSync(key, initial) {
   const timestamps = [];
   for (const item of manifest.frames) {
     if (!item || !item.f) continue;
-    // El nom del fitxer ja és únic per frame: no cal cap paràmetre de versió
     frames.push(`${cfg.basePath}/${item.f}${ext}`);
     timestamps.push(parseTs(item.t));
   }
   if (frames.length === 0) return false;
 
   const first = !st.initialized;
-  const late = first && bootDone && !!state.map;     // primera càrrega correcta després d'un error inicial
+  const late = first && bootDone && !!state.map;
   const oldFrames = st.frames;
   const prevUrl = oldFrames[st.currentIndex];
   const wasLive = first || st.currentIndex >= oldFrames.length - 1;
@@ -379,7 +382,6 @@ async function doSync(key, initial) {
   if (idx < 0) idx = frames.length - 1;
   st.currentIndex = idx;
 
-  // El límit del pla es manté per temps, no per posició (els índexos es desplacen en podar)
   if (st.minTime != null) {
     const k = timestamps.findIndex((d) => d && d.getTime() >= st.minTime);
     st.minIndex = k < 0 ? 0 : k;
@@ -393,7 +395,6 @@ async function doSync(key, initial) {
   st.loaded = frames.reduce((n, u) => n + (blobCache.has(u) ? 1 : 0), 0);
 
   if (first) {
-    // El més recent, urgent; després els últims frames
     requestFrame(frames[st.currentIndex], 0);
     const prio = layerPrio(key);
     for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
@@ -408,7 +409,6 @@ async function doSync(key, initial) {
     return true;
   }
 
-  // Refresc: es mostra el frame actual i es baixen els nous
   const url = frames[st.currentIndex];
   st.wanted = url;
   requestFrame(url, 0).then(() => { if (st.wanted === url) scheduleApply(key); }).catch(noop);
@@ -443,7 +443,7 @@ function startRefresh() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) run(); });
 }
 
-// Arrenca ara mateix, sense esperar el mapa
+// Arrenca en importar el mòdul
 const prepared = {};
 for (const key of Object.keys(RADAR)) {
   prepared[key] = syncLayer(key, true).catch((e) => {
@@ -488,7 +488,6 @@ async function fetchGunzip(url) {
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const buf = new Uint8Array(await r.arrayBuffer());
   const isGzip = buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b;
-  // Si el servidor ja l'ha descomprimit (Content-Encoding: gzip), és text pla
   if (!isGzip) return new TextDecoder('utf-8').decode(buf);
   const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Response(stream).text();
@@ -795,7 +794,6 @@ function applyWanted(key) {
   }
 }
 
-/** L'índex es mou a l'instant; la imatge s'aplica quan el frame és a memòria. */
 function showFrame(key, index) {
   const st = state.layers[key];
   if (!st.initialized || index < 0 || index >= st.frames.length) return;
@@ -820,7 +818,6 @@ function showFrame(key, index) {
 
 let intervalId = 0;
 
-/** Següent frame que ja és a memòria (salta els que encara no han arribat). */
 function nextReadyIndex(st) {
   const n = st.frames.length;
   const span = n - st.minIndex;
@@ -865,13 +862,11 @@ function attachErrorHandler(map) {
   map.on('error', (e) => {
     const err = e && e.error;
     const msg = (err && err.message) || '';
-    // Les cancel·lacions d'imatges en canviar ràpid de frame són normals
     if ((err && err.name === 'AbortError') || /abort/i.test(msg)) return;
     console.warn('[map]', msg || e);
   });
 }
 
-/** Capes secundàries: en segon pla, quan el navegador estigui lliure. */
 function loadExtras(map) {
   const run = async () => {
     try {
@@ -889,7 +884,6 @@ function loadExtras(map) {
   else setTimeout(run, 50);
 }
 
-/** Només espera el radar. Tota la resta carrega en segon pla. */
 export async function initRadar(map) {
   state.map = map;
   attachErrorHandler(map);
@@ -914,7 +908,6 @@ export async function initRadar(map) {
   return results.some(Boolean);
 }
 
-/** Després d'un canvi d'estil base. Les parts ràpides primer. */
 export async function reapplyLayers() {
   const map = state.map;
   if (!map) return;
@@ -926,7 +919,6 @@ export async function reapplyLayers() {
   await Promise.all([addRelief(map), addComarques(map)]);
   orderLayers(map);
 
-  // Municipis: en segon pla, no bloqueja
   addMunicipis(map).then(() => orderLayers(map)).catch(noop);
 }
 
@@ -967,7 +959,6 @@ export function setComarquesVisibility(visible) {
   if (map && map.getLayer(COMARQUES_LINE)) map.setLayoutProperty(COMARQUES_LINE, 'visibility', vis(visible));
 }
 
-/** Frames anteriors a `idx` bloquejats pel pla. Els desbloquejats es baixen. */
 export function setMinIndex(key, idx) {
   const st = state.layers[key];
   if (!st) return;

@@ -2,19 +2,25 @@
 // -----------------------------------------------------------------------------
 // Estacions meteorològiques d'AEMET sobre el mapa.
 //
-// Cada estació es mostra com una etiqueta amb "T/Td" (ex: 18/10).
-// Color de fons segons la temperatura.
-// Papallugues: LCL baix, spread saturat, o convergència.
+// Carrega les dades des de R2:
+//   https://radar-data.tempestes.cat/dades_aemet/estaciones_meta.js
 //
-// Simple i net.
+// Marcador: punt minimalista, mida progressiva segons el zoom.
+// Papallugues: LCL baix, spread saturat, o convergència.
 // -----------------------------------------------------------------------------
 
-const DATA_URL = '/dades/aemet/estaciones_meta.js';
+// ---------------------------------------------------------------------------
+// CONFIGURACIÓ
+// ---------------------------------------------------------------------------
+
+const R2_BASE_AEMET = 'https://radar-data.tempestes.cat/dades_aemet';
+const DATA_URL = `${R2_BASE_AEMET}/estaciones_meta.js`;
 
 const SRC = 'estacions-src';
 const LAYER_PULSE = 'estacions-pulse';
 const LAYER_LABEL = 'estacions-label';
 
+// Trams de zoom: com més t'apropes, més estacions es mostren.
 const ZOOM_TIERS = [
   { z: 0,  score: 4.5 },
   { z: 6,  score: 4.0 },
@@ -25,7 +31,7 @@ const ZOOM_TIERS = [
   { z: 11, score: 0.1 },
 ];
 
-// Colors per temperatura (fons de l'etiqueta)
+// Colors per temperatura (°C)
 const TEMP_COLORS = [
   [-15, '#6366f1'],
   [-10, '#60a5fa'],
@@ -42,6 +48,7 @@ const TEMP_COLORS = [
   [ 45, '#b91c1c'],
 ];
 
+// Llindars papallona
 const PAP_LCL_MAX_M = 1000;
 const PAP_SPREAD_MAX_C = 3;
 const PAP_CONVERGENCIA_MIN = 0.5;
@@ -59,7 +66,6 @@ function tempColor(ta) {
   return c;
 }
 
-/** Color del text (fosc o clar) segons la lluminositat del fons. */
 function textColorFor(hex) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -165,12 +171,10 @@ function toGeoJSON(data) {
     const papLcl = (lcl != null && lcl <= PAP_LCL_MAX_M) ? 1 : 0;
     const papSpread = (spread != null && spread <= PAP_SPREAD_MAX_C) ? 1 : 0;
 
-    // Text de l'etiqueta: "18/10"
     const labelText = (e.ta != null || e.tpr != null)
       ? `${e.ta != null ? Math.round(e.ta) : '?'}/${e.tpr != null ? Math.round(e.tpr) : '?'}`
       : '?';
 
-    // Colors
     const bg = tempColor(e.ta);
     const fg = textColorFor(bg);
 
@@ -305,7 +309,7 @@ function popupHtml(p) {
 }
 
 // ---------------------------------------------------------------------------
-// ESTILS POPUP + ETIQUETES
+// ESTILS
 // ---------------------------------------------------------------------------
 
 function injectPopupStyles() {
@@ -476,7 +480,6 @@ export function initEstacions({ map, visible = true } = {}) {
 
     map.addSource(SRC, { type: 'geojson', data: geojson, generateId: false });
 
-    // Halo pulsant per a les papallones
     map.addLayer({
       id: LAYER_PULSE,
       type: 'circle',
@@ -491,7 +494,6 @@ export function initEstacions({ map, visible = true } = {}) {
       },
     });
 
-    // Etiqueta "T/Td" amb fons de color
     map.addLayer({
       id: LAYER_LABEL,
       type: 'symbol',

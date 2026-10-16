@@ -2,9 +2,10 @@
 // -----------------------------------------------------------------------------
 // Alertes meteorològiques d'AEMET sobre el mapa.
 //
-// Carrega:
-//   - /dades/alertes/manifest.json   → info del PNG únic
-//   - /dades/alertes/avisos.json     → detall de cada zona
+// Carrega les dades des de R2:
+//   https://radar-data.tempestes.cat/dades_alertes/manifest.json
+//   https://radar-data.tempestes.cat/dades_alertes/avisos.json
+//   https://radar-data.tempestes.cat/dades_alertes/alertes.png
 //
 // Un sol PNG amb totes les zones pintades amb el color de la seva
 // severitat MÀXIMA (de tots els dies).
@@ -17,8 +18,9 @@
 // CONFIGURACIÓ
 // ---------------------------------------------------------------------------
 
-const MANIFEST_URL = '/dades/alertes/manifest.json';
-const AVISOS_URL = '/dades/alertes/avisos.json';
+const R2_BASE_ALERTES = 'https://radar-data.tempestes.cat/dades_alertes';
+const MANIFEST_URL = `${R2_BASE_ALERTES}/manifest.json`;
+const AVISOS_URL = `${R2_BASE_ALERTES}/avisos.json`;
 const LAYER_ID = 'alertes-layer';
 const SOURCE_ID = 'alertes-src';
 
@@ -40,7 +42,7 @@ probe.width = probe.height = 1;
 const pctx = probe.getContext('2d', { willReadFrequently: true });
 pctx.imageSmoothingEnabled = false;
 
-let alertesImg = null;   // HTMLImageElement del PNG
+let alertesImg = null;
 
 function loadImage(url) {
   return new Promise((resolve, reject) => {
@@ -71,7 +73,6 @@ function readPixel(img, u, v) {
   return { r: d[0], g: d[1], b: d[2], a: d[3] };
 }
 
-/** Retorna la severitat que correspon a un color, o null. */
 function severitatDelColor(px) {
   for (const sev of SEVERITY_PRIORITY) {
     const expected = SEVERITY_LABELS[sev]?.color;
@@ -83,7 +84,6 @@ function severitatDelColor(px) {
     const dist = Math.sqrt(dr * dr + dg * dg + db * db);
     if (dist < 80) return sev;
   }
-  // Si el píxel és blanc (ratlla), no podem saber la severitat pel color
   return null;
 }
 
@@ -181,17 +181,16 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
   function addLayer() {
     if (map.getSource(SOURCE_ID)) {
       map.getSource(SOURCE_ID).updateImage({
-        url: `/dades/alertes/${manifest.png}?t=${Date.now()}`,
+        url: `${R2_BASE_ALERTES}/${manifest.png}?t=${Date.now()}`,
         coordinates: manifest.coords,
       });
-      // Assegurem que quedi a sota
       ensureBelowRadar();
       return;
     }
 
     map.addSource(SOURCE_ID, {
       type: 'image',
-      url: `/dades/alertes/${manifest.png}`,
+      url: `${R2_BASE_ALERTES}/${manifest.png}`,
       coordinates: manifest.coords,
     });
 
@@ -207,7 +206,6 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
       },
     });
 
-    // Movem la capa perquè quedi per sota del radar
     ensureBelowRadar();
   }
 
@@ -215,19 +213,17 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
   function ensureBelowRadar() {
     if (!map.getLayer(LAYER_ID)) return;
 
-    // Busquem la primera capa del radar (relleu, radar, acumulacions, etc.)
     const capesSobre = [
-      'relief-layer',        // relleu
-      'acum-layer',          // acumulacions
-      'radar-layer-dbz',     // radar dBZ
-      'radar-layer-lluvia',  // radar NIMBUS
-      'avisos-fill',         // avisos de pluja
+      'relief-layer',
+      'acum-layer',
+      'radar-layer-dbz',
+      'radar-layer-lluvia',
+      'avisos-fill',
       'avisos-line',
       'municipis-line',
       'comarques-line',
     ];
 
-    // Busquem la primera capa que existeixi i moguem les alertes a sota seu
     for (const id of capesSobre) {
       if (map.getLayer(id)) {
         try {
@@ -238,12 +234,10 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
         return;
       }
     }
-
-    // Si no hi ha cap capa del radar encara, la deixem al fons
-    // (quan el radar es carregui, quedarà per sobre automàticament)
   }
+
   // ---------------------------------------------------------------------------
-  // DETECCIÓ D'AVÍS SOTA EL CURSOR
+  // DETECCIÓ D'AVÍS
   // ---------------------------------------------------------------------------
   function avisSotaPunt(lngLat) {
     if (!manifest) return null;
@@ -256,10 +250,8 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
     if (!px) return null;
     if (px.a < 20) return null;
 
-    // Severitat detectada pel color
     let sev = severitatDelColor(px);
 
-    // Si és blanc (ratlla) o no detectem color, mirem els avisos per bbox
     if (!sev) {
       const isWhite = px.r > 230 && px.g > 230 && px.b > 230;
       if (isWhite) {
@@ -268,7 +260,6 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
       }
     }
 
-    // Busquem la zona que cobreix aquest punt
     const zona = zonaPerBbox(lngLat, sev);
     if (!zona) return { severity: sev || 'Minor', zona: null };
 
@@ -278,7 +269,6 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
     };
   }
 
-  /** Retorna la zona (de avisos.json) que cobreix aquest punt, opcionalment filtrant per severitat. */
   function zonaPerBbox(lngLat, severityFilter = null) {
     if (!avisosDetall || !avisosDetall.avisos) return null;
 
@@ -291,7 +281,6 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
     const dins = candidats.filter((a) => puntDinsBbox(lngLat.lng, lngLat.lat, a.bbox));
     if (dins.length === 0) return null;
 
-    // Si n'hi ha més d'un, prioritzem el de més rank
     dins.sort((a, b) => (b.rank || 0) - (a.rank || 0));
     return dins[0];
   }
@@ -312,7 +301,6 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
       diesHtml = `<div class="al-dies"><span class="al-dies-lbl">Dies:</span> ${zona.dies.map((d) => `<span class="al-dia">${escapeHtml(d)}</span>`).join('')}</div>`;
     }
 
-    // Detalls per dia
     let detallsHtml = '';
     if (zona.detalls && zona.detalls.length > 0) {
       detallsHtml = zona.detalls.slice(0, 5).map((d) => {
@@ -342,7 +330,7 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
   }
 
   // ---------------------------------------------------------------------------
-  // ESDEVENIMENTS AL MAPA
+  // ESDEVENIMENTS
   // ---------------------------------------------------------------------------
   let lastMove = 0;
 
@@ -502,9 +490,8 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
         manifest = await loadManifest();
         avisosDetall = await loadAvisos();
 
-        // Carreguem el PNG per lectura de píxels
         try {
-          alertesImg = await loadImage(`/dades/alertes/${manifest.png}?t=${Date.now()}`);
+          alertesImg = await loadImage(`${R2_BASE_ALERTES}/${manifest.png}?t=${Date.now()}`);
         } catch (e) {
           console.warn('[alertes] no s\'ha pogut carregar el PNG:', e.message);
         }
@@ -513,6 +500,10 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
 
         addLayer();
         attachEvents();
+
+        setTimeout(() => ensureBelowRadar(), 500);
+        setTimeout(() => ensureBelowRadar(), 2000);
+        setTimeout(() => ensureBelowRadar(), 5000);
 
       } catch (e) {
         console.warn('[alertes]', e.message);
