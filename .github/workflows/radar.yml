@@ -71,7 +71,7 @@ jobs:
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           R2_PREFIX: ${{ env.R2_PREFIX }}
           R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
-          RADAR_FINESTRA_HORES: '26'                                 # 👈 opcional
+          RADAR_FINESTRA_HORES: '24'                                 # 👈 opcional
           RADAR_RECUPERA_SLOTS: '36'                                 # 👈 opcional
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
