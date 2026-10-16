@@ -21,14 +21,14 @@
 // ---------------------------------------------------------------------------
 
 export const REGIO = {
-  lat_min: 35.5,
-  lat_max: 44.0,
-  lon_min: -10.0,
-  lon_max: 5.0,
+  lat_min: 38.100000,
+  lat_max: 45.302098,
+  lon_min: -4.554099,
+  lon_max:  5.003083,
 };
 
-export const W = 3000;
-export const H = 3000;
+export const W = 1600;
+export const H = 1600;
 
 // Períodes per defecte que genera el Python
 export const STD_PERIODS = [30, 60, 180, 360, 720, 1440];
