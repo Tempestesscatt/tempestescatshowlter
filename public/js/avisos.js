@@ -9,7 +9,7 @@
 // Els municipis els rep del radar.getMunicipis(), que ara llegeix el
 // municipis.geojson.gz descomprimit al vol.
 
-import { colorToValue, lngLatToUV, SCALES } from '../dades/valor.js';
+import { colorToValue, lngLatToUV, SCALES } from '../dades/escales.js';
 
 // ---------------------------------------------------------------------------
 // CONFIGURACIÓ
