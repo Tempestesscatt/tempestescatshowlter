@@ -35,8 +35,8 @@ const CATALUNYA_BBOX = {
 };
 
 // Rutes del manifest i avisos d'alertes
-const ALERTES_MANIFEST = '/dades/alertes/manifest.json';
-const ALERTES_AVISOS = '/dades/alertes/avisos.json';
+const ALERTES_MANIFEST = 'https://radar-data.tempestes.cat/dades_alertes/manifest.json';
+const ALERTES_AVISOS   = 'https://radar-data.tempestes.cat/dades_alertes/avisos.json';
 
 // Cache per no repetir la càrrega
 let cachedAlertes = null;
