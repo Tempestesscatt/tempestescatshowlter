@@ -2,9 +2,8 @@ name: Descarga AEMET (estacions + alertes)
 
 on:
   workflow_dispatch: {}
-  # Si vols execució periòrica, descomenta:
-  # schedule:
-  #   - cron: '*/30 * * * *'   # cada 30 min
+  schedule:
+    - cron: '0 * * * *'   # cada hora, al minut 0
 
 permissions:
   contents: read
