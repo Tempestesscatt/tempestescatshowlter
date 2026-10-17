@@ -709,6 +709,40 @@
     import radarDefault, * as radarNs from './js/radar.js';
     // Accepta tant l'export per defecte com els exports amb nom
     const radar = { ...radarDefault, ...radarNs };
+
+    // Compatibilitat: si el radar.js del servidor és una versió antiga, s'evita que l'app peti
+    if (!radar.pauseRadarAnimation && radar.stopAllAnimations) radar.pauseRadarAnimation = radar.stopAllAnimations;
+    if (!radar.resumeRadarAnimation && radar.startAllAnimations) radar.resumeRadarAnimation = radar.startAllAnimations;
+    {
+      const rawState = radar.getLayerState;
+      radar.getLayerState = (key) => {
+        const s = rawState(key);
+        if (s && s.currentTime === undefined) {
+          const d = s.timestamps && s.timestamps[s.currentIndex];
+          s.currentTime = d ? d.getTime() : null;
+        }
+        return s;
+      };
+    }
+    if (!radar.syncToTime) {
+      radar.syncToTime = async (key, ms) => {
+        const s = radar.getLayerState(key);
+        if (!s || !s.initialized || !s.totalFrames) return -1;
+        let idx = s.totalFrames - 1;
+        if (Number.isFinite(ms)) {
+          let best = Infinity;
+          s.timestamps.forEach((d, i) => {
+            if (!d) return;
+            const dd = Math.abs(d.getTime() - ms);
+            if (dd < best) { best = dd; idx = i; }
+          });
+        }
+        radar.goToFrameLayer(key, idx);
+        await new Promise((r) => setTimeout(r, 400));
+        return idx;
+      };
+    }
+    if (!radar.refreshNow) radar.refreshNow = () => Promise.resolve();
     import { initValor } from './dades/valor.js';
     import {
       computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN,
@@ -857,6 +891,24 @@
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
+    // Alertes AEMET sempre per sota del radar (i de l'acumulació)
+    function lowerAlertes() {
+      try {
+        const style = map.getStyle();
+        if (!style) return;
+        const ids = style.layers.map((l) => l.id);
+        let before = null, bi = Infinity;
+        for (const id of ['acum-layer', 'radar-layer-dbz', 'radar-layer-lluvia']) {
+          const i = ids.indexOf(id);
+          if (i >= 0 && i < bi) { bi = i; before = id; }
+        }
+        if (!before) return;
+        for (const id of ids) {
+          if (id.startsWith('alertes-') && ids.indexOf(id) > bi) map.moveLayer(id, before);
+        }
+      } catch (e) { /* el mapa encara no està a punt */ }
+    }
+
     function hideBaseLabels() {
       const style = map.getStyle();
       if (!style) return;
@@ -977,6 +1029,7 @@
         // Reafegir estacions i alertes
         await estacions.start().catch((e) => console.warn('[estacions]', e));
         await alertes.start().catch((e) => console.warn('[alertes]', e));
+        lowerAlertes();
         $('chkEstacions').checked = estacions.isVisible();
         $('chkAlertes').checked = alertes.isVisible();
       });
@@ -1209,6 +1262,7 @@
         source: ACUM_SOURCE_ID,
         paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
       }, before);
+      lowerAlertes();
     }
 
     function hideAcumOnMap() {
@@ -1423,7 +1477,7 @@
     $('chkRelleu').addEventListener('change', (e) => radar.setReliefVisibility(e.target.checked));
     $('chkCiutats').addEventListener('change', (e) => radar.setCiutatsVisibility(e.target.checked));
     $('chkEstacions').addEventListener('change', (e) => estacions.setVisible(e.target.checked));
-    $('chkAlertes').addEventListener('change', (e) => alertes.setVisible(e.target.checked));
+    $('chkAlertes').addEventListener('change', (e) => { alertes.setVisible(e.target.checked); setTimeout(lowerAlertes, 50); });
     $('densitySelect').addEventListener('change', (e) => radar.setDensity(e.target.value));
     $('densitySelect').value = radar.getDensity();
 
@@ -2120,7 +2174,8 @@
       hideBaseLabels();
 
       // Alertes AEMET (en paral·lel)
-      alertes.start().catch((e) => console.warn('[alertes]', e));
+      alertes.start().then(lowerAlertes).catch((e) => console.warn('[alertes]', e));
+      setTimeout(lowerAlertes, 2500);
 
       try {
         await radar.initRadar(map);
@@ -2132,6 +2187,7 @@
         return;
       }
 
+      lowerAlertes();
       const available = Object.keys(PRODUCTS).filter((k) => {
         const s = radar.getLayerState(k);
         return s && s.initialized && s.totalFrames > 0;

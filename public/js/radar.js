@@ -802,12 +802,17 @@ function orderLayers(map) {
   const style = map.getStyle();
   if (!style) return;
   if (map.getLayer(RELIEF_LAYER)) map.moveLayer(RELIEF_LAYER);
+  // Alertes AEMET: per sota del radar
+  for (const l of style.layers) {
+    if (l.id.startsWith('alertes-')) map.moveLayer(l.id);
+  }
+  // Avisos de pluja: per sota del radar (el radar sempre queda pintat a sobre)
+  if (map.getLayer(AVIS_FILL)) map.moveLayer(AVIS_FILL);
+  if (map.getLayer(AVIS_LINE)) map.moveLayer(AVIS_LINE);
   if (map.getLayer(ACUM_LAYER_ID)) map.moveLayer(ACUM_LAYER_ID);
   for (const key of Object.keys(RADAR)) {
     if (map.getLayer(RADAR[key].layerId)) map.moveLayer(RADAR[key].layerId);
   }
-  if (map.getLayer(AVIS_FILL)) map.moveLayer(AVIS_FILL);
-  if (map.getLayer(AVIS_LINE)) map.moveLayer(AVIS_LINE);
   if (map.getLayer(MUNI_LINE)) map.moveLayer(MUNI_LINE);
   if (map.getLayer(COMARQUES_LINE)) map.moveLayer(COMARQUES_LINE);
   for (const l of style.layers) {
