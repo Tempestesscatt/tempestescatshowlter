@@ -1,6 +1,16 @@
 // public/js/radar.js
 // MapLibre GL JS: radar (PNG), comarques, municipis (GeoJSON.gz) i ciutats.
 //
+// Política de caché:
+//  - Dades VIVES (manifests i frames del radar): sempre es validen amb el servidor.
+//      · manifest: cache 'no-store' + ?t=<ara>
+//      · frames:   cache 'no-cache' (revalida; si no ha canviat, el servidor respon 304)
+//      · els blobs només viuen a memòria durant la sessió i es descarten quan el
+//        manifest retira el frame.
+//      · els últims frames es tornen a baixar cada cop que el manifest canvia,
+//        per si s'han regenerat amb el mateix nom.
+//  - Dades ESTÀTIQUES (comarques, relleu, municipis, ciutats): caché normal del navegador.
+//
 // Arrencada ràpida:
 //  - Els manifests i els primers frames es demanen en importar el mòdul,
 //    en paral·lel amb la càrrega del mapa base.
@@ -8,6 +18,8 @@
 //    municipis es carreguen en segon pla després.
 //  - Els frames es baixen com a blobs (cua amb prioritats, el més recent primer).
 //    L'animació només avança entre frames que ja són a memòria.
+//  - syncToTime() canvia un producte a una hora concreta (o al frame més proper),
+//    per mantenir la mateixa hora en passar de dBZ a mm/h i viceversa.
 
 import { regioCoordinates } from '../dades/escales.js';
 
@@ -107,8 +119,10 @@ const MAX_PARALLEL = 8;          // descàrregues simultànies
 const FETCH_TIMEOUT_MS = 15000;
 const FETCH_RETRIES = 3;
 const FIRST_FRAME_WAIT_MS = 1500;
+const SWITCH_WAIT_MS = 1500;     // espera màxima en canviar de producte / hora
 const BOOT_FRAMES = 6;           // frames que es baixen abans de saber el pla de l'usuari
-const REFRESH_MS = 60000;        // cada quant es torna a llegir el manifest
+const REFRESH_MS = 30000;        // cada quant es torna a llegir el manifest
+const TAIL_REVALIDATE = 2;       // últims frames que es tornen a baixar quan el manifest canvia
 
 // ---------------------------------------------------------------------------
 // ESTAT
@@ -159,7 +173,7 @@ for (const key of Object.keys(RADAR)) {
 }
 
 // ---------------------------------------------------------------------------
-// CÀRREGA DE FRAMES: cua amb prioritats + cache de blobs
+// CÀRREGA DE FRAMES: cua amb prioritats + cache de blobs (només memòria)
 // prio 0 = urgent, 1 = capa visible, 2 = capa amagada
 // ---------------------------------------------------------------------------
 
@@ -179,7 +193,8 @@ async function downloadBlob(url) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
-      const r = await fetch(url, { mode: 'cors', signal: ctrl.signal });
+      // 'no-cache': el navegador sempre pregunta al servidor si el fitxer ha canviat.
+      const r = await fetch(url, { mode: 'cors', signal: ctrl.signal, cache: 'no-cache' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const blob = await r.blob();
       if (!blob.size) throw new Error('buit');
@@ -280,11 +295,42 @@ function enqueueLayer(key) {
   }
 }
 
+// Si un frame havia fallat (xarxa, 404 transitori), es torna a provar.
+function retryMissing(key) {
+  const st = state.layers[key];
+  if (!st || !st.initialized) return;
+  for (let i = st.minIndex; i < st.frames.length; i++) failed.delete(st.frames[i]);
+  enqueueLayer(key);
+}
+
 function reprioritize() {
   for (const e of queue) {
     if (e.prio === 0) continue;
     const m = frameMeta.get(e.url);
     if (m) e.prio = layerPrio(m.key);
+  }
+}
+
+// Torna a baixar (revalidant) un frame que ja era a memòria i el substitueix.
+async function refreshFrame(key, url) {
+  try {
+    const fresh = await downloadBlob(url);
+    if (!frameMeta.has(url)) { URL.revokeObjectURL(fresh); return; }
+    const old = blobCache.get(url);
+    blobCache.set(url, fresh);
+    if (old) setTimeout(() => URL.revokeObjectURL(old), 10000);
+    const st = state.layers[key];
+    if (st && st.wanted === url) { st.applied = null; scheduleApply(key); }
+  } catch (e) { /* es queda amb el blob anterior */ }
+}
+
+function revalidateTail(key) {
+  const st = state.layers[key];
+  if (!st) return;
+  const from = Math.max(st.minIndex, st.frames.length - TAIL_REVALIDATE);
+  for (let i = st.frames.length - 1; i >= from; i--) {
+    const url = st.frames[i];
+    if (blobCache.has(url)) refreshFrame(key, url);
   }
 }
 
@@ -349,8 +395,9 @@ async function doSync(key, initial) {
   const manifest = await fetchManifest(cfg);
   if (!manifest || manifest.frames.length === 0) return false;
 
+  const firstItem = manifest.frames[0] || {};
   const lastItem = manifest.frames[manifest.frames.length - 1] || {};
-  const sig = `${manifest.updated || ''}|${manifest.frames.length}|${lastItem.f || ''}`;
+  const sig = `${manifest.updated || ''}|${manifest.frames.length}|${firstItem.f || ''}|${lastItem.f || ''}`;
   if (!initial && sig === st.manifestSig) return false;
 
   const ext = manifest.ext || '.png';
@@ -413,6 +460,7 @@ async function doSync(key, initial) {
   st.wanted = url;
   requestFrame(url, 0).then(() => { if (st.wanted === url) scheduleApply(key); }).catch(noop);
   enqueueLayer(key);
+  revalidateTail(key);
   flushOrphans(st);
   notify(key);
   return true;
@@ -431,17 +479,23 @@ async function syncLayer(key, initial = false) {
 
 let refreshTimer = 0;
 
+function refreshAll() {
+  return Promise.all(Object.keys(RADAR).map((key) =>
+    syncLayer(key)
+      .then(() => retryMissing(key))
+      .catch((e) => console.warn(`[radar:${key}] refresc`, e && e.message))
+  ));
+}
+
 function startRefresh() {
   if (refreshTimer) return;
-  const run = () => {
-    if (document.hidden) return;
-    for (const key of Object.keys(RADAR)) {
-      syncLayer(key).catch((e) => console.warn(`[radar:${key}] refresc`, e && e.message));
-    }
-  };
-  refreshTimer = setInterval(run, REFRESH_MS);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) run(); });
+  refreshTimer = setInterval(() => { if (!document.hidden) refreshAll(); }, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAll(); });
+  window.addEventListener('online', refreshAll);
 }
+
+/** Força una lectura immediata dels manifests (p. ex. en obrir un panell). */
+export function refreshNow() { return refreshAll(); }
 
 // Arrenca en importar el mòdul
 const prepared = {};
@@ -478,7 +532,7 @@ function addRadarLayer(map, key) {
 }
 
 // ---------------------------------------------------------------------------
-// MUNICIPIS (GeoJSON.gz)
+// MUNICIPIS (GeoJSON.gz) — dada estàtica, caché normal
 // ---------------------------------------------------------------------------
 
 let municipisPromise = null;
@@ -812,6 +866,19 @@ function showFrame(key, index) {
   }
 }
 
+// Índex del frame més proper en el temps (respectant el límit del pla)
+function nearestIndex(st, ms) {
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = st.minIndex; i < st.timestamps.length; i++) {
+    const d = st.timestamps[i];
+    if (!d) continue;
+    const dd = Math.abs(d.getTime() - ms);
+    if (dd < bestD) { bestD = dd; best = i; }
+  }
+  return best;
+}
+
 // ---------------------------------------------------------------------------
 // ANIMACIÓ
 // ---------------------------------------------------------------------------
@@ -974,6 +1041,27 @@ export function goToFrameLayer(key, index) {
   if (state.layers[key]) showFrame(key, index);
 }
 
+/**
+ * Posa la capa `key` a l'hora `ms` (o al frame més proper) i espera que el frame
+ * estigui realment pintat. Serveix per canviar de producte mantenint la mateixa hora.
+ * Si `ms` no és vàlid, es queda al frame més recent. Retorna l'índex resultant.
+ */
+export async function syncToTime(key, ms) {
+  const st = state.layers[key];
+  if (!st || !st.initialized || !st.frames.length) return -1;
+
+  let idx = Number.isFinite(ms) ? nearestIndex(st, ms) : -1;
+  if (idx < 0) idx = st.frames.length - 1;
+
+  const url = st.frames[idx];
+  showFrame(key, idx);
+  if (st.applied !== url) {
+    await Promise.race([requestFrame(url, 0).catch(noop), sleep(SWITCH_WAIT_MS)]);
+    if (st.wanted === url) applyWanted(key);
+  }
+  return idx;
+}
+
 export function setLayerVisibility(key, visible) {
   const cfg = RADAR[key];
   if (!cfg) return;
@@ -998,6 +1086,7 @@ export function setLayerOpacity(key, opacity) {
 export function getLayerState(key) {
   const st = state.layers[key];
   if (!st) return null;
+  const cur = st.timestamps[st.currentIndex];
   return {
     id: key,
     label: RADAR[key].label,
@@ -1005,6 +1094,7 @@ export function getLayerState(key) {
     loadedFrames: st.loaded,
     timestamps: st.timestamps,
     currentIndex: st.currentIndex,
+    currentTime: cur ? cur.getTime() : null,
     minIndex: st.minIndex,
     currentUrl: st.frames[st.currentIndex],
     currentBlob: blobCache.get(st.frames[st.currentIndex]) || null,
@@ -1035,6 +1125,8 @@ export default {
   pauseRadarAnimation,
   resumeRadarAnimation,
   goToFrameLayer,
+  syncToTime,
+  refreshNow,
   setLayerVisibility,
   setLayerOpacity,
   setMinIndex,

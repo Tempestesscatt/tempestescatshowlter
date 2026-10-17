@@ -1,31 +1,40 @@
 // public/dades/autoreload.js
 // -----------------------------------------------------------------------------
-// Recarrega la pàgina quan detecta que el radar ha publicat frames nous a R2.
+// Actualització en directe SENSE recarregar la pàgina.
 //
 // Com funciona:
-//   1) Llegeix els manifests de R2 cada N segons.
-//   2) Compara la signatura (nº frames + últim timestamp + últim hash).
-//   3) Si ha canviat, mostra un bàner discret a dalt amb compte enrere i
-//      recarrega la pàgina.
+//   1) Llegeix els manifests de R2 cada N segons (sempre sense caché).
+//   2) Compara la signatura (nº frames + updated + últim timestamp + últim hash).
+//   3) Si ha canviat, demana a radar.js que rellegeixi els manifests i baixi els
+//      frames nous, i COMPROVA que l'últim frame del radar coincideix amb el del
+//      manifest. Si encara no hi és, ho reintenta unes quantes vegades.
+//   4) Avisa la resta de la pàgina amb l'esdeveniment 'radar:data-updated'
+//      (acumulacions, avisos...) i mostra un avís discret.
 //
-// Pensat per a pantalles de radar "en directe" (kiosk, monitor, TV).
+// L'usuari conserva la hora, la pausa/animació i el producte: res no es recarrega.
 //
 // Ús:
 //   import { initAutoReload } from './dades/autoreload.js';
-//   initAutoReload();                          // per defecte: 60 s, 10 s de compte enrere
-//   initAutoReload({ intervalMs: 30000 });     // comprova cada 30 s
+//   initAutoReload();                         // 30 s, sense recarregar
+//   initAutoReload({ reload: true });         // (opcional) recàrrega de pàgina com abans
 // -----------------------------------------------------------------------------
 
-const DEFAULT_INTERVAL_MS = 60000;   // 1 minut
-const DEFAULT_COUNTDOWN_S = 10;      // segons abans de recarregar
+import * as radar from '../js/radar.js';
+
+const DEFAULT_INTERVAL_MS = 30000;
+const VERIFY_TRIES = 8;
+const VERIFY_EVERY_MS = 4000;
+const DEFAULT_COUNTDOWN_S = 10;
 
 const MANIFESTS = {
   dbz:    'https://radar-data.tempestes.cat/dades_radar_dbz/manifest.json',
   lluvia: 'https://radar-data.tempestes.cat/dades_radar_nimbus/manifest.json',
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // ---------------------------------------------------------------------------
-// ESTILS DEL BÀNER
+// AVÍS DISCRET (toast)
 // ---------------------------------------------------------------------------
 
 function injectStyles() {
@@ -34,166 +43,102 @@ function injectStyles() {
   css.id = 'autoreload-styles';
   css.textContent = `
     #autoreloadBanner {
-      position: fixed;
-      top: max(12px, env(safe-area-inset-top));
-      left: 50%;
-      transform: translateX(-50%) translateY(-120%);
-      z-index: 9999;
-      display: flex; align-items: center; gap: 12px;
-      padding: 10px 16px 10px 12px;
+      position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%;
+      transform: translateX(-50%) translateY(-140%); z-index: 9999;
+      display: flex; align-items: center; gap: 10px; padding: 9px 16px 9px 12px;
       background: rgba(10, 12, 20, 0.92);
       backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      border: 1px solid rgba(120, 140, 180, 0.28);
-      border-radius: 999px;
+      border: 1px solid rgba(120, 140, 180, 0.28); border-radius: 999px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
-      color: #eef;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      font-size: 13px;
-      line-height: 1;
-      pointer-events: none;
-      opacity: 0;
+      color: #cfe0ff; font: 500 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      pointer-events: none; opacity: 0; max-width: calc(100vw - 24px);
       transition: transform .35s cubic-bezier(.4, 0, .2, 1), opacity .35s ease;
-      max-width: calc(100vw - 24px);
     }
-    #autoreloadBanner.show {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1;
-    }
-
-    #autoreloadBanner .ar-dot {
-      position: relative;
-      width: 10px; height: 10px; border-radius: 50%;
-      background: #5a9dff;
-      flex-shrink: 0;
-      box-shadow: 0 0 0 0 rgba(90, 157, 255, 0.6);
-      animation: autoreloadPulse 1.6s ease-out infinite;
-    }
-    @keyframes autoreloadPulse {
-      0%   { box-shadow: 0 0 0 0 rgba(90, 157, 255, 0.6); }
-      70%  { box-shadow: 0 0 0 10px rgba(90, 157, 255, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(90, 157, 255, 0); }
-    }
-
-    #autoreloadBanner .ar-text {
-      font-weight: 500;
-      color: #cfe0ff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    #autoreloadBanner .ar-text b {
-      color: #fff;
-      font-weight: 700;
-    }
-
-    #autoreloadBanner .ar-count {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 26px; height: 26px; padding: 0 6px;
-      border-radius: 999px;
-      background: rgba(90, 157, 255, 0.18);
-      border: 1px solid rgba(90, 157, 255, 0.45);
-      color: #5a9dff;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      font-size: 13px;
-      flex-shrink: 0;
-    }
-
-    #autoreloadBanner .ar-bar {
-      position: absolute;
-      left: 12px; right: 12px; bottom: 4px;
-      height: 2px; border-radius: 999px;
-      background: rgba(120, 140, 180, 0.18);
-      overflow: hidden;
-    }
-    #autoreloadBanner .ar-bar-fill {
-      height: 100%; width: 100%;
-      background: linear-gradient(90deg, #3a6ac0, #5a9dff);
-      border-radius: 999px;
-      transform-origin: left center;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #autoreloadBanner .ar-dot { animation: none; }
-    }
+    #autoreloadBanner.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    #autoreloadBanner .ar-dot { width: 10px; height: 10px; border-radius: 50%; background: #5a9dff; flex-shrink: 0; }
+    #autoreloadBanner.ok .ar-dot { background: #4ade80; }
+    #autoreloadBanner.warn .ar-dot { background: #facc15; }
+    #autoreloadBanner .ar-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #autoreloadBanner .ar-text b { color: #fff; font-weight: 700; }
   `;
   document.head.appendChild(css);
 }
 
-function buildBanner() {
+let toastTimer = 0;
+function toast(html, kind, ms = 3500) {
+  injectStyles();
   let el = document.getElementById('autoreloadBanner');
-  if (el) return el;
-
-  el = document.createElement('div');
-  el.id = 'autoreloadBanner';
-  el.setAttribute('role', 'status');
-  el.setAttribute('aria-live', 'polite');
-  el.innerHTML = `
-    <span class="ar-dot"></span>
-    <span class="ar-text">Dades noves · actualitzant en <b id="autoreloadCount">10</b> s</span>
-    <span class="ar-count" id="autoreloadCountBadge">10</span>
-    <span class="ar-bar"><span class="ar-bar-fill" id="autoreloadBar"></span></span>
-  `;
-  document.body.appendChild(el);
-  return el;
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'autoreloadBanner';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML = '<span class="ar-dot"></span><span class="ar-text"></span>';
+    document.body.appendChild(el);
+  }
+  el.className = kind || '';
+  el.querySelector('.ar-text').innerHTML = html;
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ---------------------------------------------------------------------------
-// SIGNATURA DEL MANIFEST
+// MANIFEST
 // ---------------------------------------------------------------------------
 
-async function fetchSignature(url) {
+async function fetchInfo(url) {
   try {
     const r = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) return null;
     const j = await r.json();
     if (!j || !Array.isArray(j.frames) || j.frames.length === 0) return null;
     const last = j.frames[j.frames.length - 1];
-    return `${j.frames.length}|${j.updated || ''}|${last.t || ''}|${last.f || ''}`;
+    return {
+      sig: `${j.frames.length}|${j.updated || ''}|${last.t || ''}|${last.f || ''}`,
+      lastF: last.f || '',
+      lastT: last.t || '',
+    };
   } catch (e) {
     return null;
   }
 }
 
-// ---------------------------------------------------------------------------
-// COMPTADOR I RECÀRREGA
-// ---------------------------------------------------------------------------
+// "2026-04-20T185500Z" -> ms
+function parseT(t) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(t || '');
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : NaN;
+}
 
-function showCountdown(seconds, onDone) {
-  injectStyles();
-  const banner = buildBanner();
-  const countEl = document.getElementById('autoreloadCount');
-  const badgeEl = document.getElementById('autoreloadCountBadge');
-  const barEl = document.getElementById('autoreloadBar');
+/** Comprova que l'últim frame que té el radar és el que diu el manifest. */
+function radarHasLatest(key, info) {
+  try {
+    const st = radar.getLayerState(key);
+    if (!st || !st.initialized || !st.frames.length) return false;
+    const lastUrl = st.frames[st.frames.length - 1] || '';
+    if (info.lastF && lastUrl.includes(info.lastF)) return true;
+    const want = parseT(info.lastT);
+    const ts = st.timestamps[st.timestamps.length - 1];
+    return Number.isFinite(want) && ts && ts.getTime() === want;
+  } catch (e) {
+    return false;
+  }
+}
 
-  banner.classList.add('show');
+const hourFmt = new Intl.DateTimeFormat('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });
 
-  let remaining = seconds;
-  countEl.textContent = String(remaining);
-  badgeEl.textContent = String(remaining);
-
-  // Transició de la barra
-  barEl.style.transition = 'none';
-  barEl.style.transform = 'scaleX(1)';
-  void barEl.offsetWidth;
-  barEl.style.transition = `transform ${seconds}s linear`;
-  barEl.style.transform = 'scaleX(0)';
-
-  const timer = setInterval(() => {
-    remaining -= 1;
-    const v = Math.max(0, remaining);
-    countEl.textContent = String(v);
-    badgeEl.textContent = String(v);
-    if (remaining <= 0) {
-      clearInterval(timer);
-      onDone();
-    }
-  }, 1000);
-
-  return () => {
-    clearInterval(timer);
-    banner.classList.remove('show');
-  };
+/** Força la lectura i reintenta fins que el radar mostra l'últim frame publicat. */
+async function applyUpdate(key, info) {
+  let ok = false;
+  for (let i = 0; i < VERIFY_TRIES; i++) {
+    try {
+      if (typeof radar.refreshNow === 'function') await radar.refreshNow();
+    } catch (e) { /* es reintenta */ }
+    if (radarHasLatest(key, info)) { ok = true; break; }
+    await sleep(VERIFY_EVERY_MS);
+  }
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,19 +147,21 @@ function showCountdown(seconds, onDone) {
 
 /**
  * @param {object}   [opts]
- * @param {number}   [opts.intervalMs=60000]     Cada quant es comprova (ms).
- * @param {number}   [opts.countdownS=10]        Segons del comptador abans de recarregar.
- * @param {string[]} [opts.watch=['dbz','lluvia']]  Quins manifests vigilar.
- * @param {Function} [opts.onChange]             Callback en detectar canvi.
- * @param {boolean}  [opts.reload=true]          Si false, només crida onChange.
- * @returns {Function}  Funció per aturar el watcher.
+ * @param {number}   [opts.intervalMs=30000]    Cada quant es comprova (ms).
+ * @param {string[]} [opts.watch=['dbz','lluvia']]
+ * @param {Function} [opts.onChange]            Callback (key, {ok, lastT}) després d'aplicar.
+ * @param {boolean}  [opts.reload=false]        true = recarrega la pàgina (comportament antic).
+ * @param {number}   [opts.countdownS=10]       Només amb reload:true.
+ * @param {boolean}  [opts.notify=true]         Mostra l'avís discret.
+ * @returns {Function} Funció per aturar el watcher.
  */
 export function initAutoReload({
   intervalMs = DEFAULT_INTERVAL_MS,
-  countdownS = DEFAULT_COUNTDOWN_S,
   watch = ['dbz', 'lluvia'],
   onChange = null,
-  reload = true,
+  reload = false,
+  countdownS = DEFAULT_COUNTDOWN_S,
+  notify = true,
 } = {}) {
   const urls = watch.filter((k) => MANIFESTS[k]).map((k) => ({ key: k, url: MANIFESTS[k] }));
   if (urls.length === 0) {
@@ -224,58 +171,71 @@ export function initAutoReload({
 
   let signatures = null;
   let stopped = false;
+  let busy = false;
   let timer = 0;
-  let counting = false;
-  let cancelCountdown = null;
 
   async function check() {
-    if (stopped || counting) return;
-    if (document.hidden) return;
+    if (stopped || busy || document.hidden) return;
+    busy = true;
+    try {
+      const current = {};
+      await Promise.all(urls.map(async ({ key, url }) => { current[key] = await fetchInfo(url); }));
 
-    const current = {};
-    for (const { key, url } of urls) {
-      current[key] = await fetchSignature(url);
-    }
-
-    if (signatures === null) {
-      signatures = current;
-      return;
-    }
-
-    let changedKey = null;
-    for (const { key } of urls) {
-      if (current[key] && current[key] !== signatures[key]) {
-        changedKey = key;
-        break;
+      if (signatures === null) {
+        signatures = {};
+        for (const { key } of urls) signatures[key] = current[key] ? current[key].sig : null;
+        // Primera lectura: assegura que el radar ja mostra el que hi ha publicat
+        for (const { key } of urls) {
+          if (current[key] && !radarHasLatest(key, current[key]) && typeof radar.refreshNow === 'function') {
+            radar.refreshNow();
+            break;
+          }
+        }
+        return;
       }
+
+      for (const { key } of urls) {
+        const cur = current[key];
+        if (!cur || cur.sig === signatures[key]) continue;
+
+        signatures[key] = cur.sig;
+        console.log(`[autoreload] dades noves (${key}) ${cur.lastT}`);
+
+        if (reload) {
+          stopped = true;
+          if (timer) clearInterval(timer);
+          if (typeof onChange === 'function') { try { onChange(key, { ok: false, lastT: cur.lastT }); } catch (e) {} }
+          if (notify) toast(`Dades noves · actualitzant en <b>${countdownS}</b> s`, '', countdownS * 1000 + 500);
+          setTimeout(() => {
+            const u = new URL(location.href);
+            u.searchParams.set('_r', Date.now().toString());
+            location.replace(u.toString());
+          }, countdownS * 1000);
+          return;
+        }
+
+        const ok = await applyUpdate(key, cur);
+        const when = parseT(cur.lastT);
+        const hh = Number.isFinite(when) ? hourFmt.format(new Date(when)) : '';
+
+        if (ok) {
+          console.log(`[autoreload] ${key} actualitzat (${cur.lastT})`);
+          if (notify) toast(`Radar actualitzat${hh ? ` · <b>${hh}</b>` : ''}`, 'ok');
+        } else {
+          console.warn(`[autoreload] ${key}: el manifest ja és nou però el frame encara no arriba`);
+          // Perquè es torni a intentar al proper cicle
+          signatures[key] = null;
+          if (notify) toast('Dades noves detectades · carregant…', 'warn');
+        }
+
+        try { window.dispatchEvent(new CustomEvent('radar:data-updated', { detail: { key, ok, lastT: cur.lastT } })); } catch (e) {}
+        if (typeof onChange === 'function') {
+          try { onChange(key, { ok, lastT: cur.lastT }); } catch (e) { console.warn('[autoreload] onChange:', e); }
+        }
+      }
+    } finally {
+      busy = false;
     }
-
-    if (!changedKey) {
-      signatures = current;
-      return;
-    }
-
-    stopped = true;
-    if (timer) clearInterval(timer);
-    counting = true;
-
-    console.log(`[autoreload] manifest canviat (${changedKey}): recarregant en ${countdownS} s`);
-
-    if (typeof onChange === 'function') {
-      try { onChange(changedKey); } catch (e) { console.warn('[autoreload] onChange:', e); }
-    }
-
-    if (!reload) {
-      counting = false;
-      return;
-    }
-
-    cancelCountdown = showCountdown(countdownS, () => {
-      counting = false;
-      const url = new URL(location.href);
-      url.searchParams.set('_r', Date.now().toString());
-      location.replace(url.toString());
-    });
   }
 
   check();
@@ -283,12 +243,13 @@ export function initAutoReload({
 
   const onVisible = () => { if (!document.hidden) check(); };
   document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('online', onVisible);
 
   return function stop() {
     stopped = true;
     if (timer) clearInterval(timer);
-    if (cancelCountdown) cancelCountdown();
     document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('online', onVisible);
   };
 }
 

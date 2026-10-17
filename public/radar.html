@@ -19,9 +19,7 @@
   <script defer src="/dades/ciutats.js"></script>
   <script defer src="/dades/cobertura.js"></script>
 
-
-
-    <!-- Google Analytics (GA4) -->
+  <!-- Google Analytics (GA4) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDWCZ0Z9XF"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -271,9 +269,15 @@
       font-size: 10px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums;
     }
     .timeline-label.active { color: var(--accent); font-weight: 700; }
+    .timeline-label.edge-l { transform: none; }
+    .timeline-label.edge-r { transform: translateX(-100%); }
 
     /* ===== Barra d'acumulacions ===== */
-    .acum-player { gap: 8px; }
+    .acum-player { gap: 6px; }
+    .acum-meta { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums; min-width: 0; }
+    #acumTime { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.1; white-space: nowrap; }
+    .acum-date { font-size: 11.5px; color: var(--text-2); text-align: right; line-height: 1.2; }
+    .acum-tick { position: absolute; top: 12px; width: 2px; height: var(--track-h); transform: translateX(-50%); background: rgba(255,255,255,.22); pointer-events: none; }
     .acum-row { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
     .acum-row::-webkit-scrollbar { display: none; }
     .acum-chip {
@@ -286,10 +290,6 @@
     .acum-chip:hover:not(.active):not(:disabled) { background: var(--btn-hover); border-color: var(--btn-border-hover); color: var(--text); }
     .acum-chip.active { background: var(--accent-dark); border-color: var(--accent); color: #fff; }
     .acum-chip:disabled { opacity: .35; cursor: not-allowed; }
-    .acum-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 0 2px 2px; font-variant-numeric: tabular-nums; }
-    #acumTime { font-size: 14px; font-weight: 700; color: #fff; }
-    .acum-date { font-size: 11.5px; color: var(--text-2); }
-
     .acum-chip.locked { opacity: .55; border-style: dashed; }
     .acum-chip.partial::after { content: '*'; margin-left: 2px; color: #facc15; }
 
@@ -317,6 +317,7 @@
       background: repeating-linear-gradient(135deg, rgba(150,150,150,.30) 0 4px, rgba(150,150,150,.12) 4px 8px);
       border-right: 2px solid rgba(190,190,190,.6);
     }
+    .timeline-locked.right { left: auto; right: 0; border-right: none; border-left: 2px solid rgba(190,190,190,.6); }
     .timeline-lock { position: absolute; top: 0; left: 0; display: none; transform: translateX(-50%); color: var(--text-3); pointer-events: none; }
     .timeline-lock svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; display: block; }
     .timeline-label.locked { opacity: .35; }
@@ -460,10 +461,12 @@
       .timeline { height: 32px; }
       .timeline-track { top: 10px; }
       .timeline-thumb { top: 13px; }
+      .acum-tick { top: 10px; }
       .timeline-label { font-size: 9px; }
       .legend-body { height: 140px; }
       .loader-brand { font-size: 22px; }
       .acum-chip { font-size: 12px; min-height: 38px; padding: 6px 10px; }
+      #acumTime { font-size: 13px; }
     }
     @media (max-width: 400px) { .time-date { display: none; } }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -581,9 +584,9 @@
       <div class="section-title">Mode directe</div>
       <label class="check">
         <input type="checkbox" id="chkAutoReload" />
-        <span>Recarregar automàticament quan hi hagi dades noves</span>
+        <span>Actualitzar automàticament quan hi hagi dades noves</span>
       </label>
-      <div class="info-text">Mostra un compte enrere de 10 s i recarrega la pàgina quan el radar publica frames nous. Ideal per a pantalles o monitors en directe.</div>
+      <div class="info-text">Quan el radar publica frames nous, s'actualitzen sols, sense recarregar la pàgina i sense moure l'hora ni la pausa.</div>
     </div>
 
     <div class="section">
@@ -650,6 +653,22 @@
     </div>
 
     <div class="player acum-player" id="playerAcum" style="display:none">
+      <div class="player-top">
+        <div class="player-actions">
+          <button id="acumPlayBtn" class="btn-play">Reprodueix</button>
+        </div>
+        <div class="acum-meta">
+          <span id="acumTime">—</span>
+          <span id="acumDate" class="acum-date">—</span>
+        </div>
+      </div>
+      <div id="acumSlider" class="timeline" role="slider" aria-label="Període d'acumulació">
+        <div class="timeline-track"><div id="acumLocked" class="timeline-locked right"></div><div id="acumProgress" class="timeline-progress"></div></div>
+        <div id="acumTicks"></div>
+        <div id="acumThumb" class="timeline-thumb"></div>
+        <div id="acumLock" class="timeline-lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+        <div id="acumLabels" class="timeline-labels"></div>
+      </div>
       <div class="acum-row">
         <button class="acum-chip" data-min="30">30 min</button>
         <button class="acum-chip active" data-min="60">1 h</button>
@@ -657,10 +676,6 @@
         <button class="acum-chip" data-min="360">6 h</button>
         <button class="acum-chip" data-min="720">12 h</button>
         <button class="acum-chip" data-min="1440">24 h</button>
-      </div>
-      <div class="acum-meta">
-        <span id="acumTime">—</span>
-        <span id="acumDate" class="acum-date">—</span>
       </div>
     </div>
   </div>
@@ -691,11 +706,13 @@
   </div>
 
   <script type="module">
-    import radar from './js/radar.js';
+    import radarDefault, * as radarNs from './js/radar.js';
+    // Accepta tant l'export per defecte com els exports amb nom
+    const radar = { ...radarDefault, ...radarNs };
     import { initValor } from './dades/valor.js';
     import {
       computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN,
-      getResumAlertesCatalunya,
+      getResumAlertesCatalunya, resetAlertesCatalunya,
     } from './js/avisos.js';
     import { loadManifest, periodsFromManifest } from './dades/acumulacions.js';
     import { SCALES, regioCoordinates } from './dades/escales.js';
@@ -708,7 +725,7 @@
     // ------------------------------------------------------------------
     const $ = (id) => document.getElementById(id);
     const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
-    const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const setStatus = (t) => { const el = $('statusText'); if (el) el.textContent = t || ''; };
 
@@ -738,6 +755,10 @@
 
     const PRODUCTS = { dbz: SCALES.dbz, lluvia: SCALES.lluvia };
 
+    // Cada quant es llegeixen dades vives (sempre sense caché)
+    const ACUM_REFRESH_MS = 30000;
+    const AVISOS_REFRESH_MS = 60000;
+
     // ------------------------------------------------------------------
     // Estat
     // ------------------------------------------------------------------
@@ -756,6 +777,8 @@
     let lockPct = 0;
     let lockPrompted = false;
     let appReady = false;
+    let switchSeq = 0;        // evita curses en canviar de producte ràpidament
+    let lastRadarMs = null;   // última hora vista al radar (per tornar-hi des d'acumulació)
 
     const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
     const ACCESS = {
@@ -777,6 +800,13 @@
     const ACUM_LAYER_ID = 'acum-layer';
     const ACUM_SOURCE_ID = 'acum-src';
     const ACUM_BASE = 'https://radar-data.tempestes.cat/dades_radar_acumulacions';
+    const DEFAULT_ACUM_STEPS = [30, 60, 180, 360, 720, 1440];
+    const ACUM_STEP_MS = 1200;
+    const acumBlobs = new Map();   // url -> blob URL (només memòria)
+    let acumTimer = 0;
+    let acumSliderSig = '';
+    let acumDragging = false;
+    let acumLockPrompted = false;
 
     // Avisos
     let avisosLayerOn = true;
@@ -793,13 +823,35 @@
     let stopAutoReload = null;
 
     // ------------------------------------------------------------------
+    // Estat de la vista (sobreviu a recàrregues i a l'autoreload)
+    // ------------------------------------------------------------------
+    const VIEW_KEY = 'radar.view.v1';
+    let lastAtLatest = true;
+    let authSettled = false;
+    let lateDone = false;
+
+    function loadView() {
+      try {
+        const j = JSON.parse(sessionStorage.getItem(VIEW_KEY) || 'null');
+        return j && typeof j === 'object' ? j : null;
+      } catch (e) { return null; }
+    }
+    const saved = loadView();
+
+    // L'autoreload afegeix ?_r=...: es neteja de l'URL
+    try {
+      const u = new URL(location.href);
+      if (u.searchParams.has('_r')) { u.searchParams.delete('_r'); history.replaceState(null, '', u.toString()); }
+    } catch (e) {}
+
+    // ------------------------------------------------------------------
     // Mapa
     // ------------------------------------------------------------------
     const map = new maplibregl.Map({
       container: 'map',
       style: BASEMAPS[currentTheme],
-      center: MAP_CENTER,
-      zoom: MAP_ZOOM,
+      center: (saved && Array.isArray(saved.c) && saved.c.length === 2 && saved.c.every(Number.isFinite)) ? saved.c : MAP_CENTER,
+      zoom: (saved && Number.isFinite(saved.z)) ? saved.z : MAP_ZOOM,
       attributionControl: false,
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
@@ -844,8 +896,20 @@
     const searchInput = $('searchInput'), searchClear = $('searchClear'), searchResults = $('searchResults');
     const playerRadar = $('playerRadar'), playerAcum = $('playerAcum');
     const acumTime = $('acumTime'), acumDate = $('acumDate');
+    const acumPlayBtn = $('acumPlayBtn'), acumSliderEl = $('acumSlider');
+    const acumProgress = $('acumProgress'), acumThumb = $('acumThumb'), acumLabels = $('acumLabels');
+    const acumTicks = $('acumTicks'), acumLockedEl = $('acumLocked'), acumLockIcon = $('acumLock');
     const accountBox = $('accountBox'), userBtn = $('userBtn');
     const upsell = $('upsell');
+
+    // L'alçada del reproductor canvia (radar / acumulació): la llegenda i els
+    // controls del mapa se'n mantenen per sobre.
+    if ('ResizeObserver' in window) {
+      new ResizeObserver((entries) => {
+        const h = Math.ceil(entries[0].target.getBoundingClientRect().height);
+        if (h > 0) document.documentElement.style.setProperty('--player-h', h + 'px');
+      }).observe($('bottomBar'));
+    }
 
     // ------------------------------------------------------------------
     // Menú lateral
@@ -1021,7 +1085,7 @@
     $('nextBtn').addEventListener('click', () => step(1));
 
     // ------------------------------------------------------------------
-    // Producte
+    // Producte (dBZ / mm/h): sempre es manté la mateixa hora
     // ------------------------------------------------------------------
     function syncTimeline(key) {
       const st = radar.getLayerState(key);
@@ -1035,7 +1099,9 @@
       return true;
     }
 
-    function selectProduct(key) {
+    async function selectProduct(key, opts) {
+      const seq = ++switchSeq;
+      stopAcumPlay();
       hideAcumOnMap();
       prodAcumBtn.classList.remove('active');
       playerRadar.style.display = '';
@@ -1043,6 +1109,19 @@
 
       const st = radar.getLayerState(key);
       if (!st || !st.initialized) return;
+
+      // Hora de referència: la del producte que s'estava veient
+      let ms = lastRadarMs;
+      if (opts && 'ms' in opts) {
+        ms = opts.ms;   // restauració: NaN = últim frame
+      } else {
+        const prev = radar.getLayerState(activeKey);
+        if (prev && prev.initialized && prev.currentTime) ms = prev.currentTime;
+      }
+
+      // Es posa el nou producte a aquella hora abans de mostrar-lo (sense salts)
+      await radar.syncToTime(key, ms);
+      if (seq !== switchSeq) return;
 
       activeKey = key;
       for (const k of Object.keys(PRODUCTS)) {
@@ -1064,55 +1143,106 @@
     // ------------------------------------------------------------------
     const acumAllowed = (m) => m <= Math.max(30, ACCESS[tier].minutes);
     const acumNeeded = (m) => (m <= 30 ? 'anon' : m <= 60 ? 'free' : m <= 180 ? 'entusiasta' : 'professional');
-
-    prodAcumBtn.addEventListener('click', async () => {
-      prodDbzBtn.classList.remove('active');
-      prodLluviaBtn.classList.remove('active');
-      prodAcumBtn.classList.add('active');
-
-      playerRadar.style.display = 'none';
-      playerAcum.style.display = '';
-
-      for (const k of Object.keys(PRODUCTS)) radar.setLayerVisibility(k, false);
-      hideAcumOnMap();
-
-      activeKey = 'acum';
-      if (!acumAllowed(acumPeriod)) acumPeriod = 30;
-      renderLegendAcum();
-      updateAcumChipsUI();
-
-      await refreshAcumulacions();
-      if (activeKey !== 'acum') return;
-      showAcumOnMap(acumPeriod);
-      renderLegendAcum();
-      updateAcumChipsUI();
-
-      if (isMobile()) closePanel();
-    });
-
-    document.querySelectorAll('.acum-chip').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const mins = Number(btn.dataset.min);
-        if (!Number.isFinite(mins)) return;
-        if (!acumAllowed(mins)) { openUpsell(acumNeeded(mins)); return; }
-
-        acumPeriod = mins;
-        updateAcumChipsUI();
-
-        if (activeKey !== 'acum') return;
-        if (!acumPeriods.length) await refreshAcumulacions();
-        if (activeKey !== 'acum') return;
-
-        showAcumOnMap(acumPeriod);
-        renderLegendAcum();
-      });
-    });
+    const acumSteps = () => (acumPeriods.length ? acumPeriods.map((p) => p.min) : DEFAULT_ACUM_STEPS);
+    const acumMaxIdx = () => {
+      let m = 0;
+      acumSteps().forEach((v, i) => { if (acumAllowed(v)) m = i; });
+      return m;
+    };
+    const shortPeriod = (m) => (m < 60 ? `${m} min` : `${Math.round((m / 60) * 10) / 10} h`);
+    const acumUrl = (p) => `${p.url}?v=${encodeURIComponent(acumKey)}`;
 
     function formatPeriodLabel(mins) {
       if (mins < 60) return `${Math.round(mins)} min`;
       const h = mins / 60;
       if (Number.isInteger(h)) return h === 1 ? '1 hora' : `${h} hores`;
       return `${h.toFixed(1)} hores`;
+    }
+
+    // --- Imatges en memòria (sempre revalidades amb el servidor) ---
+    function dropAcumBlobs() {
+      for (const b of acumBlobs.values()) URL.revokeObjectURL(b);
+      acumBlobs.clear();
+    }
+
+    async function preloadAcum() {
+      const live = new Set(acumPeriods.map((p) => p.url));
+      for (const [u, b] of acumBlobs) {
+        if (!live.has(u)) { URL.revokeObjectURL(b); acumBlobs.delete(u); }
+      }
+      const pending = acumPeriods.filter((p) => acumAllowed(p.min) && !acumBlobs.has(p.url));
+      await Promise.all(pending.map(async (p) => {
+        try {
+          const r = await fetch(p.url, { mode: 'cors', cache: 'no-cache' });
+          if (!r.ok) return;
+          const blob = await r.blob();
+          if (blob.size) acumBlobs.set(p.url, URL.createObjectURL(blob));
+        } catch (e) { /* es mostrarà directament per URL */ }
+      }));
+    }
+
+    // --- Pintat al mapa ---
+    function showAcumOnMap(minutes) {
+      const p = acumPeriods.find((x) => x.min === minutes);
+      if (!p) return;
+      const src = acumBlobs.get(p.url) || acumUrl(p);
+      const coords = regioCoordinates();
+
+      const source = map.getSource(ACUM_SOURCE_ID);
+      if (source && map.getLayer(ACUM_LAYER_ID)) {
+        try {
+          source.updateImage({ url: src, coordinates: coords });
+          return;
+        } catch (e) { hideAcumOnMap(); }
+      }
+
+      map.addSource(ACUM_SOURCE_ID, { type: 'image', url: src, coordinates: coords });
+
+      let before;
+      for (const id of ['radar-layer-dbz', 'radar-layer-lluvia', 'radar-layer']) {
+        if (map.getLayer(id)) { before = id; break; }
+      }
+
+      map.addLayer({
+        id: ACUM_LAYER_ID,
+        type: 'raster',
+        source: ACUM_SOURCE_ID,
+        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
+      }, before);
+    }
+
+    function hideAcumOnMap() {
+      if (map.getLayer(ACUM_LAYER_ID)) map.removeLayer(ACUM_LAYER_ID);
+      if (map.getSource(ACUM_SOURCE_ID)) map.removeSource(ACUM_SOURCE_ID);
+    }
+
+    // --- Slider i botons de període ---
+    function paintAcumSlider() {
+      const steps = acumSteps();
+      const n = steps.length;
+      const pctOf = (i) => (n > 1 ? (i / (n - 1)) * 100 : 0);
+      const maxIdx = acumMaxIdx();
+      const cur = Math.max(0, steps.indexOf(acumPeriod));
+
+      const sig = `${steps.join(',')}|${maxIdx}`;
+      if (sig !== acumSliderSig) {
+        acumSliderSig = sig;
+        acumTicks.innerHTML = steps.map((v, i) => `<i class="acum-tick" style="left:${pctOf(i)}%"></i>`).join('');
+        acumLabels.innerHTML = steps.map((v, i) =>
+          `<div class="timeline-label${i === 0 ? ' edge-l' : ''}${i === n - 1 ? ' edge-r' : ''}${i > maxIdx ? ' locked' : ''}" data-i="${i}" style="left:${pctOf(i)}%">${shortPeriod(v)}</div>`
+        ).join('');
+        const hasLock = maxIdx < n - 1;
+        const lockStart = hasLock ? ((maxIdx + 0.5) / (n - 1)) * 100 : 100;
+        acumLockedEl.style.width = (100 - lockStart) + '%';
+        acumLockIcon.style.display = hasLock ? 'block' : 'none';
+        acumLockIcon.style.left = ((lockStart + 100) / 2) + '%';
+      }
+
+      acumThumb.style.left = pctOf(cur) + '%';
+      acumProgress.style.width = pctOf(cur) + '%';
+      acumLabels.querySelectorAll('.timeline-label').forEach((el) => {
+        el.classList.toggle('active', Number(el.dataset.i) === cur);
+      });
     }
 
     function updateAcumChipsUI() {
@@ -1138,8 +1268,116 @@
       } else {
         acumDate.textContent = '';
       }
+      paintAcumSlider();
     }
 
+    function setAcumPeriod(mins) {
+      if (!Number.isFinite(mins)) return;
+      if (!acumAllowed(mins)) { openUpsell(acumNeeded(mins)); return; }
+      acumPeriod = mins;
+      updateAcumChipsUI();
+      if (activeKey !== 'acum') return;
+      showAcumOnMap(acumPeriod);
+      renderLegendAcum();
+    }
+
+    // --- Animació dels períodes (només els permesos pel pla) ---
+    function acumAdvance() {
+      const steps = acumSteps();
+      const maxIdx = acumMaxIdx();
+      const cur = Math.max(0, steps.indexOf(acumPeriod));
+      setAcumPeriod(steps[(cur + 1) % (maxIdx + 1)]);
+    }
+
+    function startAcumPlay() {
+      if (acumTimer) return;
+      if (acumMaxIdx() < 1) {
+        const steps = acumSteps();
+        openUpsell(acumNeeded(steps[1] || 60));
+        return;
+      }
+      acumTimer = setInterval(acumAdvance, ACUM_STEP_MS);
+      acumPlayBtn.textContent = 'Pausa';
+    }
+
+    function stopAcumPlay() {
+      if (acumTimer) clearInterval(acumTimer);
+      acumTimer = 0;
+      acumPlayBtn.textContent = 'Reprodueix';
+    }
+
+    acumPlayBtn.addEventListener('click', () => { if (acumTimer) stopAcumPlay(); else startAcumPlay(); });
+
+    // --- Slider: arrossegar / tocar ---
+    function acumIdxFromEvent(e) {
+      const rect = acumSliderEl.getBoundingClientRect();
+      const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+      const n = acumSteps().length;
+      return Math.round(Math.max(0, Math.min(1, x / rect.width)) * (n - 1));
+    }
+
+    function seekAcum(idx) {
+      const steps = acumSteps();
+      idx = Math.max(0, Math.min(steps.length - 1, idx));
+      const maxIdx = acumMaxIdx();
+      if (idx > maxIdx) {
+        if (!acumLockPrompted) { acumLockPrompted = true; openUpsell(acumNeeded(steps[idx])); }
+        idx = maxIdx;
+      }
+      if (steps[idx] !== acumPeriod) setAcumPeriod(steps[idx]);
+    }
+
+    acumSliderEl.addEventListener('mousedown', (e) => { acumDragging = true; stopAcumPlay(); seekAcum(acumIdxFromEvent(e)); });
+    acumSliderEl.addEventListener('touchstart', (e) => { acumDragging = true; stopAcumPlay(); seekAcum(acumIdxFromEvent(e)); }, { passive: true });
+    window.addEventListener('mousemove', (e) => { if (acumDragging) seekAcum(acumIdxFromEvent(e)); });
+    window.addEventListener('touchmove', (e) => { if (acumDragging) seekAcum(acumIdxFromEvent(e)); }, { passive: true });
+    window.addEventListener('mouseup', () => { acumDragging = false; acumLockPrompted = false; });
+    window.addEventListener('touchend', () => { acumDragging = false; acumLockPrompted = false; });
+
+    document.querySelectorAll('.acum-chip').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const mins = Number(btn.dataset.min);
+        if (!Number.isFinite(mins)) return;
+        stopAcumPlay();
+        if (!acumAllowed(mins)) { openUpsell(acumNeeded(mins)); return; }
+
+        if (activeKey === 'acum' && !acumPeriods.length) await refreshAcumulacions();
+        if (activeKey !== 'acum' && !acumPeriods.length) { acumPeriod = mins; updateAcumChipsUI(); return; }
+        setAcumPeriod(mins);
+      });
+    });
+
+    // --- Entrar al mode acumulació ---
+    prodAcumBtn.addEventListener('click', async () => {
+      switchSeq++;
+      prodDbzBtn.classList.remove('active');
+      prodLluviaBtn.classList.remove('active');
+      prodAcumBtn.classList.add('active');
+
+      playerRadar.style.display = 'none';
+      playerAcum.style.display = '';
+
+      for (const k of Object.keys(PRODUCTS)) radar.setLayerVisibility(k, false);
+      hideAcumOnMap();
+
+      activeKey = 'acum';
+      if (!acumAllowed(acumPeriod)) acumPeriod = 30;
+      renderLegendAcum();
+      updateAcumChipsUI();
+
+      // Si ja hi ha dades, es mostren de seguida i es revaliden en segon pla
+      if (acumPeriods.length) { showAcumOnMap(acumPeriod); }
+      await refreshAcumulacions();
+      if (activeKey !== 'acum') return;
+      showAcumOnMap(acumPeriod);
+      renderLegendAcum();
+      updateAcumChipsUI();
+      preloadAcum().catch(() => {});
+
+      if (isMobile()) closePanel();
+    });
+
+    // --- Lectura del manifest (sempre fresc) ---
     function refreshAcumulacions() {
       if (acumPromise) return acumPromise;
       acumPromise = (async () => {
@@ -1149,15 +1387,20 @@
             if (!acumPeriods.length) acumDate.textContent = "Sense dades d'acumulació";
             return;
           }
-          const key = manifest.last_timestamp || String(manifest.updated);
+          const key = `${manifest.updated || ''}|${manifest.last_timestamp || ''}`;
           const changed = key !== acumKey || !acumPeriods.length;
           acumManifest = manifest;
           if (changed) {
             acumPeriods = periodsFromManifest(manifest, ACUM_BASE);
             acumKey = key;
+            dropAcumBlobs();
           }
           updateAcumChipsUI();
-          if (changed && activeKey === 'acum') { showAcumOnMap(acumPeriod); renderLegendAcum(); }
+          if (changed && activeKey === 'acum') {
+            showAcumOnMap(acumPeriod);
+            renderLegendAcum();
+            preloadAcum().catch(() => {});
+          }
         } catch (e) {
           console.error('[acumulacions]', e);
           if (!acumPeriods.length) acumDate.textContent = "No s'han pogut carregar";
@@ -1166,33 +1409,6 @@
         }
       })();
       return acumPromise;
-    }
-
-    function showAcumOnMap(minutes) {
-      const p = acumPeriods.find((x) => x.min === minutes);
-      if (!p) return;
-
-      if (map.getLayer(ACUM_LAYER_ID)) map.removeLayer(ACUM_LAYER_ID);
-      if (map.getSource(ACUM_SOURCE_ID)) map.removeSource(ACUM_SOURCE_ID);
-
-      map.addSource(ACUM_SOURCE_ID, { type: 'image', url: p.url, coordinates: regioCoordinates() });
-
-      let before;
-      for (const id of ['radar-layer-dbz', 'radar-layer-lluvia', 'radar-layer']) {
-        if (map.getLayer(id)) { before = id; break; }
-      }
-
-      map.addLayer({
-        id: ACUM_LAYER_ID,
-        type: 'raster',
-        source: ACUM_SOURCE_ID,
-        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
-      }, before);
-    }
-
-    function hideAcumOnMap() {
-      if (map.getLayer(ACUM_LAYER_ID)) map.removeLayer(ACUM_LAYER_ID);
-      if (map.getSource(ACUM_SOURCE_ID)) map.removeSource(ACUM_SOURCE_ID);
     }
 
     // ------------------------------------------------------------------
@@ -1233,10 +1449,8 @@
       if (on) {
         if (stopAutoReload) return;
         stopAutoReload = initAutoReload({
-          intervalMs: 60000,
-          countdownS: 10,
+          intervalMs: 30000,
           watch: ['dbz', 'lluvia'],
-          reload: true,
         });
         chkAutoReload.checked = true;
         console.log('[autoreload] activat');
@@ -1247,10 +1461,21 @@
       }
     }
 
-    chkAutoReload.addEventListener('change', (e) => setAutoReload(e.target.checked));
+    // Dades noves publicades: acumulacions i avisos es refresquen sense recarregar
+    window.addEventListener('radar:data-updated', () => {
+      refreshAcumulacions().catch(() => {});
+      refreshAvisos().catch(() => {});
+    });
+
+    chkAutoReload.addEventListener('change', (e) => {
+      setAutoReload(e.target.checked);
+      try { localStorage.setItem('radar.autoreload', e.target.checked ? '1' : '0'); } catch (_) {}
+    });
 
     const arParam = new URLSearchParams(location.search).get('autoreload');
-    const arDefault = arParam !== '0';
+    let arStored = null;
+    try { arStored = localStorage.getItem('radar.autoreload'); } catch (_) {}
+    const arDefault = arParam === '1' || (arParam !== '0' && arStored !== '0');
     if (arDefault) {
       setTimeout(() => setAutoReload(true), 2000);
     }
@@ -1348,8 +1573,62 @@
     setInterval(() => {
       if (dragging || activeKey === 'acum') return;
       const s = radar.getLayerState(activeKey);
-      if (s) updateUI(s.currentIndex);
+      if (s) {
+        updateUI(s.currentIndex);
+        if (s.currentTime) lastRadarMs = s.currentTime;
+        if (s.totalFrames) lastAtLatest = s.currentIndex >= s.totalFrames - 1;
+      }
     }, 100);
+
+    // ------------------------------------------------------------------
+    // Desar la vista (producte, hora, pausa, mapa, capes)
+    // ------------------------------------------------------------------
+    function saveView() {
+      if (!appReady) return;
+      try {
+        const c = map.getCenter();
+        const chk = {};
+        document.querySelectorAll('#sidePanel input[type=checkbox]').forEach((el) => {
+          if (el.id && el.id !== 'chkAutoReload') chk[el.id] = el.checked;
+        });
+        sessionStorage.setItem(VIEW_KEY, JSON.stringify({
+          product: activeKey,
+          ms: lastRadarMs,
+          atLatest: lastAtLatest,
+          paused: uiPaused,
+          acumPeriod,
+          c: [c.lng, c.lat],
+          z: map.getZoom(),
+          chk,
+          density: $('densitySelect').value,
+        }));
+      } catch (e) {}
+    }
+    setInterval(saveView, 1000);
+    map.on('moveend', saveView);
+    window.addEventListener('pagehide', saveView);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) saveView(); });
+    ['prodDbz', 'prodLluvia', 'prodAcum', 'playPauseBtn', 'prevBtn', 'nextBtn', 'acumPlayBtn'].forEach((id) => {
+      $(id).addEventListener('click', () => setTimeout(saveView, 50));
+    });
+    document.querySelectorAll('.acum-chip').forEach((b) => b.addEventListener('click', () => setTimeout(saveView, 50)));
+    document.querySelectorAll('#sidePanel input[type=checkbox]').forEach((el) => el.addEventListener('change', saveView));
+    $('densitySelect').addEventListener('change', saveView);
+    timelineEl.addEventListener('mouseup', () => setTimeout(saveView, 50));
+    window.addEventListener('mouseup', () => setTimeout(saveView, 50));
+    window.addEventListener('touchend', () => setTimeout(saveView, 50));
+
+    // Ajustos que depenen de l'accés (quan ja se sap el pla de l'usuari)
+    async function applyRestoreLate() {
+      if (lateDone || !saved || !appReady || !authSettled) return;
+      lateDone = true;
+      if (saved.product === 'acum') {
+        if (Number.isFinite(saved.acumPeriod) && activeKey === 'acum') setAcumPeriod(saved.acumPeriod);
+      } else if (saved.paused && !saved.atLatest && Number.isFinite(saved.ms) && activeKey !== 'acum') {
+        await radar.syncToTime(activeKey, saved.ms);
+        lastRendered = -1;
+      }
+    }
 
     // ------------------------------------------------------------------
     // Accés per pla
@@ -1431,6 +1710,9 @@
     function openUpsell(need, custom) {
       const here = TIERS.indexOf(tier);
       const texts = {
+        anon: ['Inicia sessió per veure més',
+               'Sense compte pots veure els últims 25 minuts. Amb un compte gratuït de Google desbloqueges l\'hora sencera.',
+               'Iniciar sessió amb Google', () => loginGoogle()],
         free: ['Inicia sessió per veure 1 hora',
                'Sense compte pots veure els últims 25 minuts. Amb un compte gratuït de Google desbloqueges l\'hora sencera.',
                'Iniciar sessió amb Google', () => loginGoogle()],
@@ -1511,9 +1793,11 @@
       paintAvisTierBadge();
       if (!acumAllowed(acumPeriod)) {
         acumPeriod = 30;
+        stopAcumPlay();
         if (activeKey === 'acum' && acumPeriods.length) { showAcumOnMap(acumPeriod); renderLegendAcum(); }
       }
       updateAcumChipsUI();
+      if (activeKey === 'acum') preloadAcum().catch(() => {});
       if (appReady) refreshAvisos();
     }
 
@@ -1757,8 +2041,9 @@
     }
 
     async function refreshAvisos() {
-      // Carreguem les alertes AEMET de Catalunya
+      // Alertes AEMET de Catalunya: es descarta la caché del mòdul perquè sempre siguin fresques
       try {
+        resetAlertesCatalunya();
         alertesCatalunya = await getResumAlertesCatalunya();
         if (alertesCatalunya.total > 0) {
           console.log(`[alertes] ${alertesCatalunya.total} alertes a Catalunya`);
@@ -1828,6 +2113,7 @@
     radar.setBaseTheme(currentTheme);
     paintAvisTierBadge();
     updateAccountUI();
+    updateAcumChipsUI();
 
     map.once('style.load', async () => {
       setLoad(35, 'Carregant el radar…');
@@ -1861,31 +2147,74 @@
         return;
       }
 
-      selectProduct(available[0]);
+      const radarKey = (saved && available.includes(saved.product)) ? saved.product : available[0];
+      const restoreMs = (saved && !saved.atLatest && Number.isFinite(saved.ms)) ? saved.ms : NaN;
+      if (saved && Number.isFinite(saved.ms)) lastRadarMs = saved.ms;
+      await selectProduct(radarKey, saved ? { ms: restoreMs } : undefined);
       radar.startAllAnimations();
+      if (saved && saved.paused) pauseUI();
+
+      // Capes i densitat com les havia deixat l'usuari
+      if (saved) {
+        if (saved.chk) {
+          for (const [id, val] of Object.entries(saved.chk)) {
+            const el = $(id);
+            if (!el || el.checked === !!val) continue;
+            if (id === 'chkAvisos' && val) continue;   // es reactiva sol segons el pla
+            el.checked = !!val;
+            el.dispatchEvent(new Event('change'));
+          }
+        }
+        if (saved.density && $('densitySelect').querySelector(`option[value="${saved.density}"]`)) {
+          $('densitySelect').value = saved.density;
+          radar.setDensity(saved.density);
+        }
+        if (saved.product === 'acum') {
+          if (Number.isFinite(saved.acumPeriod)) acumPeriod = saved.acumPeriod;
+          prodAcumBtn.click();
+        }
+      }
 
       setLoad(100, 'A punt!');
       hideLoader();
 
       appReady = true;
+      applyRestoreLate();
       setTimeout(() => {
         refreshAcumulacions().catch(() => {});
         refreshAvisos().catch(() => {});
       }, 1200);
 
-      setInterval(() => { if (!document.hidden) refreshAcumulacions().catch(() => {}); }, 120000);
+      // Dades vives: sempre es tornen a llegir sense caché
+      setInterval(() => { if (!document.hidden) refreshAcumulacions().catch(() => {}); }, ACUM_REFRESH_MS);
+      setInterval(() => { if (!document.hidden && appReady) refreshAvisos().catch(() => {}); }, AVISOS_REFRESH_MS);
     });
 
     // ------------------------------------------------------------------
     // Visibilitat i teclat
     // ------------------------------------------------------------------
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) radar.pauseRadarAnimation();
-      else if (!uiPaused && activeKey !== 'acum') radar.resumeRadarAnimation();
+      if (document.hidden) {
+        radar.pauseRadarAnimation();
+      } else {
+        if (!uiPaused && activeKey !== 'acum') radar.resumeRadarAnimation();
+        if (appReady) {
+          refreshAcumulacions().catch(() => {});
+          refreshAvisos().catch(() => {});
+        }
+      }
     });
     document.addEventListener('keydown', (e) => {
       if (e.target === searchInput) return;
-      if (activeKey === 'acum') return;
+      if (activeKey === 'acum') {
+        const steps = acumSteps();
+        const cur = Math.max(0, steps.indexOf(acumPeriod));
+        if (e.key === 'ArrowLeft') { stopAcumPlay(); seekAcum(cur - 1); }
+        else if (e.key === 'ArrowRight') { stopAcumPlay(); seekAcum(cur + 1); }
+        else if (e.key === ' ') { e.preventDefault(); acumPlayBtn.click(); }
+        else if (e.key === 'Escape') closePanel();
+        return;
+      }
       if (e.key === 'ArrowLeft') step(-1);
       else if (e.key === 'ArrowRight') step(1);
       else if (e.key === ' ') { e.preventDefault(); playPauseBtn.click(); }
@@ -1914,7 +2243,7 @@
 
       authMod.onAuthStateChanged(auth, async (u) => {
         currentUser = u;
-        if (!u) { tier = 'anon'; planLabel = ''; accessChanged(); return; }
+        if (!u) { tier = 'anon'; planLabel = ''; accessChanged(); authSettled = true; applyRestoreLate(); return; }
 
         tier = 'free'; planLabel = 'Gratuït';
         accessChanged();
@@ -1927,6 +2256,8 @@
         else if (plan === 'professional' || plan === 'equips') { tier = 'professional'; planLabel = plan === 'equips' ? 'Equips' : 'Professional'; }
         else { tier = 'free'; planLabel = 'Gratuït'; }
         accessChanged();
+        authSettled = true;
+        applyRestoreLate();
       });
     })().catch((e) => console.warn('[firebase]', e));
 
@@ -1942,7 +2273,7 @@
     async function logout() {
       try {
         await authReady;
-        if (auth && fb) await auth.signOut(auth);
+        if (auth && fb) await fb.signOut(auth);
       } catch (e) { console.error(e); }
     }
   </script>
