@@ -3,25 +3,29 @@
 //
 // Política de caché:
 //  - Dades VIVES (manifests i frames del radar): sempre es validen amb el servidor.
-//      · manifest: cache 'no-store' + ?t=<ara>
+//      · manifest: cache 'no-store' + ?t=<bloc de 10 s> (així un CDN pot compartir-lo entre usuaris)
 //      · frames:   cache 'no-cache' (revalida; si no ha canviat, el servidor respon 304)
-//      · els blobs només viuen a memòria durant la sessió i es descarten quan el
-//        manifest retira el frame.
+//      · els blobs només viuen a memòria durant la sessió.
 //      · els últims frames es tornen a baixar cada cop que el manifest canvia,
 //        per si s'han regenerat amb el mateix nom.
 //  - Dades ESTÀTIQUES (comarques, relleu, municipis, ciutats): caché normal del navegador.
 //
-// Arrencada ràpida:
-//  - Els manifests i els primers frames es demanen en importar el mòdul,
-//    en paral·lel amb la càrrega del mapa base.
-//  - initRadar() només espera el radar. Relleu, comarques, ciutats i
-//    municipis es carreguen en segon pla després.
-//  - Els frames es baixen com a blobs (cua amb prioritats, el més recent primer).
-//    L'animació només avança entre frames que ja són a memòria.
-//  - syncToTime() canvia un producte a una hora concreta (o al frame més proper),
-//    per mantenir la mateixa hora en passar de dBZ a mm/h i viceversa.
+// Lleuger:
+//  - Només es precarreguen les últimes PRELOAD_FRAMES (3 h) de la capa visible i els
+//    últims 2 frames de l'altra. Els frames antics es baixen quan l'usuari hi arriba.
+//  - Hi ha un límit de blobs a memòria per capa (KEEP_*): els més antics s'alliberen.
+//  - Mòbils amb poca memòria o "estalvi de dades": precàrrega i descàrregues reduïdes.
+//  - Els municipis (només visibles a zoom >= 8) es carreguen amb una mica de retard.
+//  - orderLayers no serialitza tot l'estil (getLayersOrder).
+//
+// Llamps: la línia de temps del radar governa els llamps (setLightningTime):
+//  frame més recent = directe; frame antic = llamps dels 5 min anteriors a aquella hora.
 
 import { regioCoordinates } from '../dades/escales.js';
+import {
+  initLightning, reapplyLightning, setLightningVisibility, setLightningTime,
+  setLightningSound, getLightningSound, LIGHTNING_LAYER_IDS,
+} from './llamps.js';
 
 // ---------------------------------------------------------------------------
 // CONFIGURACIÓ
@@ -38,11 +42,14 @@ const FONT = ['Noto Sans Regular'];
 const DENSITY_KEY = 'radar.density';
 const DEFAULT_DENSITY = 'normal';
 
+// NOTA: tots els nuclis d'Overture tenen població 0, així que l'últim nivell de
+// cada densitat baixa a 0 perquè es vegin. Si notes que el mapa va lent a zoom
+// alt, puja aquests 0 a un valor més gran (però llavors no veuràs cap poble).
 const DENSITY = {
-  'poc':       [[3, 500000], [6, 200000], [8, 100000], [10, 50000], [12, 20000], [14, 10000]],
-  'normal':    [[3, 300000], [6, 100000], [8, 30000],  [9, 15000],  [10, 8000],  [11, 4000],  [12, 2000], [13, 1000]],
-  'dens':      [[3, 200000], [6, 50000],  [8, 15000],  [9, 8000],   [10, 4000],  [11, 2000],  [12, 1000], [13, 500]],
-  'molt-dens': [[3, 100000], [6, 20000],  [8, 8000],   [9, 4000],   [10, 2000],  [11, 1000],  [12, 500],  [13, 0]],
+  'poc':       [[3, 500000], [6, 200000], [8, 100000], [10, 50000], [12, 20000], [14, 0]],
+  'normal':    [[3, 300000], [6, 100000], [8, 30000],  [9, 15000],  [10, 8000],  [11, 4000],  [12, 2000], [13, 0]],
+  'dens':      [[3, 200000], [6, 50000],  [8, 15000],  [9, 8000],   [10, 4000],  [11, 2000],  [12, 0]],
+  'molt-dens': [[3, 100000], [6, 20000],  [8, 8000],   [9, 4000],   [10, 2000],  [11, 0]],
 };
 
 const CITY_THEME = {
@@ -64,6 +71,7 @@ const MUNI_THEME = {
   fosc: { color: 'rgba(255,255,255,0.32)', opacity: 1 },
 };
 const MUNI_WIDTH = ['interpolate', ['linear'], ['zoom'], 8, 0.4, 11, 0.7, 14, 1.2];
+const MUNI_DELAY_MS = 2000;   // les línies de municipis no es veuen fins a zoom 8
 
 const AVIS_SRC = 'avisos-src';
 const AVIS_FILL = 'avisos-fill';
@@ -72,12 +80,15 @@ const AVIS_COLOR = ['match', ['get', 'level'], 3, '#ef4444', 2, '#f97316', '#fac
 
 const ACUM_LAYER_ID = 'acum-layer';
 
+// Com que tots els nuclis tenen població 0, no podem fer servir 'step' sobre
+// població per mida. Fem servir un interpolate per zoom amb mides fixes.
 const CITY_TEXT_SIZE = [
   'interpolate', ['linear'], ['zoom'],
-  4,  ['step', ['get', 'poblacio'], 9,  500000, 11, 2000000, 13],
-  8,  ['step', ['get', 'poblacio'], 9,  8000,   10, 50000,   12, 200000,  14, 1000000, 16],
-  12, ['step', ['get', 'poblacio'], 10, 1000,   11, 5000,    12, 20000,   13, 100000,  15, 500000, 18],
-  16, ['step', ['get', 'poblacio'], 12, 2000,   13, 20000,   15, 100000,  18, 500000, 22],
+  4,  9,
+  8,  10,
+  11, 11,
+  13, 12,
+  16, 14,
 ];
 
 // ===========================================================================
@@ -112,17 +123,32 @@ const RADAR = {
 
 const COORDS = regioCoordinates();
 
+// Dispositiu fluix o connexió limitada: es carrega menys
+const LOW_END = (() => {
+  try {
+    const c = navigator.connection;
+    if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ''))) return true;
+    if (navigator.deviceMemory && navigator.deviceMemory <= 2) return true;
+  } catch (e) { /* ignore */ }
+  return false;
+})();
+
 const FPS = 3;
 const LOOP = true;
 
-const MAX_PARALLEL = 8;          // descàrregues simultànies
-const FETCH_TIMEOUT_MS = 15000;
+const MAX_PARALLEL = LOW_END ? 3 : 6;        // descàrregues simultànies
+const FETCH_TIMEOUT_MS = 12000;
 const FETCH_RETRIES = 3;
 const FIRST_FRAME_WAIT_MS = 1500;
-const SWITCH_WAIT_MS = 1500;     // espera màxima en canviar de producte / hora
-const BOOT_FRAMES = 6;           // frames que es baixen abans de saber el pla de l'usuari
-const REFRESH_MS = 30000;        // cada quant es torna a llegir el manifest
-const TAIL_REVALIDATE = 2;       // últims frames que es tornen a baixar quan el manifest canvia
+const SWITCH_WAIT_MS = 1500;                 // espera màxima en canviar de producte / hora
+const BOOT_FRAMES = LOW_END ? 3 : 6;         // frames que es baixen a l'arrencada (capa visible)
+const REFRESH_MS = 30000;                    // cada quant es torna a llegir el manifest
+const TAIL_REVALIDATE = 2;                   // últims frames que es tornen a baixar quan el manifest canvia
+
+const PRELOAD_FRAMES = LOW_END ? 12 : 36;    // capa visible: últimes 3 h (a 5 min/frame)
+const PRELOAD_HIDDEN = 2;                    // capa amagada: només els últims frames
+const KEEP_VISIBLE = LOW_END ? 24 : 90;      // màxim de blobs a memòria (capa visible)
+const KEEP_HIDDEN = 12;                      // màxim de blobs a memòria (capa amagada)
 
 // ---------------------------------------------------------------------------
 // ESTAT
@@ -170,6 +196,18 @@ for (const key of Object.keys(RADAR)) {
     orphans: [],
     syncing: false,
   };
+}
+
+// ---------------------------------------------------------------------------
+// LLAMPS: la línia de temps del radar governa quins llamps es veuen
+// ---------------------------------------------------------------------------
+
+function syncLightning(key, index) {
+  const st = state.layers[key];
+  if (!st || !st.visible) return;
+  const d = st.timestamps[index];
+  const last = index >= st.frames.length - 1;
+  setLightningTime(last || !d ? null : d.getTime());
 }
 
 // ---------------------------------------------------------------------------
@@ -284,11 +322,18 @@ function requestFrame(url, prio) {
   return entry.promise;
 }
 
+// Primer índex que es precarrega: capa visible = últimes 3 h; amagada = últims frames
+function preloadFrom(st) {
+  const keepLast = st.visible ? PRELOAD_FRAMES : PRELOAD_HIDDEN;
+  return Math.max(st.minIndex, st.frames.length - keepLast);
+}
+
 function enqueueLayer(key) {
   const st = state.layers[key];
   if (!st) return;
   const prio = layerPrio(key);
-  for (let i = st.frames.length - 1; i >= st.minIndex; i--) {
+  const from = preloadFrom(st);
+  for (let i = st.frames.length - 1; i >= from; i--) {
     const url = st.frames[i];
     if (blobCache.has(url) || queued.has(url) || inflight.has(url)) continue;
     requestFrame(url, prio);
@@ -299,8 +344,26 @@ function enqueueLayer(key) {
 function retryMissing(key) {
   const st = state.layers[key];
   if (!st || !st.initialized) return;
-  for (let i = st.minIndex; i < st.frames.length; i++) failed.delete(st.frames[i]);
+  for (let i = preloadFrom(st); i < st.frames.length; i++) failed.delete(st.frames[i]);
   enqueueLayer(key);
+}
+
+// Allibera els blobs més antics si se supera el límit de memòria de la capa
+function trimBlobs(key) {
+  const st = state.layers[key];
+  if (!st || !st.initialized) return;
+  const limit = st.visible ? KEEP_VISIBLE : KEEP_HIDDEN;
+  let kept = 0;
+  for (let i = st.frames.length - 1; i >= 0; i--) {
+    const url = st.frames[i];
+    const blob = blobCache.get(url);
+    if (!blob) continue;
+    if (kept < limit) { kept++; continue; }
+    if (i === st.currentIndex || url === st.applied || url === st.wanted) continue;
+    URL.revokeObjectURL(blob);
+    blobCache.delete(url);
+    st.loaded = Math.max(0, st.loaded - 1);
+  }
 }
 
 function reprioritize() {
@@ -341,7 +404,9 @@ function revalidateTail(key) {
 async function fetchManifest(cfg) {
   for (let i = 0; i < 3; i++) {
     try {
-      const r = await fetch(`${cfg.basePath}/manifest.json?t=${Date.now()}`, { cache: 'no-store' });
+      // El paràmetre canvia cada 10 s: sempre és fresc, però un CDN el pot compartir entre usuaris
+      const bucket = Math.floor(Date.now() / 10000);
+      const r = await fetch(`${cfg.basePath}/manifest.json?t=${bucket}`, { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         if (j && Array.isArray(j.frames)) return j;
@@ -443,8 +508,10 @@ async function doSync(key, initial) {
 
   if (first) {
     requestFrame(frames[st.currentIndex], 0);
+    // Capa visible: uns quants frames d'arrencada. Capa amagada: només l'actual.
     const prio = layerPrio(key);
-    for (let i = frames.length - 2; i >= Math.max(0, frames.length - BOOT_FRAMES); i--) {
+    const n = st.visible ? BOOT_FRAMES : 1;
+    for (let i = frames.length - 2; i >= Math.max(0, frames.length - n); i--) {
       requestFrame(frames[i], prio);
     }
     if (late) {
@@ -462,6 +529,7 @@ async function doSync(key, initial) {
   enqueueLayer(key);
   revalidateTail(key);
   flushOrphans(st);
+  syncLightning(key, st.currentIndex);
   notify(key);
   return true;
 }
@@ -482,7 +550,7 @@ let refreshTimer = 0;
 function refreshAll() {
   return Promise.all(Object.keys(RADAR).map((key) =>
     syncLayer(key)
-      .then(() => retryMissing(key))
+      .then(() => { retryMissing(key); trimBlobs(key); })
       .catch((e) => console.warn(`[radar:${key}] refresc`, e && e.message))
   ));
 }
@@ -660,6 +728,10 @@ export function setAvisosData(fc) {
 // ---------------------------------------------------------------------------
 // CIUTATS
 // ---------------------------------------------------------------------------
+// Suporta dos formats:
+//   - Array compacte: [nom, lon, lat]                (generat des d'Overture)
+//   - Objecte:        {nom, lon, lat, poblacio, ...} (format antic)
+// ---------------------------------------------------------------------------
 
 let citiesCache = null;
 
@@ -668,20 +740,44 @@ function buildCitiesGeoJSON() {
   return {
     type: 'FeatureCollection',
     features: list
-      .filter((c) => Number.isFinite(c.lon) && Number.isFinite(c.lat))
-      .map((c) => ({
-        type: 'Feature',
-        properties: { nom: c.nom, poblacio: c.poblacio || 0 },
-        geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
-      })),
+      .map((c) => {
+        let nom, lon, lat, poblacio;
+        if (Array.isArray(c)) {
+          [nom, lon, lat] = c;
+          poblacio = 0;
+        } else if (c && typeof c === 'object') {
+          nom = c.nom;
+          lon = c.lon;
+          lat = c.lat;
+          poblacio = c.poblacio || 0;
+        } else {
+          return null;
+        }
+        if (!nom || !Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+        return {
+          type: 'Feature',
+          properties: { nom, poblacio },
+          geometry: { type: 'Point', coordinates: [lon, lat] },
+        };
+      })
+      .filter(Boolean),
   };
 }
 
-function removeCityLayers(map) {
+// Ids de les capes del mapa en ordre, sense serialitzar tot l'estil (molt més lleuger)
+function layerIds(map) {
+  try {
+    if (typeof map.getLayersOrder === 'function') return map.getLayersOrder();
+  } catch (e) { /* cau al mètode antic */ }
   const style = map.getStyle();
-  if (!style) return;
-  for (const l of style.layers) {
-    if (l.id.startsWith(CITIES_PREFIX)) map.removeLayer(l.id);
+  return style ? style.layers.map((l) => l.id) : [];
+}
+
+function removeCityLayers(map) {
+  let ids;
+  try { ids = layerIds(map); } catch (e) { return; }
+  for (const id of ids) {
+    if (id.startsWith(CITIES_PREFIX)) map.removeLayer(id);
   }
 }
 
@@ -700,13 +796,18 @@ function addCities(map) {
 
   tiers.forEach(([zoom, minPop], i) => {
     const next = tiers[i + 1];
+    // Com que població = 0 per a tots els nuclis d'Overture, el filtre per
+    // població no té sentit. Només mostrem els que tenen població 0 (tots)
+    // a partir del zoom indicat. El filtre '>=' amb 0 sempre passa.
     map.addLayer({
       id: CITIES_PREFIX + i,
       type: 'symbol',
       source: CITIES_SRC,
       minzoom: zoom,
       maxzoom: next ? next[0] : 24,
-      filter: ['>=', ['get', 'poblacio'], minPop],
+      filter: minPop > 0
+        ? ['any', ['>=', ['get', 'poblacio'], minPop], ['==', ['get', 'poblacio'], 0]]
+        : ['>=', ['get', 'poblacio'], 0],
       layout: {
         visibility: vis(state.citiesVisible),
         'text-field': ['get', 'nom'],
@@ -714,7 +815,7 @@ function addCities(map) {
         'text-size': CITY_TEXT_SIZE,
         'text-padding': 3,
         'text-max-width': 8,
-        'symbol-sort-key': ['-', 0, ['get', 'poblacio']],
+        'symbol-sort-key': ['get', 'nom'],
       },
       paint: {
         'text-color': t.text,
@@ -799,25 +900,25 @@ export function setReliefVisibility(visible) {
 // ---------------------------------------------------------------------------
 
 function orderLayers(map) {
-  const style = map.getStyle();
-  if (!style) return;
-  if (map.getLayer(RELIEF_LAYER)) map.moveLayer(RELIEF_LAYER);
+  let ids;
+  try { ids = layerIds(map); } catch (e) { return; }
+  if (!ids.length) return;
+
+  const mv = (id) => { if (map.getLayer(id)) map.moveLayer(id); };
+
+  mv(RELIEF_LAYER);
   // Alertes AEMET: per sota del radar
-  for (const l of style.layers) {
-    if (l.id.startsWith('alertes-')) map.moveLayer(l.id);
-  }
+  for (const id of ids) if (id.startsWith('alertes-')) mv(id);
   // Avisos de pluja: per sota del radar (el radar sempre queda pintat a sobre)
-  if (map.getLayer(AVIS_FILL)) map.moveLayer(AVIS_FILL);
-  if (map.getLayer(AVIS_LINE)) map.moveLayer(AVIS_LINE);
-  if (map.getLayer(ACUM_LAYER_ID)) map.moveLayer(ACUM_LAYER_ID);
-  for (const key of Object.keys(RADAR)) {
-    if (map.getLayer(RADAR[key].layerId)) map.moveLayer(RADAR[key].layerId);
-  }
-  if (map.getLayer(MUNI_LINE)) map.moveLayer(MUNI_LINE);
-  if (map.getLayer(COMARQUES_LINE)) map.moveLayer(COMARQUES_LINE);
-  for (const l of style.layers) {
-    if (l.id.startsWith(CITIES_PREFIX)) map.moveLayer(l.id);
-  }
+  mv(AVIS_FILL);
+  mv(AVIS_LINE);
+  mv(ACUM_LAYER_ID);
+  for (const key of Object.keys(RADAR)) mv(RADAR[key].layerId);
+  // Llamps: per sobre del radar (han de ser ben visibles)
+  for (const id of LIGHTNING_LAYER_IDS) mv(id);
+  mv(MUNI_LINE);
+  mv(COMARQUES_LINE);
+  for (const id of ids) if (id.startsWith(CITIES_PREFIX)) mv(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -861,6 +962,7 @@ function showFrame(key, index) {
   const url = st.frames[index];
   st.currentIndex = index;
   st.wanted = url;
+  syncLightning(key, index);
 
   if (blobCache.has(url)) {
     scheduleApply(key);
@@ -904,6 +1006,7 @@ function nextReadyIndex(st) {
 }
 
 function tick() {
+  if (document.hidden) return;
   for (const key of Object.keys(state.layers)) {
     const st = state.layers[key];
     if (!st.initialized || !st.visible || st.frames.length === 0) continue;
@@ -946,8 +1049,10 @@ function loadExtras(map) {
       orderLayers(map);
       await Promise.all([addRelief(map), addComarques(map)]);
       orderLayers(map);
-      await addMunicipis(map);
-      orderLayers(map);
+      // Municipis: pesats i només visibles a zoom >= 8, es carreguen una mica després
+      setTimeout(() => {
+        addMunicipis(map).then(() => orderLayers(map)).catch(noop);
+      }, MUNI_DELAY_MS);
     } catch (e) {
       console.warn('[extras]', e && e.message);
     }
@@ -974,6 +1079,8 @@ export async function initRadar(map) {
   }));
 
   orderLayers(map);
+  initLightning(map);
+  orderLayers(map);
   loadExtras(map);
   bootDone = true;
   startRefresh();
@@ -984,6 +1091,7 @@ export async function reapplyLayers() {
   const map = state.map;
   if (!map) return;
   addAvisos(map);
+  reapplyLightning(map);
   addCities(map);
   for (const key of Object.keys(RADAR)) addRadarLayer(map, key);
   orderLayers(map);
@@ -1070,14 +1178,19 @@ export async function syncToTime(key, ms) {
 export function setLayerVisibility(key, visible) {
   const cfg = RADAR[key];
   if (!cfg) return;
-  state.layers[key].visible = visible;
+  const st = state.layers[key];
+  st.visible = visible;
   const map = state.map;
   if (map && map.getLayer(cfg.layerId)) map.setLayoutProperty(cfg.layerId, 'visibility', vis(visible));
   reprioritize();
   if (visible) {
     enqueueLayer(key);
     scheduleApply(key);
+    syncLightning(key, st.currentIndex);
+  } else if (!Object.values(state.layers).some((l) => l.visible)) {
+    setLightningTime(null);   // sense radar visible (p. ex. acumulació): llamps en directe
   }
+  for (const k of Object.keys(state.layers)) trimBlobs(k);
 }
 
 export function setLayerOpacity(key, opacity) {
@@ -1113,6 +1226,8 @@ export function getLayerState(key) {
 export const pauseRadarAnimation = stopAllAnimations;
 export const resumeRadarAnimation = startAllAnimations;
 
+export { setLightningVisibility, setLightningSound, getLightningSound };
+
 export default {
   initRadar,
   reapplyLayers,
@@ -1124,6 +1239,9 @@ export default {
   setReliefVisibility,
   setMunicipisVisibility,
   setAvisosData,
+  setLightningVisibility,
+  setLightningSound,
+  getLightningSound,
   getMunicipis,
   startAllAnimations,
   stopAllAnimations,
