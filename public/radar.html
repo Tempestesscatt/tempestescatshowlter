@@ -470,6 +470,42 @@
     }
     @media (max-width: 400px) { .time-date { display: none; } }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+    /* ===== Punt temporal de cerca (5 segons) ===== */
+.search-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+.search-marker-dot {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #5a9dff;
+  border: 2px solid #fff;
+  box-shadow: 0 0 10px rgba(90, 157, 255, 0.9);
+}
+.search-marker-pulse {
+  position: absolute;
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(90, 157, 255, 0.4);
+  animation: search-marker-pulse 1.2s ease-out infinite;
+}
+@keyframes search-marker-pulse {
+  0%   { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
   </style>
 </head>
 <body>
@@ -1644,14 +1680,75 @@ function searchCities(query) {
       searchResults.classList.add('visible');
     }
 
-    function pickCity(c) {
-      if (!c || !Number.isFinite(c.lon) || !Number.isFinite(c.lat)) return;
-      map.flyTo({ center: [c.lon, c.lat], zoom: 11, duration: 1200, essential: true });
-      searchInput.value = c.nom;
-      searchResults.classList.remove('visible');
-      searchClear.classList.add('visible');
-      searchInput.blur();
+// ------------------------------------------------------------------
+// Punt temporal al lloc cercat (5 segons)
+// ------------------------------------------------------------------
+let searchMarkerEl = null;
+let searchMarkerTimer = 0;
+let searchMarkerMoveHandler = null;
+
+function showSearchMarker(lon, lat) {
+  const mapEl = document.getElementById('map');
+  if (!mapEl) return;
+
+  hideSearchMarker();
+
+  searchMarkerEl = document.createElement('div');
+  searchMarkerEl.className = 'search-marker';
+  searchMarkerEl.innerHTML = '<div class="search-marker-pulse"></div><div class="search-marker-dot"></div>';
+  mapEl.appendChild(searchMarkerEl);
+
+  const positionMarker = () => {
+    if (!searchMarkerEl) return;
+    const p = map.project([lon, lat]);
+    searchMarkerEl.style.transform = `translate(${p.x}px, ${p.y}px)`;
+  };
+
+  positionMarker();
+
+  searchMarkerMoveHandler = positionMarker;
+  map.on('move', searchMarkerMoveHandler);
+  map.on('zoom', searchMarkerMoveHandler);
+
+  // 5 segons, amb fade-out suau al final
+  searchMarkerTimer = setTimeout(() => {
+    if (searchMarkerEl) {
+      searchMarkerEl.style.transition = 'opacity 400ms ease';
+      searchMarkerEl.style.opacity = '0';
+      setTimeout(hideSearchMarker, 400);
     }
+  }, 4600);
+}
+
+function hideSearchMarker() {
+  if (searchMarkerTimer) {
+    clearTimeout(searchMarkerTimer);
+    searchMarkerTimer = 0;
+  }
+  if (searchMarkerMoveHandler) {
+    try {
+      map.off('move', searchMarkerMoveHandler);
+      map.off('zoom', searchMarkerMoveHandler);
+    } catch (e) { /* ignore */ }
+    searchMarkerMoveHandler = null;
+  }
+  if (searchMarkerEl) {
+    searchMarkerEl.style.transition = '';
+    searchMarkerEl.style.opacity = '';
+    searchMarkerEl.remove();
+    searchMarkerEl = null;
+  }
+}
+
+function pickCity(c) {
+  if (!c || !Number.isFinite(c.lon) || !Number.isFinite(c.lat)) return;
+  map.flyTo({ center: [c.lon, c.lat], zoom: 11, duration: 1200, essential: true });
+  searchInput.value = c.nom;
+  searchResults.classList.remove('visible');
+  searchClear.classList.add('visible');
+  searchInput.blur();
+  showSearchMarker(c.lon, c.lat);   // <-- AFEGIR AIXÒ
+}
 
     function clearSearch() {
       searchInput.value = '';

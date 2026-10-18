@@ -1,0 +1,110 @@
+{
+  "zona": "catalunya_pronunciada",
+  "label": "Catalunya (s\u00faper pronunciada)",
+  "zoom": 9,
+  "bbox": {
+    "west": 0.098876953125,
+    "east": 3.4002685546875,
+    "south": 40.449037195237594,
+    "north": 42.95039177450287
+  },
+  "coordinates": [
+    [
+      0.098876953125,
+      42.95039177450287
+    ],
+    [
+      3.4002685546875,
+      42.95039177450287
+    ],
+    [
+      3.4002685546875,
+      40.449037195237594
+    ],
+    [
+      0.098876953125,
+      40.449037195237594
+    ]
+  ],
+  "retall_geojson": true,
+  "variants": [
+    {
+      "nom": "01_pronunciat",
+      "file": "catrell_catalunya_pronunciada_01_pronunciat.png",
+      "exageracio": 6.0,
+      "altura": 20.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 2.5,
+      "ombra_proj_forca": 1.0,
+      "width": 1202,
+      "height": 1220
+    },
+    {
+      "nom": "02_molt_pronunciat",
+      "file": "catrell_catalunya_pronunciada_02_molt_pronunciat.png",
+      "exageracio": 7.0,
+      "altura": 16.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 3.0,
+      "ombra_proj_forca": 1.0,
+      "width": 1202,
+      "height": 1220
+    },
+    {
+      "nom": "03_super_pronunciat",
+      "file": "catrell_catalunya_pronunciada_03_super_pronunciat.png",
+      "exageracio": 8.0,
+      "altura": 14.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 3.5,
+      "ombra_proj_forca": 1.0,
+      "width": 1202,
+      "height": 1220
+    },
+    {
+      "nom": "04_extrem",
+      "file": "catrell_catalunya_pronunciada_04_extrem.png",
+      "exageracio": 9.0,
+      "altura": 12.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 4.0,
+      "ombra_proj_forca": 1.0,
+      "width": 1202,
+      "height": 1220
+    },
+    {
+      "nom": "05_posta_sol_extrema",
+      "file": "catrell_catalunya_pronunciada_05_posta_sol_extrema.png",
+      "exageracio": 10.0,
+      "altura": 10.0,
+      "acimuts": [
+        300
+      ],
+      "ao_forca": 4.5,
+      "ombra_proj_forca": 1.0,
+      "width": 1202,
+      "height": 1220
+    },
+    {
+      "nom": "06_tinta_extrema",
+      "file": "catrell_catalunya_pronunciada_06_tinta_extrema.png",
+      "exageracio": 8.0,
+      "altura": 15.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 3.5,
+      "ombra_proj_forca": 1.0,
+      "width": 1202,
+      "height": 1220
+    }
+  ]
+}

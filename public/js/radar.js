@@ -1,25 +1,6 @@
 // public/js/radar.js
-// MapLibre GL JS: radar (PNG), comarques, municipis (GeoJSON.gz) i ciutats.
-//
-// Política de caché:
-//  - Dades VIVES (manifests i frames del radar): sempre es validen amb el servidor.
-//      · manifest: cache 'no-store' + ?t=<bloc de 10 s> (així un CDN pot compartir-lo entre usuaris)
-//      · frames:   cache 'no-cache' (revalida; si no ha canviat, el servidor respon 304)
-//      · els blobs només viuen a memòria durant la sessió.
-//      · els últims frames es tornen a baixar cada cop que el manifest canvia,
-//        per si s'han regenerat amb el mateix nom.
-//  - Dades ESTÀTIQUES (comarques, relleu, municipis, ciutats): caché normal del navegador.
-//
-// Lleuger:
-//  - Només es precarreguen les últimes PRELOAD_FRAMES (3 h) de la capa visible i els
-//    últims 2 frames de l'altra. Els frames antics es baixen quan l'usuari hi arriba.
-//  - Hi ha un límit de blobs a memòria per capa (KEEP_*): els més antics s'alliberen.
-//  - Mòbils amb poca memòria o "estalvi de dades": precàrrega i descàrregues reduïdes.
-//  - Els municipis (només visibles a zoom >= 8) es carreguen amb una mica de retard.
-//  - orderLayers no serialitza tot l'estil (getLayersOrder).
-//
-// Llamps: la línia de temps del radar governa els llamps (setLightningTime):
-//  frame més recent = directe; frame antic = llamps dels 5 min anteriors a aquella hora.
+// MapLibre GL JS: radar (PNG), comarques, municipis (GeoJSON.gz), ciutats,
+// relleu i províncies.
 
 import { regioCoordinates } from '../dades/escales.js';
 import {
@@ -42,14 +23,45 @@ const FONT = ['Noto Sans Regular'];
 const DENSITY_KEY = 'radar.density';
 const DEFAULT_DENSITY = 'normal';
 
-// NOTA: tots els nuclis d'Overture tenen població 0, així que l'últim nivell de
-// cada densitat baixa a 0 perquè es vegin. Si notes que el mapa va lent a zoom
-// alt, puja aquests 0 a un valor més gran (però llavors no veuràs cap poble).
+// ---------------------------------------------------------------------------
+// LLISTES MANUALS DE CIUTATS PER NIVELL
+// ---------------------------------------------------------------------------
+
+const CIUTATS_Z4 = new Set([
+  'Barcelona', 'Tarragona', 'Lleida', 'Girona', 'Reus',
+]);
+
+const CIUTATS_Z6 = new Set([
+  ...CIUTATS_Z4,
+  'Tortosa', 'Manresa', 'Terrassa', 'Sabadell', 'Mataró',
+  'Vic', 'Figueres', 'Vilafranca del Penedès', 'Vilanova i la Geltrú',
+  'Igualada', 'Blanes', 'Lloret de Mar', 'Olot', 'Salt',
+  'Granollers', 'Sant Cugat del Vallès', 'Mollet del Vallès',
+  'Rubí', 'Badalona', 'Santa Coloma de Gramenet',
+  'L\'Hospitalet de Llobregat', 'Cornellà de Llobregat',
+  'Sant Boi de Llobregat', 'El Prat de Llobregat',
+  'Castelldefels', 'Viladecans', 'Sant Adrià de Besòs',
+  'Cerdanyola del Vallès', 'Palafrugell', 'Sant Feliu de Guíxols',
+  'Palamós', 'Roses', 'Valls', 'Cambrils', 'Salou',
+  'El Vendrell', 'Amposta', 'Balaguer', 'Tàrrega', 'Mollerussa',
+  'La Seu d\'Urgell', 'Puigcerdà', 'Berga', 'Solsona',
+]);
+
+const CIUTATS_Z8 = new Set([
+  ...CIUTATS_Z6,
+  'Sant Carles de la Ràpita', 'Tremp', 'Cervera', 'Guissona',
+  'Artesa de Segre', 'Falset', 'Gandesa', 'Sort', 'Vielha',
+]);
+
+// ---------------------------------------------------------------------------
+// DENSITAT
+// ---------------------------------------------------------------------------
+
 const DENSITY = {
-  'poc':       [[3, 500000], [6, 200000], [8, 100000], [10, 50000], [12, 20000], [14, 0]],
-  'normal':    [[3, 300000], [6, 100000], [8, 30000],  [9, 15000],  [10, 8000],  [11, 4000],  [12, 2000], [13, 0]],
-  'dens':      [[3, 200000], [6, 50000],  [8, 15000],  [9, 8000],   [10, 4000],  [11, 2000],  [12, 0]],
-  'molt-dens': [[3, 100000], [6, 20000],  [8, 8000],   [9, 4000],   [10, 2000],  [11, 0]],
+  'poc':       [[4, 'z4'], [6, 'z6'], [8, 'z8'], [10, 'tots']],
+  'normal':    [[4, 'z4'], [6, 'z6'], [8, 'z8'], [10, 'tots']],
+  'dens':      [[4, 'z4'], [6, 'z6'], [7, 'z8'], [9, 'tots']],
+  'molt-dens': [[4, 'z4'], [5, 'z6'], [7, 'z8'], [8, 'tots']],
 };
 
 const CITY_THEME = {
@@ -71,7 +83,7 @@ const MUNI_THEME = {
   fosc: { color: 'rgba(255,255,255,0.32)', opacity: 1 },
 };
 const MUNI_WIDTH = ['interpolate', ['linear'], ['zoom'], 8, 0.4, 11, 0.7, 14, 1.2];
-const MUNI_DELAY_MS = 2000;   // les línies de municipis no es veuen fins a zoom 8
+const MUNI_DELAY_MS = 2000;
 
 const AVIS_SRC = 'avisos-src';
 const AVIS_FILL = 'avisos-fill';
@@ -80,25 +92,16 @@ const AVIS_COLOR = ['match', ['get', 'level'], 3, '#ef4444', 2, '#f97316', '#fac
 
 const ACUM_LAYER_ID = 'acum-layer';
 
-// Com que tots els nuclis tenen població 0, no podem fer servir 'step' sobre
-// població per mida. Fem servir un interpolate per zoom amb mides fixes.
 const CITY_TEXT_SIZE = [
   'interpolate', ['linear'], ['zoom'],
-  4,  9,
-  8,  10,
-  11, 11,
-  13, 12,
-  16, 14,
+  4,  10, 6,  11, 8,  11, 11, 12, 13, 13, 16, 15,
 ];
 
 // ===========================================================================
 // URLs DE R2
 // ===========================================================================
-// Totes les dades de radar, acumulacions i alertes vénen de R2.
-// Les dades d'AEMET (estacions, alertes CAP) viuen a estacions.js i alertes.js.
 
 const R2_BASE = 'https://radar-data.tempestes.cat';
-
 const RADAR_BASE_DBZ    = `${R2_BASE}/dades_radar_dbz`;
 const RADAR_BASE_NIMBUS = `${R2_BASE}/dades_radar_nimbus`;
 
@@ -123,7 +126,6 @@ const RADAR = {
 
 const COORDS = regioCoordinates();
 
-// Dispositiu fluix o connexió limitada: es carrega menys
 const LOW_END = (() => {
   try {
     const c = navigator.connection;
@@ -136,19 +138,19 @@ const LOW_END = (() => {
 const FPS = 3;
 const LOOP = true;
 
-const MAX_PARALLEL = LOW_END ? 3 : 6;        // descàrregues simultànies
+const MAX_PARALLEL = LOW_END ? 3 : 6;
 const FETCH_TIMEOUT_MS = 12000;
 const FETCH_RETRIES = 3;
 const FIRST_FRAME_WAIT_MS = 1500;
-const SWITCH_WAIT_MS = 1500;                 // espera màxima en canviar de producte / hora
-const BOOT_FRAMES = LOW_END ? 3 : 6;         // frames que es baixen a l'arrencada (capa visible)
-const REFRESH_MS = 30000;                    // cada quant es torna a llegir el manifest
-const TAIL_REVALIDATE = 2;                   // últims frames que es tornen a baixar quan el manifest canvia
+const SWITCH_WAIT_MS = 1500;
+const BOOT_FRAMES = LOW_END ? 3 : 6;
+const REFRESH_MS = 30000;
+const TAIL_REVALIDATE = 2;
 
-const PRELOAD_FRAMES = LOW_END ? 12 : 36;    // capa visible: últimes 3 h (a 5 min/frame)
-const PRELOAD_HIDDEN = 2;                    // capa amagada: només els últims frames
-const KEEP_VISIBLE = LOW_END ? 24 : 90;      // màxim de blobs a memòria (capa visible)
-const KEEP_HIDDEN = 12;                      // màxim de blobs a memòria (capa amagada)
+const PRELOAD_FRAMES = LOW_END ? 12 : 36;
+const PRELOAD_HIDDEN = 2;
+const KEEP_VISIBLE = LOW_END ? 24 : 90;
+const KEEP_HIDDEN = 12;
 
 // ---------------------------------------------------------------------------
 // ESTAT
@@ -173,6 +175,7 @@ const state = {
   citiesVisible: true,
   comarquesVisible: true,
   reliefVisible: true,
+  provinciesVisible: true,
   municipisVisible: true,
   avisosData: { type: 'FeatureCollection', features: [] },
   layers: {},
@@ -180,26 +183,15 @@ const state = {
 
 for (const key of Object.keys(RADAR)) {
   state.layers[key] = {
-    frames: [],
-    timestamps: [],
-    currentIndex: 0,
-    minIndex: 0,
-    initialized: false,
-    visible: RADAR[key].visible,
-    opacity: RADAR[key].opacity,
-    applied: null,
-    wanted: null,
-    applyScheduled: false,
-    loaded: 0,
-    manifestSig: null,
-    minTime: null,
-    orphans: [],
-    syncing: false,
+    frames: [], timestamps: [], currentIndex: 0, minIndex: 0,
+    initialized: false, visible: RADAR[key].visible, opacity: RADAR[key].opacity,
+    applied: null, wanted: null, applyScheduled: false, loaded: 0,
+    manifestSig: null, minTime: null, orphans: [], syncing: false,
   };
 }
 
 // ---------------------------------------------------------------------------
-// LLAMPS: la línia de temps del radar governa quins llamps es veuen
+// LLAMPS
 // ---------------------------------------------------------------------------
 
 function syncLightning(key, index) {
@@ -211,8 +203,7 @@ function syncLightning(key, index) {
 }
 
 // ---------------------------------------------------------------------------
-// CÀRREGA DE FRAMES: cua amb prioritats + cache de blobs (només memòria)
-// prio 0 = urgent, 1 = capa visible, 2 = capa amagada
+// CÀRREGA DE FRAMES
 // ---------------------------------------------------------------------------
 
 const blobCache = new Map();
@@ -231,7 +222,6 @@ async function downloadBlob(url) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
-      // 'no-cache': el navegador sempre pregunta al servidor si el fitxer ha canviat.
       const r = await fetch(url, { mode: 'cors', signal: ctrl.signal, cache: 'no-cache' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const blob = await r.blob();
@@ -257,12 +247,10 @@ function isLocked(url) {
 const layerPrio = (key) => (state.layers[key] && state.layers[key].visible ? 1 : 2);
 
 function pickNext() {
-  let bestI = -1;
-  let bestPrio = 99;
+  let bestI = -1, bestPrio = 99;
   for (let i = 0; i < queue.length; i++) {
     if (queue[i].prio < bestPrio) {
-      bestPrio = queue[i].prio;
-      bestI = i;
+      bestPrio = queue[i].prio; bestI = i;
       if (bestPrio === 0) break;
     }
   }
@@ -274,7 +262,6 @@ function pump() {
     const entry = pickNext();
     if (!entry) return;
     queued.delete(entry.url);
-
     if (blobCache.has(entry.url)) { entry.resolve(blobCache.get(entry.url)); continue; }
     if (entry.prio > 0 && failed.has(entry.url)) { entry.reject(new Error('fallit')); continue; }
     if (entry.prio > 0 && isLocked(entry.url)) { entry.reject(new Error('bloquejat')); continue; }
@@ -305,12 +292,8 @@ function pump() {
 
 function requestFrame(url, prio) {
   if (blobCache.has(url)) return Promise.resolve(blobCache.get(url));
-
   const existing = queued.get(url);
-  if (existing) {
-    if (prio < existing.prio) existing.prio = prio;
-    return existing.promise;
-  }
+  if (existing) { if (prio < existing.prio) existing.prio = prio; return existing.promise; }
   if (inflight.has(url)) return inflight.get(url).then(() => blobCache.get(url));
 
   const entry = { url, prio };
@@ -322,7 +305,6 @@ function requestFrame(url, prio) {
   return entry.promise;
 }
 
-// Primer índex que es precarrega: capa visible = últimes 3 h; amagada = últims frames
 function preloadFrom(st) {
   const keepLast = st.visible ? PRELOAD_FRAMES : PRELOAD_HIDDEN;
   return Math.max(st.minIndex, st.frames.length - keepLast);
@@ -340,7 +322,6 @@ function enqueueLayer(key) {
   }
 }
 
-// Si un frame havia fallat (xarxa, 404 transitori), es torna a provar.
 function retryMissing(key) {
   const st = state.layers[key];
   if (!st || !st.initialized) return;
@@ -348,7 +329,6 @@ function retryMissing(key) {
   enqueueLayer(key);
 }
 
-// Allibera els blobs més antics si se supera el límit de memòria de la capa
 function trimBlobs(key) {
   const st = state.layers[key];
   if (!st || !st.initialized) return;
@@ -374,7 +354,6 @@ function reprioritize() {
   }
 }
 
-// Torna a baixar (revalidant) un frame que ja era a memòria i el substitueix.
 async function refreshFrame(key, url) {
   try {
     const fresh = await downloadBlob(url);
@@ -404,7 +383,6 @@ function revalidateTail(key) {
 async function fetchManifest(cfg) {
   for (let i = 0; i < 3; i++) {
     try {
-      // El paràmetre canvia cada 10 s: sempre és fresc, però un CDN el pot compartir entre usuaris
       const bucket = Math.floor(Date.now() / 10000);
       const r = await fetch(`${cfg.basePath}/manifest.json?t=${bucket}`, { cache: 'no-store' });
       if (r.ok) {
@@ -508,7 +486,6 @@ async function doSync(key, initial) {
 
   if (first) {
     requestFrame(frames[st.currentIndex], 0);
-    // Capa visible: uns quants frames d'arrencada. Capa amagada: només l'actual.
     const prio = layerPrio(key);
     const n = st.visible ? BOOT_FRAMES : 1;
     for (let i = frames.length - 2; i >= Math.max(0, frames.length - n); i--) {
@@ -562,10 +539,8 @@ function startRefresh() {
   window.addEventListener('online', refreshAll);
 }
 
-/** Força una lectura immediata dels manifests (p. ex. en obrir un panell). */
 export function refreshNow() { return refreshAll(); }
 
-// Arrenca en importar el mòdul
 const prepared = {};
 for (const key of Object.keys(RADAR)) {
   prepared[key] = syncLayer(key, true).catch((e) => {
@@ -600,7 +575,7 @@ function addRadarLayer(map, key) {
 }
 
 // ---------------------------------------------------------------------------
-// MUNICIPIS (GeoJSON.gz) — dada estàtica, caché normal
+// MUNICIPIS
 // ---------------------------------------------------------------------------
 
 let municipisPromise = null;
@@ -700,7 +675,7 @@ function restyleComarques() {
 }
 
 // ---------------------------------------------------------------------------
-// AVISOS (fills i línies)
+// AVISOS
 // ---------------------------------------------------------------------------
 
 function addAvisos(map) {
@@ -728,43 +703,36 @@ export function setAvisosData(fc) {
 // ---------------------------------------------------------------------------
 // CIUTATS
 // ---------------------------------------------------------------------------
-// Suporta dos formats:
-//   - Array compacte: [nom, lon, lat]                (generat des d'Overture)
-//   - Objecte:        {nom, lon, lat, poblacio, ...} (format antic)
-// ---------------------------------------------------------------------------
 
 let citiesCache = null;
 
-function buildCitiesGeoJSON() {
-  const list = window.CIUTATS && Array.isArray(window.CIUTATS.llista) ? window.CIUTATS.llista : [];
-  return {
-    type: 'FeatureCollection',
-    features: list
-      .map((c) => {
-        let nom, lon, lat, poblacio;
-        if (Array.isArray(c)) {
-          [nom, lon, lat] = c;
-          poblacio = 0;
-        } else if (c && typeof c === 'object') {
-          nom = c.nom;
-          lon = c.lon;
-          lat = c.lat;
-          poblacio = c.poblacio || 0;
-        } else {
-          return null;
-        }
-        if (!nom || !Number.isFinite(lon) || !Number.isFinite(lat)) return null;
-        return {
-          type: 'Feature',
-          properties: { nom, poblacio },
-          geometry: { type: 'Point', coordinates: [lon, lat] },
-        };
-      })
-      .filter(Boolean),
-  };
+function nivellCiutat(nom) {
+  if (CIUTATS_Z4.has(nom)) return 'z4';
+  if (CIUTATS_Z6.has(nom)) return 'z6';
+  if (CIUTATS_Z8.has(nom)) return 'z8';
+  return 'tots';
 }
 
-// Ids de les capes del mapa en ordre, sense serialitzar tot l'estil (molt més lleuger)
+function buildCitiesGeoJSON() {
+  const list = window.CIUTATS && Array.isArray(window.CIUTATS.llista) ? window.CIUTATS.llista : [];
+  const features = [];
+  for (const c of list) {
+    let nom, lon, lat;
+    if (Array.isArray(c)) {
+      [nom, lon, lat] = c;
+    } else if (c && typeof c === 'object') {
+      nom = c.nom; lon = c.lon; lat = c.lat;
+    } else { continue; }
+    if (!nom || !Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+    features.push({
+      type: 'Feature',
+      properties: { nom, nivell: nivellCiutat(nom) },
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
 function layerIds(map) {
   try {
     if (typeof map.getLayersOrder === 'function') return map.getLayersOrder();
@@ -784,36 +752,31 @@ function removeCityLayers(map) {
 function addCities(map) {
   if (!citiesCache) {
     citiesCache = buildCitiesGeoJSON();
-    if (citiesCache.features.length === 0) console.warn('[ciutats] window.CIUTATS.llista buida o inexistent');
+    console.log(`[ciutats] ${citiesCache.features.length} nuclis`);
   }
 
   removeCityLayers(map);
   if (map.getSource(CITIES_SRC)) map.removeSource(CITIES_SRC);
   map.addSource(CITIES_SRC, { type: 'geojson', data: citiesCache });
 
-  const tiers = DENSITY[state.density];
   const t = CITY_THEME[state.theme];
+  const tiers = DENSITY[state.density];
 
-  tiers.forEach(([zoom, minPop], i) => {
+  tiers.forEach(([zoomMin, nivell], i) => {
     const next = tiers[i + 1];
-    // Com que població = 0 per a tots els nuclis d'Overture, el filtre per
-    // població no té sentit. Només mostrem els que tenen població 0 (tots)
-    // a partir del zoom indicat. El filtre '>=' amb 0 sempre passa.
     map.addLayer({
       id: CITIES_PREFIX + i,
       type: 'symbol',
       source: CITIES_SRC,
-      minzoom: zoom,
+      minzoom: zoomMin,
       maxzoom: next ? next[0] : 24,
-      filter: minPop > 0
-        ? ['any', ['>=', ['get', 'poblacio'], minPop], ['==', ['get', 'poblacio'], 0]]
-        : ['>=', ['get', 'poblacio'], 0],
+      filter: ['==', ['get', 'nivell'], nivell],
       layout: {
         visibility: vis(state.citiesVisible),
         'text-field': ['get', 'nom'],
         'text-font': FONT,
         'text-size': CITY_TEXT_SIZE,
-        'text-padding': 3,
+        'text-padding': 6,
         'text-max-width': 8,
         'symbol-sort-key': ['get', 'nom'],
       },
@@ -844,31 +807,26 @@ function restyleCities() {
 // RELLEU
 // ---------------------------------------------------------------------------
 
-const RELIEF_INFO_URL = '/dades/relleu_catalunya.json';
+const RELIEF_URL = '/relleu/relleu_catalunya.png';
 const RELIEF_SRC = 'relief-src';
 const RELIEF_LAYER = 'relief-layer';
 const RELIEF_THEME = { clar: { opacity: 1 }, fosc: { opacity: 1 } };
 
-let reliefInfo = null;
+const RELIEF_COORDS = [
+  [-4.554099, 45.302098],
+  [ 5.003083, 45.302098],
+  [ 5.003083, 38.100000],
+  [-4.554099, 38.100000],
+];
 
-async function addRelief(map) {
-  if (!reliefInfo) {
-    try {
-      const r = await fetch(RELIEF_INFO_URL);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      reliefInfo = await r.json();
-    } catch (e) {
-      console.warn('[relleu]', e.message);
-      return;
-    }
-  }
+function addRelief(map) {
   if (map.getLayer(RELIEF_LAYER)) map.removeLayer(RELIEF_LAYER);
   if (map.getSource(RELIEF_SRC)) map.removeSource(RELIEF_SRC);
 
   map.addSource(RELIEF_SRC, {
     type: 'image',
-    url: '/dades/' + reliefInfo.file,
-    coordinates: reliefInfo.coordinates,
+    url: RELIEF_URL,
+    coordinates: RELIEF_COORDS,
   });
   map.addLayer({
     id: RELIEF_LAYER,
@@ -896,6 +854,50 @@ export function setReliefVisibility(visible) {
 }
 
 // ---------------------------------------------------------------------------
+// PROVÍNCIES (PNG únic: línies negres amb vora blanca)
+// ---------------------------------------------------------------------------
+
+const PROV_URL = '/relleu/provincies.png';
+const PROV_SRC = 'provincies-src';
+const PROV_LAYER = 'provincies-layer';
+
+// Coordenades reals del PNG (amb el marge de 0.05 del Python)
+const PROV_COORDS = [
+  [-4.604099, 45.352098],  // NW
+  [ 5.053083, 45.352098],  // NE
+  [ 5.053083, 38.050000],  // SE
+  [-4.604099, 38.050000],  // SW
+];
+
+function addProvincies(map) {
+  if (map.getLayer(PROV_LAYER)) map.removeLayer(PROV_LAYER);
+  if (map.getSource(PROV_SRC)) map.removeSource(PROV_SRC);
+
+  map.addSource(PROV_SRC, {
+    type: 'image',
+    url: PROV_URL,
+    coordinates: PROV_COORDS,
+  });
+  map.addLayer({
+    id: PROV_LAYER,
+    type: 'raster',
+    source: PROV_SRC,
+    layout: { visibility: vis(state.provinciesVisible) },
+    paint: {
+      'raster-opacity': 0.9,
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear',
+    },
+  });
+}
+
+export function setProvinciesVisibility(visible) {
+  state.provinciesVisible = visible;
+  const map = state.map;
+  if (map && map.getLayer(PROV_LAYER)) map.setLayoutProperty(PROV_LAYER, 'visibility', vis(visible));
+}
+
+// ---------------------------------------------------------------------------
 // ORDRE DE CAPES
 // ---------------------------------------------------------------------------
 
@@ -907,14 +909,12 @@ function orderLayers(map) {
   const mv = (id) => { if (map.getLayer(id)) map.moveLayer(id); };
 
   mv(RELIEF_LAYER);
-  // Alertes AEMET: per sota del radar
+  mv(PROV_LAYER);
   for (const id of ids) if (id.startsWith('alertes-')) mv(id);
-  // Avisos de pluja: per sota del radar (el radar sempre queda pintat a sobre)
   mv(AVIS_FILL);
   mv(AVIS_LINE);
   mv(ACUM_LAYER_ID);
   for (const key of Object.keys(RADAR)) mv(RADAR[key].layerId);
-  // Llamps: per sobre del radar (han de ser ben visibles)
   for (const id of LIGHTNING_LAYER_IDS) mv(id);
   mv(MUNI_LINE);
   mv(COMARQUES_LINE);
@@ -973,7 +973,6 @@ function showFrame(key, index) {
   }
 }
 
-// Índex del frame més proper en el temps (respectant el límit del pla)
 function nearestIndex(st, ms) {
   let best = -1;
   let bestD = Infinity;
@@ -1047,9 +1046,8 @@ function loadExtras(map) {
     try {
       addCities(map);
       orderLayers(map);
-      await Promise.all([addRelief(map), addComarques(map)]);
+      await Promise.all([addRelief(map), addProvincies(map), addComarques(map)]);
       orderLayers(map);
-      // Municipis: pesats i només visibles a zoom >= 8, es carreguen una mica després
       setTimeout(() => {
         addMunicipis(map).then(() => orderLayers(map)).catch(noop);
       }, MUNI_DELAY_MS);
@@ -1096,7 +1094,7 @@ export async function reapplyLayers() {
   for (const key of Object.keys(RADAR)) addRadarLayer(map, key);
   orderLayers(map);
 
-  await Promise.all([addRelief(map), addComarques(map)]);
+  await Promise.all([addRelief(map), addProvincies(map), addComarques(map)]);
   orderLayers(map);
 
   addMunicipis(map).then(() => orderLayers(map)).catch(noop);
@@ -1108,6 +1106,7 @@ export function setBaseTheme(theme) {
   restyleCities();
   restyleRelief();
   restyleMunicipis();
+  // Les províncies ja no cal restyle: PNG únic que es veu bé sobre clar i fosc
 }
 
 export function setDensity(key) {
@@ -1154,11 +1153,6 @@ export function goToFrameLayer(key, index) {
   if (state.layers[key]) showFrame(key, index);
 }
 
-/**
- * Posa la capa `key` a l'hora `ms` (o al frame més proper) i espera que el frame
- * estigui realment pintat. Serveix per canviar de producte mantenint la mateixa hora.
- * Si `ms` no és vàlid, es queda al frame més recent. Retorna l'índex resultant.
- */
 export async function syncToTime(key, ms) {
   const st = state.layers[key];
   if (!st || !st.initialized || !st.frames.length) return -1;
@@ -1188,7 +1182,7 @@ export function setLayerVisibility(key, visible) {
     scheduleApply(key);
     syncLightning(key, st.currentIndex);
   } else if (!Object.values(state.layers).some((l) => l.visible)) {
-    setLightningTime(null);   // sense radar visible (p. ex. acumulació): llamps en directe
+    setLightningTime(null);
   }
   for (const k of Object.keys(state.layers)) trimBlobs(k);
 }
@@ -1237,6 +1231,7 @@ export default {
   setCiutatsVisibility,
   setComarquesVisibility,
   setReliefVisibility,
+  setProvinciesVisibility,
   setMunicipisVisibility,
   setAvisosData,
   setLightningVisibility,

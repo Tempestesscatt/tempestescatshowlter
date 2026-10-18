@@ -1,0 +1,97 @@
+{
+  "zona": "peninsula",
+  "label": "Pen\u00ednsula + Balears",
+  "zoom": 8,
+  "bbox": {
+    "west": -4.559326171875,
+    "east": 5.0042724609375,
+    "south": 38.09998264736479,
+    "north": 45.30580259943577
+  },
+  "coordinates": [
+    [
+      -4.559326171875,
+      45.30580259943577
+    ],
+    [
+      5.0042724609375,
+      45.30580259943577
+    ],
+    [
+      5.0042724609375,
+      38.09998264736479
+    ],
+    [
+      -4.559326171875,
+      38.09998264736479
+    ]
+  ],
+  "retall_geojson": false,
+  "variants": [
+    {
+      "nom": "01_classic_nw",
+      "file": "catrell_peninsula_01_classic_nw.png",
+      "exageracio": 3.5,
+      "altura": 28.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 1.6,
+      "ombra_proj_forca": 0.85,
+      "width": 1536,
+      "height": 1552
+    },
+    {
+      "nom": "02_marcat",
+      "file": "catrell_peninsula_02_marcat.png",
+      "exageracio": 4.5,
+      "altura": 22.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 2.0,
+      "ombra_proj_forca": 0.95,
+      "width": 1536,
+      "height": 1552
+    },
+    {
+      "nom": "03_3d_heavy",
+      "file": "catrell_peninsula_03_3d_heavy.png",
+      "exageracio": 5.0,
+      "altura": 16.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 2.5,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 1552
+    },
+    {
+      "nom": "04_contrast_brutal",
+      "file": "catrell_peninsula_04_contrast_brutal.png",
+      "exageracio": 5.5,
+      "altura": 15.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 2.8,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 1552
+    },
+    {
+      "nom": "05_tinta",
+      "file": "catrell_peninsula_05_tinta.png",
+      "exageracio": 6.0,
+      "altura": 14.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 3.0,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 1552
+    }
+  ]
+}
