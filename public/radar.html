@@ -4,6 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0f14" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="mobile-web-app-capable" content="yes" />
 <title>Tempestes.cat | Radar meteorològic</title>
 <link rel="icon" href="/img/Tempestes_cat.ico" />
 
@@ -15,6 +18,8 @@
 <link rel="modulepreload" href="/dades/escales.js" />
 
 <link href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css" rel="stylesheet" />
+<link href="/css/radar.css" rel="stylesheet" />
+
 <script defer src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
 <script defer src="/dades/ciutats.js"></script>
 <script defer src="/dades/cobertura.js"></script>
@@ -26,281 +31,6 @@
   gtag('js', new Date());
   gtag('config', 'G-QDWCZ0Z9XF', { anonymize_ip: true });
 </script>
-
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { width:100%; height:100%; overflow:hidden; overscroll-behavior:none; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:#0a0c14; color:#eef; }
-  #map { position:absolute; inset:0; }
-
-  :root {
-    --panel-bg: rgba(10, 12, 20, 0.86);
-    --panel-border: rgba(120, 140, 180, 0.22);
-    --radius: 14px;
-    --blur: blur(14px);
-    --accent: #5a9dff;
-    --accent-dark: #3559a0;
-    --text: #eef;
-    --text-2: #8fa5cb;
-    --text-3: #7f94b4;
-    --btn: rgba(30, 40, 62, 0.85);
-    --btn-hover: rgba(45, 60, 90, 0.95);
-    --btn-border: rgba(120, 140, 180, 0.28);
-    --btn-border-hover: rgba(140, 170, 220, 0.55);
-    --shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
-    --side-w: 64px;
-    --player-h: 108px;
-    --track-h: 8px;
-    --thumb: 20px;
-  }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-  /* ===================== BANDAS LATERALES ===================== */
-  .side-rail {
-    position:fixed; top:0; bottom:0; z-index:30; width:var(--side-w);
-    display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 6px;
-    background:var(--panel-bg); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
-  }
-  .side-rail.left { left:0; border-right:1px solid var(--panel-border); }
-  .side-rail.right { right:0; border-left:1px solid var(--panel-border); }
-
-  .rail-btn {
-    position:relative; width:50px; height:50px;
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
-    background:transparent; border:none; border-radius:10px;
-    color:var(--text-3); cursor:pointer; transition:background .15s, color .15s;
-  }
-  .rail-btn:hover { background:var(--btn-hover); color:var(--text); }
-  .rail-btn.active { background:rgba(90,157,255,.15); color:var(--accent); }
-  .rail-btn svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-  .rail-btn .label { font-size:9px; font-weight:600; letter-spacing:.3px; text-transform:uppercase; }
-  .rail-btn.disabled { opacity:.4; cursor:not-allowed; }
-  .rail-btn.disabled:hover { background:transparent; color:var(--text-3); }
-  .rail-sep { width:28px; height:1px; background:var(--panel-border); margin:4px 0; }
-
-  #userBtn { overflow:hidden; }
-  #userBtn img { width:100%; height:100%; object-fit:cover; border-radius:10px; }
-  #userBtn .ini { font-weight:700; font-size:15px; color:#fff; }
-
-  /* ===================== FLYOUTS ===================== */
-  .flyout {
-    position:fixed; z-index:40; min-width:260px; max-width:340px; padding:10px;
-    background:var(--panel-bg); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
-    border:1px solid var(--panel-border); border-radius:var(--radius);
-    box-shadow:var(--shadow); display:none; max-height:80vh; overflow-y:auto;
-  }
-  .flyout.open { display:block; animation:flyIn .12s ease-out; }
-  @keyframes flyIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
-  .flyout-title { font-size:11px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:.6px; padding:4px 8px 8px; border-bottom:1px solid var(--panel-border); margin-bottom:6px; }
-
-  .opt {
-    display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;
-    padding:9px 10px; background:transparent; border:none; border-radius:8px;
-    color:var(--text); font:inherit; font-size:13px; text-align:left; cursor:pointer; transition:background .12s;
-  }
-  .opt:hover { background:var(--btn-hover); }
-  .opt.selected { background:rgba(90,157,255,.18); }
-  .opt .opt-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
-  .opt .opt-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .opt .opt-sub { font-size:11px; color:var(--text-3); }
-  .opt .check { width:14px; height:14px; stroke:var(--accent); fill:none; stroke-width:2.5; opacity:0; flex-shrink:0; }
-  .opt.selected .check { opacity:1; }
-  .opt:disabled { opacity:.4; cursor:not-allowed; }
-
-  .check { display:flex; align-items:center; gap:10px; padding:8px 0; font-size:13px; cursor:pointer; }
-  .check input { width:18px; height:18px; accent-color:var(--accent); cursor:pointer; flex-shrink:0; }
-  .check.disabled { opacity:.45; cursor:not-allowed; }
-  .check.disabled input { cursor:not-allowed; }
-  .check .tag { margin-left:auto; padding:1px 7px; font-size:10px; font-weight:700; border-radius:999px; }
-  .check .tag.pro { background:var(--accent-dark); border:1px solid var(--accent); color:#fff; }
-  .check .tag.free { background:rgba(90,157,255,.15); border:1px solid rgba(90,157,255,.5); color:var(--accent); }
-  .check .tag.soon { background:rgba(120,140,180,.15); border:1px solid rgba(120,140,180,.4); color:var(--text-3); }
-
-  .info-text { font-size:12px; line-height:1.5; color:var(--text-3); }
-
-  /* Account */
-  .account-box { display:grid; gap:10px; padding:12px; background:rgba(30,40,62,.6); border:1px solid var(--btn-border); border-radius:10px; }
-  .acc-who { display:flex; align-items:center; gap:10px; min-width:0; }
-  .acc-av { width:34px; height:34px; border-radius:50%; overflow:hidden; background:var(--accent-dark); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
-  .acc-av img { width:100%; height:100%; object-fit:cover; }
-  .acc-name { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .acc-mail { font-size:11px; color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .acc-line { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; color:var(--text-2); }
-  .acc-badge { padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; color:#fff; background:var(--accent-dark); border:1px solid var(--accent); }
-  .acc-actions { display:flex; gap:8px; flex-wrap:wrap; }
-  .acc-actions button, .acc-actions a {
-    flex:1; min-height:36px; padding:8px 12px; font-size:12px; text-align:center;
-    text-decoration:none; display:inline-flex; align-items:center; justify-content:center;
-    background:var(--btn); color:var(--text); border:1px solid var(--btn-border);
-    border-radius:8px; font-weight:500; cursor:pointer;
-  }
-  .acc-actions .primary { background:var(--accent-dark); border-color:var(--accent); color:#fff; }
-
-  /* Auth forms */
-  .auth-form { display:grid; gap:8px; margin-top:6px; }
-  .auth-form input {
-    width:100%; min-height:36px; padding:8px 10px;
-    background:rgba(24,34,46,.9); color:var(--text);
-    border:1px solid var(--btn-border); border-radius:8px;
-    font:inherit; font-size:13px; outline:none;
-  }
-  .auth-form input:focus { border-color:var(--accent); }
-  .auth-form .primary {
-    background:var(--accent-dark); border:1px solid var(--accent); color:#fff; font-weight:600;
-    min-height:38px; padding:8px 12px; border-radius:8px; cursor:pointer;
-    font:inherit; font-size:13px;
-  }
-  .auth-toggle {
-    text-align:center; font-size:12px; color:var(--text-3);
-    padding:8px 0 2px; cursor:pointer; background:transparent; border:none;
-    text-decoration:underline; width:100%;
-  }
-  .auth-error { color:#f87171; font-size:12px; padding:2px 4px; min-height:0; }
-
-  /* ===================== TOPBAR ===================== */
-  .topbar {
-    position:absolute; z-index:25;
-    top:max(12px, env(safe-area-inset-top));
-    left:calc(var(--side-w) + max(12px, env(safe-area-inset-left)));
-    right:calc(var(--side-w) + max(12px, env(safe-area-inset-right)));
-    display:flex; align-items:center; gap:8px; pointer-events:none;
-  }
-  .topbar > * { pointer-events:auto; }
-  .brand {
-    display:flex; align-items:center; gap:8px; padding:8px 14px;
-    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px;
-    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); font-weight:700; font-size:14px;
-    box-shadow:var(--shadow);
-  }
-  .brand span { color:#6aa5ff; }
-  .topbar .spacer { flex:1; }
-  .chip {
-    display:flex; align-items:center; gap:6px; padding:8px 12px;
-    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px;
-    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); font-size:12px; font-weight:600;
-    box-shadow:var(--shadow);
-  }
-  .chip .dot { width:7px; height:7px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px #22c55e; }
-  .chip.plan { color:#eaf2ff; border-color:var(--accent); background:rgba(53,89,160,.6); }
-
-  /* ===================== LEYENDA ===================== */
-  #legend {
-    position:absolute; z-index:20;
-    left:calc(var(--side-w) + max(12px, env(safe-area-inset-left)));
-    bottom:calc(var(--player-h) + max(12px, env(safe-area-inset-bottom)) + 8px);
-    padding:10px 12px;
-    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:var(--radius);
-    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); box-shadow:var(--shadow);
-    transition:opacity .2s, transform .2s;
-  }
-  #legend.hidden { opacity:0; pointer-events:none; transform:translateX(-20px); }
-  #legend h3 { margin-bottom:8px; font-size:12px; font-weight:700; color:var(--text-2); }
-  .legend-body { display:flex; gap:8px; height:170px; }
-  .legend-bar { width:12px; border-radius:6px; border:1px solid rgba(255,255,255,.12); }
-  .legend-ticks { position:relative; width:30px; }
-  .legend-tick { position:absolute; left:0; transform:translateY(50%); font-size:11px; color:#cfdcf0; font-variant-numeric:tabular-nums; }
-
-  /* ===================== BOTTOM BAR ===================== */
-  #bottomBar {
-    position:absolute; z-index:15; pointer-events:none;
-    bottom:max(12px, env(safe-area-inset-bottom));
-    left:calc(var(--side-w) + max(12px, env(safe-area-inset-left)));
-    right:calc(var(--side-w) + max(12px, env(safe-area-inset-right)));
-  }
-  .player {
-    pointer-events:auto; display:flex; flex-direction:column; gap:6px;
-    padding:10px 14px 8px;
-    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:var(--radius);
-    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); box-shadow:var(--shadow);
-  }
-  .player-top { display:flex; align-items:center; gap:12px; }
-  .player-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-  .player-actions button { min-height:36px; padding:0; display:flex; align-items:center; justify-content:center; }
-  .btn-play { min-width:78px; padding:0 12px !important; font-weight:600; }
-  .btn-step { width:36px; height:36px; }
-  .btn-step svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
-
-  button {
-    min-height:38px; padding:8px 14px;
-    background:var(--btn); color:var(--text);
-    border:1px solid var(--btn-border); border-radius:8px;
-    font:inherit; font-size:13px; font-weight:500; cursor:pointer;
-    transition:background .15s, border-color .15s;
-  }
-  button:hover:not(:disabled) { background:var(--btn-hover); border-color:var(--btn-border-hover); }
-  button:disabled { opacity:.3; cursor:not-allowed; }
-  button.active { background:var(--accent-dark); border-color:var(--accent); color:#fff; }
-
-  .player-times { margin-left:auto; display:flex; align-items:baseline; gap:10px; font-variant-numeric:tabular-nums; }
-  .time-current { font-size:18px; font-weight:700; color:#fff; line-height:1; }
-  .time-date { font-size:12px; color:var(--text-2); }
-
-  .timeline { position:relative; width:100%; height:38px; cursor:pointer; touch-action:none; user-select:none; }
-  .timeline-track { position:absolute; left:0; right:0; top:12px; height:var(--track-h); border-radius:4px; overflow:hidden; background:rgba(30,40,62,.85); }
-  .timeline-progress { position:absolute; left:0; top:0; bottom:0; width:0; background:linear-gradient(90deg,#3a6ac0,#5a9dff); pointer-events:none; }
-  .timeline-thumb { position:absolute; top:16px; left:0; width:var(--thumb); height:var(--thumb); transform:translate(-50%,-50%); border-radius:50%; background:#fff; border:3px solid var(--accent); box-shadow:0 2px 10px rgba(90,157,255,.6); pointer-events:none; }
-  .timeline-labels { position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none; }
-  .timeline-label { position:absolute; transform:translateX(-50%); white-space:nowrap; font-size:10px; font-weight:600; color:var(--text-2); font-variant-numeric:tabular-nums; }
-  .timeline-label.active { color:var(--accent); font-weight:700; }
-  .timeline-label.edge-l { transform:none; }
-  .timeline-label.edge-r { transform:translateX(-100%); }
-  .timeline-label.locked { opacity:.35; }
-
-  .timeline-locked {
-    position:absolute; left:0; top:0; bottom:0; width:0; pointer-events:none;
-    background:repeating-linear-gradient(135deg, rgba(150,150,150,.30) 0 4px, rgba(150,150,150,.12) 4px 8px);
-    border-right:2px solid rgba(190,190,190,.6);
-  }
-  .timeline-lock { position:absolute; top:0; left:0; display:none; transform:translateX(-50%); color:var(--text-3); pointer-events:none; }
-  .timeline-lock svg { width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; display:block; }
-
-  /* ===================== UPSELL ===================== */
-  .upsell { position:fixed; inset:0; z-index:200; display:none; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); }
-  .upsell.open { display:flex; }
-  .upsell-card { position:relative; width:100%; max-width:400px; padding:26px 22px 20px; background:#12151f; border:1px solid var(--panel-border); border-radius:16px; box-shadow:var(--shadow); text-align:center; }
-  .upsell-x { position:absolute; top:10px; right:10px; width:32px; height:32px; min-height:0; padding:0; background:transparent; border:none; font-size:22px; color:var(--text-2); cursor:pointer; }
-  .upsell-ico { width:46px; height:46px; margin:0 auto 12px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-dark); color:#fff; }
-  .upsell-ico svg { width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-  .upsell-card h3 { font-size:18px; margin-bottom:6px; }
-  .upsell-card p { font-size:13px; line-height:1.55; color:var(--text-2); margin-bottom:14px; }
-  .upsell-tiers { display:grid; gap:6px; margin-bottom:16px; text-align:left; }
-  .tier-row { display:flex; align-items:center; gap:10px; padding:8px 12px; font-size:12.5px; border:1px solid var(--btn-border); border-radius:9px; color:var(--text-2); }
-  .tier-row b { color:var(--text); font-weight:600; margin-right:auto; }
-  .tier-row.ok { color:var(--text); }
-  .tier-row.need { border-color:var(--accent); background:rgba(90,157,255,.12); color:var(--text); }
-  .tier-row.here b::after { content:" (tu)"; font-weight:400; color:var(--text-3); }
-  .upsell-actions { display:grid; gap:8px; }
-  .upsell-actions .primary { background:var(--accent-dark); border-color:var(--accent); color:#fff; font-weight:600; min-height:42px; }
-
-  /* ===================== LOADER ===================== */
-  #loader {
-    position:fixed; inset:0; z-index:500;
-    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;
-    background:radial-gradient(ellipse at center, #10141f 0%, #06080d 100%);
-    transition:opacity .3s ease;
-  }
-  #loader.hide { opacity:0; pointer-events:none; }
-  .loader-logo { display:flex; align-items:center; gap:12px; }
-  .loader-logo img { width:46px; height:46px; object-fit:contain; }
-  .loader-brand { font-size:26px; font-weight:800; color:#fff; }
-  .loader-brand span { color:#6aa5ff; }
-  .loader-bar { position:relative; width:min(340px,72vw); height:6px; border-radius:999px; background:rgba(120,140,180,.16); overflow:hidden; }
-  .loader-bar-fill { position:absolute; left:0; top:0; bottom:0; width:0; border-radius:999px; background:linear-gradient(90deg,#3a6ac0,#5a9dff); transition:width .25s ease; }
-  .loader-text { font-size:12.5px; color:#8fa5cb; }
-
-  /* MapLibre */
-  .maplibregl-ctrl-top-right { top:calc(max(12px, env(safe-area-inset-top)) + 58px); right:calc(var(--side-w) + max(12px, env(safe-area-inset-right))) !important; }
-  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom:calc(var(--player-h) + max(12px, env(safe-area-inset-bottom))); }
-  .maplibregl-ctrl-group { background:var(--panel-bg) !important; border:1px solid var(--panel-border) !important; border-radius:10px !important; box-shadow:var(--shadow) !important; }
-  .maplibregl-ctrl-group button { background:transparent !important; }
-  .maplibregl-ctrl-attrib { background:rgba(10,12,20,.7) !important; color:#9cb4d8 !important; font-size:10px !important; }
-
-  @media (max-width: 768px) {
-    :root { --side-w:56px; --player-h:98px; --track-h:6px; --thumb:18px; }
-    .brand { display:none; }
-    .chip { padding:6px 9px; font-size:11px; }
-    .flyout { min-width:220px; max-width:calc(100vw - 80px); }
-  }
-</style>
 </head>
 <body>
 
@@ -405,33 +135,33 @@
 </div>
 
 <!-- Ajustos + perfil -->
-<div class="flyout" id="flyout-settings" style="min-width:320px;max-width:360px">
+<div class="flyout" id="flyout-settings">
   <div class="flyout-title">El meu perfil</div>
   <div id="accountBox" class="account-box"></div>
 
-  <div class="flyout-title" style="margin-top:10px">Densitat de noms</div>
-  <select id="densitySelect" style="width:100%;min-height:36px;padding:8px 10px;background:var(--btn);color:var(--text);border:1px solid var(--btn-border);border-radius:8px;font:inherit;font-size:13px;">
+  <div class="flyout-title mt">Densitat de noms</div>
+  <select id="densitySelect" class="select-full">
     <option value="poc">Poca</option>
     <option value="normal">Normal</option>
     <option value="dens">Alta</option>
     <option value="molt-dens">Molt alta</option>
   </select>
 
-  <div class="flyout-title" style="margin-top:10px">Mode directe</div>
+  <div class="flyout-title mt">Mode directe</div>
   <label class="check">
     <input type="checkbox" id="chkAutoReload" checked />
     <span>Actualitzar automàticament</span>
   </label>
 
-  <div class="flyout-title" style="margin-top:10px">Informació</div>
-  <div style="display:grid;gap:4px;padding:2px 4px">
-    <a href="https://tempestes.cat/privacitat/preus" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Plans i preus</a>
-    <a href="https://tempestes.cat/privacitat/privacitat" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Privacitat</a>
-    <a href="https://tempestes.cat/privacitat/termes" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Termes i condicions</a>
-    <a href="https://tempestes.cat/privacitat/contacte" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Contacte</a>
+  <div class="flyout-title mt">Informació</div>
+  <div class="legal-links">
+    <a href="https://tempestes.cat/privacitat/preus" target="_blank" rel="noopener">Plans i preus</a>
+    <a href="https://tempestes.cat/privacitat/privacitat" target="_blank" rel="noopener">Privacitat</a>
+    <a href="https://tempestes.cat/privacitat/termes" target="_blank" rel="noopener">Termes i condicions</a>
+    <a href="https://tempestes.cat/privacitat/contacte" target="_blank" rel="noopener">Contacte</a>
   </div>
 
-  <div class="flyout-title" style="margin-top:10px">Estat</div>
+  <div class="flyout-title mt">Estat</div>
   <div id="statusText" class="info-text"></div>
 </div>
 
@@ -532,7 +262,6 @@ const BASEMAPS = {
   fosc: 'https://tiles.openfreemap.org/styles/dark',
 };
 
-// Només dBZ i Doppler (VRADH)
 const PRODUCTS = {
   dbz: { label: 'Reflectivitat (dBZ)', scale: SCALES.dbz, chip: 'dBZ' },
   vel: { label: 'Velocitat radial (m/s)', scale: SCALES.vel, chip: 'm/s' },
@@ -835,9 +564,6 @@ $('chkAlertes').addEventListener('change', (e) => alertes.setVisible(e.target.ch
 $('densitySelect').addEventListener('change', (e) => radar.setDensity(e.target.value));
 $('densitySelect').value = radar.getDensity();
 
-// Llamps i Avisos de pluja → "Properament": no enganxem cap listener actiu
-// (els checkboxes ja venen amb `disabled` al HTML)
-
 const valor = initValor({
   map,
   getLayerState: radar.getLayerState,
@@ -846,7 +572,7 @@ const valor = initValor({
 });
 $('chkValor').addEventListener('change', (e) => valor.setEnabled(e.target.checked));
 
-/* ===================== AutoReload (activat per defecte) ===================== */
+/* ===================== AutoReload ===================== */
 function setAutoReload(on) {
   try { localStorage.setItem('radar.autoreload', on ? '1' : '0'); } catch (_) {}
   if (on) {
@@ -860,7 +586,6 @@ function setAutoReload(on) {
     console.log('[autoreload] desactivat');
   }
 }
-
 $('chkAutoReload').addEventListener('change', (e) => setAutoReload(e.target.checked));
 
 /* ===================== Accés per pla ===================== */
@@ -1151,7 +876,6 @@ $('estacionsBtn').addEventListener('click', (e) => {
 /* ===================== Avisos (botó) → Properament ===================== */
 $('avisBtn').addEventListener('click', (e) => {
   e.stopPropagation();
-  // Botó deshabilitat visualment: no fem res
 });
 
 /* ===================== Inicialització ===================== */
@@ -1178,7 +902,6 @@ map.once('style.load', async () => {
     return;
   }
 
-  // Forçar estat inicial: relleu OFF, autoreload ON
   $('chkRelleu').checked = false;
   radar.setReliefVisibility(false);
 
@@ -1200,7 +923,6 @@ map.once('style.load', async () => {
   await selectProduct(available.includes('dbz') ? 'dbz' : available[0]);
   radar.startAllAnimations();
 
-  // Activar autoreload per defecte (respectant si l'usuari l'havia desactivat explícitament)
   let arStored = null;
   try { arStored = localStorage.getItem('radar.autoreload'); } catch (_) {}
   if (arStored !== '0') {

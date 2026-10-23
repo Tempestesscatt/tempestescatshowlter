@@ -1,6 +1,10 @@
 // public/js/radar.js
-// MapLibre GL JS: radar (PNG locals), comarques, municipis (GeoJSON.gz), ciutats,
-// relleu i províncies. Compatible amb el Python radar-real.py v5 (DBZH + VRADH).
+// MapLibre GL JS: radar (PNG locals), comarques, municipis (GeoJSON.gz),
+// ciutats, relleu i províncies. Compatible amb el Python radar-real.py v8
+// (DBZH + VRADH).
+//
+// Nota: aquest mòdul és la "font de veritat" de l'estat del radar per al front.
+// L'HTML només llegeix l'estat via getLayerState() i es subscriu a onLayerUpdate().
 
 import { regioCoordinates } from '../dades/escales.js';
 import {
@@ -30,13 +34,13 @@ const CIUTATS_Z6 = new Set([
   'Igualada', 'Blanes', 'Lloret de Mar', 'Olot', 'Salt',
   'Granollers', 'Sant Cugat del Vallès', 'Mollet del Vallès',
   'Rubí', 'Badalona', 'Santa Coloma de Gramenet',
-  'L\'Hospitalet de Llobregat', 'Cornellà de Llobregat',
+  "L'Hospitalet de Llobregat", 'Cornellà de Llobregat',
   'Sant Boi de Llobregat', 'El Prat de Llobregat',
   'Castelldefels', 'Viladecans', 'Sant Adrià de Besòs',
   'Cerdanyola del Vallès', 'Palafrugell', 'Sant Feliu de Guíxols',
   'Palamós', 'Roses', 'Valls', 'Cambrils', 'Salou',
   'El Vendrell', 'Amposta', 'Balaguer', 'Tàrrega', 'Mollerussa',
-  'La Seu d\'Urgell', 'Puigcerdà', 'Berga', 'Solsona',
+  "La Seu d'Urgell", 'Puigcerdà', 'Berga', 'Solsona',
 ]);
 const CIUTATS_Z8 = new Set([
   ...CIUTATS_Z6,
@@ -84,7 +88,7 @@ const CITY_TEXT_SIZE = [
 ];
 
 // ===========================================================================
-// RUTES LOCALS
+// RUTES
 // ===========================================================================
 const RADAR_DATA_BASE = 'https://radar-data.tempestes.cat';
 const RADAR_BASE_DBZ = `${RADAR_DATA_BASE}/dades_radar_dbz`;
@@ -100,7 +104,7 @@ const RADAR = {
     visible: true,
   },
   vel: {
-    label: 'Velocitat radial (km/h)',
+    label: 'Velocitat radial (m/s)',
     basePath: RADAR_BASE_VEL,
     sourceId: 'radar-src-vel',
     layerId: 'radar-layer-vel',
@@ -234,7 +238,10 @@ const layerPrio = (key) => (state.layers[key] && state.layers[key].visible ? 1 :
 function pickNext() {
   let bestI = -1, bestPrio = 99;
   for (let i = 0; i < queue.length; i++) {
-    if (queue[i].prio < bestPrio) { bestPrio = queue[i].prio; bestI = i; if (bestPrio === 0) break; }
+    if (queue[i].prio < bestPrio) {
+      bestPrio = queue[i].prio; bestI = i;
+      if (bestPrio === 0) break;
+    }
   }
   return bestI < 0 ? null : queue.splice(bestI, 1)[0];
 }
@@ -254,11 +261,19 @@ function pump() {
         blobCache.set(entry.url, objUrl);
         failed.delete(entry.url);
         const m = frameMeta.get(entry.url);
-        if (m) state.layers[m.key].loaded++;
+        if (m && state.layers[m.key]) state.layers[m.key].loaded++;
         entry.resolve(objUrl);
       })
-      .catch((e) => { failed.add(entry.url); console.warn('[radar] no s\'ha pogut baixar', entry.url, e.message); entry.reject(e); })
-      .finally(() => { activeDownloads--; inflight.delete(entry.url); pump(); });
+      .catch((e) => {
+        failed.add(entry.url);
+        console.warn('[radar] no s\'ha pogut baixar', entry.url, e.message);
+        entry.reject(e);
+      })
+      .finally(() => {
+        activeDownloads--;
+        inflight.delete(entry.url);
+        pump();
+      });
     inflight.set(entry.url, p);
   }
 }
@@ -271,7 +286,9 @@ function requestFrame(url, prio) {
   const entry = { url, prio };
   entry.promise = new Promise((resolve, reject) => { entry.resolve = resolve; entry.reject = reject; });
   entry.promise.catch(noop);
-  queued.set(url, entry); queue.push(entry); pump();
+  queued.set(url, entry);
+  queue.push(entry);
+  pump();
   return entry.promise;
 }
 
@@ -310,13 +327,18 @@ function trimBlobs(key) {
     if (!blob) continue;
     if (kept < limit) { kept++; continue; }
     if (i === st.currentIndex || url === st.applied || url === st.wanted) continue;
-    URL.revokeObjectURL(blob); blobCache.delete(url);
+    URL.revokeObjectURL(blob);
+    blobCache.delete(url);
     st.loaded = Math.max(0, st.loaded - 1);
   }
 }
 
 function reprioritize() {
-  for (const e of queue) { if (e.prio === 0) continue; const m = frameMeta.get(e.url); if (m) e.prio = layerPrio(m.key); }
+  for (const e of queue) {
+    if (e.prio === 0) continue;
+    const m = frameMeta.get(e.url);
+    if (m) e.prio = layerPrio(m.key);
+  }
 }
 
 async function refreshFrame(key, url) {
@@ -349,9 +371,13 @@ async function fetchManifest(producte) {
   for (let i = 0; i < 3; i++) {
     try {
       const bucket = Math.floor(Date.now() / 10000);
-      const r = await fetch(`${base}/manifest.json?t=${bucket}`, { cache: 'no-store' });
+      const jitter = Math.floor(Math.random() * 1000);
+      const r = await fetch(`${base}/manifest.json?t=${bucket}_${jitter}`, { cache: 'no-store' });
       if (r.status === 404) { console.info(`[radar:${producte}] manifest no trobat`); return null; }
-      if (r.ok) { const j = await r.json(); if (j && Array.isArray(j.radars)) return j; }
+      if (r.ok) {
+        const j = await r.json();
+        if (j && Array.isArray(j.radars)) return j;
+      }
     } catch (e) {}
     await sleep(400 * (i + 1));
   }
@@ -375,10 +401,15 @@ export function onLayerUpdate(cb) {
 }
 
 function notify(key) {
-  for (const cb of listeners) { try { cb(key); } catch (e) { console.warn('[radar] listener:', e && e.message); } }
+  for (const cb of listeners) {
+    try { cb(key); } catch (e) { console.warn('[radar] listener:', e && e.message); }
+  }
 }
 
-function releaseFrame(url, st) { failed.delete(url); if (blobCache.has(url)) st.orphans.push(url); }
+function releaseFrame(url, st) {
+  failed.delete(url);
+  if (blobCache.has(url)) st.orphans.push(url);
+}
 
 function flushOrphans(st) {
   if (!st.orphans.length) return;
@@ -408,7 +439,9 @@ async function doSync(key, initial) {
   for (const r of manifest.radars) {
     if (r && r.id && !known.has(r.id)) {
       state.radars.push({
-        id: r.id, nom: r.nom || r.id, regio: r.regio || '',
+        id: r.id,
+        nom: r.nom || r.id,
+        regio: r.regio || '',
         lat: Number.isFinite(r.lat) ? r.lat : null,
         lon: Number.isFinite(r.lon) ? r.lon : null,
         coords: Array.isArray(r.coords) ? r.coords : null,
@@ -472,9 +505,14 @@ async function doSync(key, initial) {
     requestFrame(frames[st.currentIndex], 0).catch(noop);
     const prio = layerPrio(key);
     const n = st.visible ? BOOT_FRAMES : 1;
-    for (let i = frames.length - 2; i >= Math.max(0, frames.length - n); i--) requestFrame(frames[i], prio).catch(noop);
+    for (let i = frames.length - 2; i >= Math.max(0, frames.length - n); i--) {
+      requestFrame(frames[i], prio).catch(noop);
+    }
     if (late) {
-      await Promise.race([requestFrame(frames[st.currentIndex], 0).catch(noop), sleep(FIRST_FRAME_WAIT_MS)]);
+      await Promise.race([
+        requestFrame(frames[st.currentIndex], 0).catch(noop),
+        sleep(FIRST_FRAME_WAIT_MS),
+      ]);
       try { addRadarLayer(state.map, key); orderLayers(state.map); } catch (e) {}
       notify(key);
     }
@@ -484,7 +522,9 @@ async function doSync(key, initial) {
   const url = frames[st.currentIndex];
   st.wanted = url;
   requestFrame(url, 0).then(() => { if (st.wanted === url) scheduleApply(key); }).catch(noop);
-  enqueueLayer(key); revalidateTail(key); flushOrphans(st);
+  enqueueLayer(key);
+  revalidateTail(key);
+  flushOrphans(st);
   syncLightning(key, st.currentIndex);
   notify(key);
   return true;
@@ -494,15 +534,21 @@ async function syncLayer(key, initial = false) {
   const st = state.layers[key];
   if (!st || st.syncing) return false;
   st.syncing = true;
-  try { return await doSync(key, initial); }
-  catch (e) { console.warn(`[radar:${key}] sync`, e && e.message); return false; }
-  finally { st.syncing = false; }
+  try {
+    return await doSync(key, initial);
+  } catch (e) {
+    console.warn(`[radar:${key}] sync`, e && e.message);
+    return false;
+  } finally {
+    st.syncing = false;
+  }
 }
 
 let refreshTimer = 0;
 function refreshAll() {
   return Promise.all(Object.keys(RADAR).map((key) =>
-    syncLayer(key).then(() => { retryMissing(key); trimBlobs(key); })
+    syncLayer(key)
+      .then(() => { retryMissing(key); trimBlobs(key); })
       .catch((e) => console.warn(`[radar:${key}]`, e && e.message))
   ));
 }
@@ -535,7 +581,11 @@ function addRadarLayer(map, key) {
   map.addLayer({
     id: cfg.layerId, type: 'raster', source: cfg.sourceId,
     layout: { visibility: vis(st.visible) },
-    paint: { 'raster-opacity': st.opacity, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
+    paint: {
+      'raster-opacity': st.opacity,
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear',
+    },
   });
   st.applied = url;
   st.wanted = url;
@@ -622,7 +672,9 @@ function addRadarMarkers(map) {
     }
     const el = makeMarkerEl(radar, () => {
       setActiveRadar(radar.id);
-      try { map.flyTo({ center: [radar.lon, radar.lat], zoom: 8, duration: 1000, essential: true }); } catch (e) {}
+      try {
+        map.flyTo({ center: [radar.lon, radar.lat], zoom: 8, duration: 1000, essential: true });
+      } catch (e) {}
     });
     const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
       .setLngLat([radar.lon, radar.lat])
@@ -661,7 +713,11 @@ export function getMunicipis() {
   if (!municipisPromise) {
     municipisPromise = fetchGunzip(MUNICIPIS_GZ_URL)
       .then((text) => JSON.parse(text))
-      .catch((e) => { console.warn('[municipis]', e.message); municipisPromise = null; return null; });
+      .catch((e) => {
+        console.warn('[municipis]', e.message);
+        municipisPromise = null;
+        return null;
+      });
   }
   return municipisPromise;
 }
@@ -700,8 +756,14 @@ let comarquesCache = null;
 async function addComarques(map) {
   if (!map) return;
   if (!comarquesCache) {
-    try { const r = await fetch(COMARQUES_URL); if (!r.ok) throw new Error('HTTP ' + r.status); comarquesCache = await r.json(); }
-    catch (e) { console.warn('[comarques]', e.message); return; }
+    try {
+      const r = await fetch(COMARQUES_URL);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      comarquesCache = await r.json();
+    } catch (e) {
+      console.warn('[comarques]', e.message);
+      return;
+    }
   }
   if (map.getLayer(COMARQUES_LINE)) map.removeLayer(COMARQUES_LINE);
   if (map.getSource(COMARQUES_SRC)) map.removeSource(COMARQUES_SRC);
@@ -728,11 +790,17 @@ function addAvisos(map) {
   if (map.getLayer(AVIS_FILL)) map.removeLayer(AVIS_FILL);
   if (map.getSource(AVIS_SRC)) map.removeSource(AVIS_SRC);
   map.addSource(AVIS_SRC, { type: 'geojson', data: state.avisosData });
-  map.addLayer({ id: AVIS_FILL, type: 'fill', source: AVIS_SRC, paint: { 'fill-color': AVIS_COLOR, 'fill-opacity': 0.28 } });
+  map.addLayer({
+    id: AVIS_FILL, type: 'fill', source: AVIS_SRC,
+    paint: { 'fill-color': AVIS_COLOR, 'fill-opacity': 0.28 },
+  });
   map.addLayer({
     id: AVIS_LINE, type: 'line', source: AVIS_SRC,
     layout: { 'line-join': 'round' },
-    paint: { 'line-color': AVIS_COLOR, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.6] },
+    paint: {
+      'line-color': AVIS_COLOR,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.6],
+    },
   });
 }
 export function setAvisosData(fc) {
@@ -760,21 +828,30 @@ function buildCitiesGeoJSON() {
     else if (c && typeof c === 'object') { nom = c.nom; lon = c.lon; lat = c.lat; }
     else continue;
     if (!nom || !Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-    features.push({ type: 'Feature', properties: { nom, nivell: nivellCiutat(nom) }, geometry: { type: 'Point', coordinates: [lon, lat] } });
+    features.push({
+      type: 'Feature',
+      properties: { nom, nivell: nivellCiutat(nom) },
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+    });
   }
   return { type: 'FeatureCollection', features };
 }
 function layerIds(map) {
   try { if (typeof map.getLayersOrder === 'function') return map.getLayersOrder(); } catch (e) {}
-  const style = map.getStyle(); return style ? style.layers.map((l) => l.id) : [];
+  const style = map.getStyle();
+  return style ? style.layers.map((l) => l.id) : [];
 }
 function removeCityLayers(map) {
-  let ids; try { ids = layerIds(map); } catch (e) { return; }
+  let ids;
+  try { ids = layerIds(map); } catch (e) { return; }
   for (const id of ids) if (id.startsWith(CITIES_PREFIX)) map.removeLayer(id);
 }
 function addCities(map) {
   if (!map) return;
-  if (!citiesCache) { citiesCache = buildCitiesGeoJSON(); console.log(`[ciutats] ${citiesCache.features.length} nuclis`); }
+  if (!citiesCache) {
+    citiesCache = buildCitiesGeoJSON();
+    console.log(`[ciutats] ${citiesCache.features.length} nuclis`);
+  }
   removeCityLayers(map);
   if (map.getSource(CITIES_SRC)) map.removeSource(CITIES_SRC);
   map.addSource(CITIES_SRC, { type: 'geojson', data: citiesCache });
@@ -824,7 +901,12 @@ const RELIEF_URL = '/relleu/relleu_catalunya.png';
 const RELIEF_SRC = 'relief-src';
 const RELIEF_LAYER = 'relief-layer';
 const RELIEF_THEME = { clar: { opacity: 1 }, fosc: { opacity: 1 } };
-const RELIEF_COORDS = [[-4.554099, 45.302098], [5.003083, 45.302098], [5.003083, 38.100000], [-4.554099, 38.100000]];
+const RELIEF_COORDS = [
+  [-4.554099, 45.302098],
+  [ 5.003083, 45.302098],
+  [ 5.003083, 38.100000],
+  [-4.554099, 38.100000],
+];
 
 function addRelief(map) {
   if (!map) return;
@@ -834,7 +916,11 @@ function addRelief(map) {
   map.addLayer({
     id: RELIEF_LAYER, type: 'raster', source: RELIEF_SRC,
     layout: { visibility: vis(state.reliefVisible) },
-    paint: { 'raster-opacity': RELIEF_THEME[state.theme].opacity, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
+    paint: {
+      'raster-opacity': RELIEF_THEME[state.theme].opacity,
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear',
+    },
   });
 }
 function restyleRelief() {
@@ -851,7 +937,12 @@ export function setReliefVisibility(visible) {
 const PROV_URL = '/relleu/provincies.png';
 const PROV_SRC = 'provincies-src';
 const PROV_LAYER = 'provincies-layer';
-const PROV_COORDS = [[-4.604099, 45.352098], [5.053083, 45.352098], [5.053083, 38.050000], [-4.604099, 38.050000]];
+const PROV_COORDS = [
+  [-4.604099, 45.352098],
+  [ 5.053083, 45.352098],
+  [ 5.053083, 38.050000],
+  [-4.604099, 38.050000],
+];
 
 function addProvincies(map) {
   if (!map) return;
@@ -861,7 +952,11 @@ function addProvincies(map) {
   map.addLayer({
     id: PROV_LAYER, type: 'raster', source: PROV_SRC,
     layout: { visibility: vis(state.provinciesVisible) },
-    paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
+    paint: {
+      'raster-opacity': 0.9,
+      'raster-fade-duration': 0,
+      'raster-resampling': 'linear',
+    },
   });
 }
 export function setProvinciesVisibility(visible) {
@@ -875,15 +970,22 @@ export function setProvinciesVisibility(visible) {
 // ---------------------------------------------------------------------------
 function orderLayers(map) {
   if (!map) return;
-  let ids; try { ids = layerIds(map); } catch (e) { return; }
-  if (!ids.length) return;
+  let ids;
+  try { ids = layerIds(map); } catch (e) { return; }
+  if (!ids || !ids.length) return;
+
   const mv = (id) => { if (map.getLayer(id)) map.moveLayer(id); };
-  mv(RELIEF_LAYER); mv(PROV_LAYER);
+
+  mv(RELIEF_LAYER);
+  mv(PROV_LAYER);
   for (const id of ids) if (id.startsWith('alertes-')) mv(id);
-  mv(AVIS_FILL); mv(AVIS_LINE); mv(ACUM_LAYER_ID);
+  mv(AVIS_FILL);
+  mv(AVIS_LINE);
+  mv(ACUM_LAYER_ID);
   for (const key of Object.keys(RADAR)) mv(RADAR[key].layerId);
   for (const id of LIGHTNING_LAYER_IDS) mv(id);
-  mv(MUNI_LINE); mv(COMARQUES_LINE);
+  mv(MUNI_LINE);
+  mv(COMARQUES_LINE);
   for (const id of ids) if (id.startsWith(CITIES_PREFIX)) mv(id);
 }
 
@@ -903,7 +1005,7 @@ function applyWanted(key) {
   const cfg = RADAR[key];
   const st = state.layers[key];
   const map = state.map;
-  if (!map || !st.wanted || st.applied === st.wanted) return;
+  if (!map || !st || !st.wanted || st.applied === st.wanted) return;
   const blobUrl = blobCache.get(st.wanted);
   if (!blobUrl) return;
   const source = map.getSource(cfg.sourceId);
@@ -912,19 +1014,29 @@ function applyWanted(key) {
     source.updateImage({ url: blobUrl, coordinates: st.coords || DEFAULT_COORDS });
     st.applied = st.wanted;
     flushOrphans(st);
-  } catch (e) { console.warn('[radar] updateImage:', e.message); }
+  } catch (e) {
+    console.warn('[radar] updateImage:', e.message);
+  }
 }
 
+/**
+ * Canvia el frame actual d'una capa. Aquesta és la funció que crida
+ * l'animació (tick) i la timeline (goToFrameLayer). Sempre notifica
+ * als listeners perquè actualitzin la UI (thumb, hora, etc.).
+ */
 function showFrame(key, index) {
   const st = state.layers[key];
   if (!st || !st.initialized || index < 0 || index >= st.frames.length) return;
   if (index < st.minIndex) index = st.minIndex;
   const url = st.frames[index];
+  const changed = st.currentIndex !== index || st.wanted !== url;
   st.currentIndex = index;
   st.wanted = url;
   syncLightning(key, index);
   if (blobCache.has(url)) scheduleApply(key);
   else requestFrame(url, 0).then(() => { if (st.wanted === url) scheduleApply(key); }).catch(noop);
+  // Notifiquem SEMPRE que canviï el frame (encara que el blob encara no estigui llest)
+  if (changed) notify(key);
 }
 
 function nearestIndex(st, ms) {
@@ -963,8 +1075,14 @@ function tick() {
     if (idx >= 0 && idx !== st.currentIndex) showFrame(key, idx);
   }
 }
-export function startAllAnimations() { stopAllAnimations(); intervalId = setInterval(tick, 1000 / FPS); }
-export function stopAllAnimations() { if (intervalId) clearInterval(intervalId); intervalId = 0; }
+export function startAllAnimations() {
+  stopAllAnimations();
+  intervalId = setInterval(tick, 1000 / FPS);
+}
+export function stopAllAnimations() {
+  if (intervalId) clearInterval(intervalId);
+  intervalId = 0;
+}
 
 // ---------------------------------------------------------------------------
 // API PÚBLICA
@@ -985,11 +1103,16 @@ function loadExtras(map) {
   if (!map) return;
   const run = async () => {
     try {
-      addCities(map); orderLayers(map);
+      addCities(map);
+      orderLayers(map);
       await Promise.all([addRelief(map), addProvincies(map), addComarques(map)]);
       orderLayers(map);
-      setTimeout(() => { addMunicipis(map).then(() => orderLayers(map)).catch(noop); }, MUNI_DELAY_MS);
-    } catch (e) { console.warn('[extras]', e && e.message); }
+      setTimeout(() => {
+        addMunicipis(map).then(() => orderLayers(map)).catch(noop);
+      }, MUNI_DELAY_MS);
+    } catch (e) {
+      console.warn('[extras]', e && e.message);
+    }
   };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 800 });
   else setTimeout(run, 50);
@@ -1006,8 +1129,12 @@ export async function initRadar(map) {
   await Promise.all(Object.keys(RADAR).map(async (key) => {
     const st = state.layers[key];
     if (!st.initialized) return;
-    await Promise.race([requestFrame(st.frames[st.currentIndex], 0).catch(noop), sleep(FIRST_FRAME_WAIT_MS)]);
-    try { addRadarLayer(map, key); } catch (e) { console.warn('[radar] addLayer', key, e && e.message); }
+    await Promise.race([
+      requestFrame(st.frames[st.currentIndex], 0).catch(noop),
+      sleep(FIRST_FRAME_WAIT_MS),
+    ]);
+    try { addRadarLayer(map, key); }
+    catch (e) { console.warn('[radar] addLayer', key, e && e.message); }
   }));
 
   orderLayers(map);
@@ -1016,6 +1143,12 @@ export async function initRadar(map) {
   loadExtras(map);
   bootDone = true;
   startRefresh();
+
+  // Notifiquem que ja està a punt (perquè l'HTML sincronitzi estat inicial)
+  for (const key of Object.keys(RADAR)) {
+    if (state.layers[key].initialized) notify(key);
+  }
+
   return results.some(Boolean);
 }
 
@@ -1036,7 +1169,10 @@ export async function reapplyLayers() {
 
 export function setBaseTheme(theme) {
   state.theme = theme === 'clar' ? 'clar' : 'fosc';
-  restyleComarques(); restyleCities(); restyleRelief(); restyleMunicipis();
+  restyleComarques();
+  restyleCities();
+  restyleRelief();
+  restyleMunicipis();
 }
 
 export function setDensity(key) {
@@ -1075,7 +1211,9 @@ export function setMinIndex(key, idx) {
   enqueueLayer(key);
 }
 
-export function goToFrameLayer(key, index) { if (state.layers[key]) showFrame(key, index); }
+export function goToFrameLayer(key, index) {
+  if (state.layers[key]) showFrame(key, index);
+}
 
 export async function syncToTime(key, ms) {
   const st = state.layers[key];
@@ -1101,7 +1239,11 @@ export function setLayerVisibility(key, visible) {
   if (map && map.getLayer(cfg.layerId)) map.setLayoutProperty(cfg.layerId, 'visibility', vis(visible));
   reprioritize();
   if (visible) {
-    if (st.initialized) { enqueueLayer(key); scheduleApply(key); syncLightning(key, st.currentIndex); }
+    if (st.initialized) {
+      enqueueLayer(key);
+      scheduleApply(key);
+      syncLightning(key, st.currentIndex);
+    }
   } else if (!Object.values(state.layers).some((l) => l.visible)) {
     try { setLightningTime(null); } catch (e) {}
   }
@@ -1164,8 +1306,13 @@ export async function setActiveRadar(id) {
     const st = state.layers[key];
     st.manifestSig = null;
     for (const u of st.frames) releaseFrame(u, st);
-    st.frames = []; st.timestamps = []; st.initialized = false;
-    st.currentIndex = 0; st.minIndex = 0; st.applied = null; st.wanted = null;
+    st.frames = [];
+    st.timestamps = [];
+    st.initialized = false;
+    st.currentIndex = 0;
+    st.minIndex = 0;
+    st.applied = null;
+    st.wanted = null;
   }
   await refreshAll();
   if (state.map) {
