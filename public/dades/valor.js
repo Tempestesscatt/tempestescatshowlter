@@ -1,33 +1,29 @@
 // public/dades/valor.js
-// Creu al lloc del cursor/dit amb el valor del radar (dBZ, mm/h o mm).
+// Creu al lloc del cursor/dit amb el valor del radar (dBZ o VRADH).
 //
-// Llegeix el píxel del PNG del frame visible i el converteix en valor buscant el
-// color més proper a l'escala (dades/escales.js, la mateixa que usa el Python).
-// Per a dBZ i mm/h reutilitza el blob que radar.js ja té a memòria (cap descàrrega extra).
+// Llegeix el píxel del PNG del frame visible i el converteix en valor buscant
+// el color més proper a l'escala (dades/escales.js).
+// Reutilitza el blob que radar.js ja té a memòria (cap descàrrega extra).
 
 import { SCALES, colorToValue, lngLatToUV, MIN_ALPHA } from './escales.js';
 
 // ---------------------------------------------------------------------------
-// LECTURA DEL PÍXEL
+// CACHE D'IMATGES
 // ---------------------------------------------------------------------------
-
-// Cada imatge decodificada ocupa ~10 MB (1600x1600 RGBA): cache petita.
-const imgCache = new Map();   // url -> HTMLImageElement
+const imgCache = new Map();
 const MAX_CACHE = 8;
 
 function getImage(url, onLoad) {
   const hit = imgCache.get(url);
   if (hit) {
-    // LRU: el recent torna al final
     imgCache.delete(url);
     imgCache.set(url, hit);
     return hit.complete && hit.naturalWidth ? hit : null;
   }
-
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.onload = onLoad || null;
-  img.onerror = () => imgCache.delete(url);   // no cachegem errors: es reintentarà
+  img.onerror = () => imgCache.delete(url);
   img.src = url;
   imgCache.set(url, img);
   while (imgCache.size > MAX_CACHE) imgCache.delete(imgCache.keys().next().value);
@@ -107,20 +103,11 @@ function buildCross(container) {
 // API
 // ---------------------------------------------------------------------------
 
-/**
- * @param {object}   opts
- * @param {object}   opts.map              maplibregl.Map
- * @param {Function} opts.getLayerState    radar.getLayerState (usa currentBlob / currentUrl)
- * @param {Function} opts.getKey           () => 'dbz' | 'lluvia' | 'acum'
- * @param {Function} [opts.isRadarVisible] () => boolean
- * @param {Function} [opts.getAcumUrl]     () => string|null   (PNG d'acumulació actiu)
- */
 export function initValor({
   map,
   getLayerState,
   getKey,
   isRadarVisible = () => true,
-  getAcumUrl = null,
 }) {
   injectStyles();
 
@@ -132,9 +119,11 @@ export function initValor({
   const tx = label.querySelector('.tx');
 
   let enabled = true;
-  let point = null;        // {x, y} en píxels dins del mapa
+  let point = null;
   let isTouch = false;
   let hideTimer = 0;
+  let lastKey = null;
+  let lastUrl = null;
 
   function hide() {
     root.classList.remove('show');
@@ -148,11 +137,11 @@ export function initValor({
     const W = mapEl.clientWidth;
     let lx, ly;
 
-    if (isTouch) {            // mòbil: a sobre del dit
+    if (isTouch) {
       lx = -w / 2;
       ly = -(h + 54);
       if (point.y + ly < 8) ly = 38;
-    } else {                  // ordinador: a la dreta i amunt
+    } else {
       lx = 20;
       ly = -(h + 14);
       if (point.x + lx + w > W - 8) lx = -(w + 20);
@@ -178,15 +167,15 @@ export function initValor({
     }
   }
 
-  /** URL del PNG a llegir: blob en memòria si n'hi ha, si no la URL remota. */
   function urlActual(key) {
-    if (key === 'acum') return getAcumUrl ? getAcumUrl() : null;
     const st = getLayerState(key);
-    return st ? (st.currentBlob || st.currentUrl) : null;
+    if (!st) return null;
+    return st.currentBlob || st.currentUrl || null;
   }
 
   function update() {
-    if (!enabled || !point || !isRadarVisible()) { hide(); return; }
+    if (!enabled || !point) { hide(); return; }
+    if (!isRadarVisible()) { hide(); return; }
 
     root.style.transform = `translate(${point.x}px, ${point.y}px)`;
     root.classList.add('show');
@@ -194,8 +183,10 @@ export function initValor({
 
     const key = getKey();
     const scale = SCALES[key];
+    if (!scale) { console.warn('[valor] SCALES[' + key + '] no existeix'); hide(); return; }
+
     const url = urlActual(key);
-    if (!scale || !url) { hide(); return; }
+    if (!url) { console.warn('[valor] urlActual(' + key + ') = null'); hide(); return; }
 
     const ll = map.unproject([point.x, point.y]);
     const { u, v } = lngLatToUV(ll.lng, ll.lat);
@@ -206,20 +197,21 @@ export function initValor({
       return;
     }
 
-    const img = getImage(url, update);
+    const img = getImage(url, () => update());
     if (!img) { render('…', '', null, true); placeLabel(); return; }
 
-    const none = key === 'acum' ? 'Sense pluja' : 'Sense eco';
     const px = readPixel(img, u, v);
-    if (px.a < MIN_ALPHA) { render(none, '', null, true); placeLabel(); return; }
+    if (px.a < MIN_ALPHA) { render('Sense eco', '', null, true); placeLabel(); return; }
 
     const val = colorToValue(px.r, px.g, px.b, scale);
-    if (val === null) render(none, '', null, true);
-    else render(scale.format(val), scale.unit, `rgb(${px.r},${px.g},${px.b})`, false);
+    if (val === null) {
+      render('Sense eco', '', null, true);
+    } else {
+      render(scale.format(val), scale.unit, `rgb(${px.r},${px.g},${px.b})`, false);
+    }
     placeLabel();
   }
 
-  // ----- ratolí -----
   const pointFromEvent = (cx, cy) => {
     const r = mapEl.getBoundingClientRect();
     return { x: cx - r.left, y: cy - r.top };
@@ -233,7 +225,6 @@ export function initValor({
   });
   canvasContainer.addEventListener('mouseleave', hide);
 
-  // ----- dit -----
   function onTouch(e) {
     if (e.touches.length !== 1) { hide(); return; }
     clearTimeout(hideTimer);
@@ -248,15 +239,17 @@ export function initValor({
   canvasContainer.addEventListener('touchend', onTouchEnd, { passive: true });
   canvasContainer.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
-  // El mapa es mou sota el dit/ratolí: tornem a llegir
   map.on('move', () => { if (point) update(); });
 
-  // Canvi de frame (animació) o de període d'acumulació: actualitzem el valor
-  let lastUrl = null;
   (function watch() {
     if (point) {
-      const url = urlActual(getKey());
-      if (url && url !== lastUrl) { lastUrl = url; update(); }
+      const key = getKey();
+      const url = urlActual(key);
+      if (key !== lastKey || url !== lastUrl) {
+        lastKey = key;
+        lastUrl = url;
+        update();
+      }
     }
     requestAnimationFrame(watch);
   })();

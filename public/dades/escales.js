@@ -1,14 +1,8 @@
 // public/dades/escales.js
-// -----------------------------------------------------------------------------
-// Font ÚNICA de verdat al front-end per a:
+// Font única de veritat al front-end per a:
 //   - la regió coberta pels PNG (Mercator),
-//   - les escales de color (dBZ, mm/h, mm acumulats) i els seus formats,
+//   - les escales de color (dBZ, VRADH, mm/h, mm acumulats),
 //   - la conversió color -> valor i posició -> píxel.
-//
-// Ha de coincidir amb scripts-privats/escales.py (el Python pinta amb aquestes
-// escales i el navegador les inverteix per llegir el valor sota el cursor).
-// Utilitzat per: radar.html, js/radar.js, dades/valor.js, dades/acumulacions.js.
-// -----------------------------------------------------------------------------
 
 export const REGIO = {
   lat_min: 38.100000,
@@ -17,7 +11,6 @@ export const REGIO = {
   lon_max: 5.003083,
 };
 
-/** Límits en format MapLibre/valor. */
 export const BOUNDS = {
   west: REGIO.lon_min,
   east: REGIO.lon_max,
@@ -25,7 +18,6 @@ export const BOUNDS = {
   north: REGIO.lat_max,
 };
 
-/** Cantonades de l'image source: TL, TR, BR, BL. */
 export function regioCoordinates() {
   const { lon_min, lon_max, lat_min, lat_max } = REGIO;
   return [
@@ -36,10 +28,8 @@ export function regioCoordinates() {
   ];
 }
 
-/** Períodes d'acumulació que genera cumul.py (minuts). */
 export const STD_PERIODS = [30, 60, 180, 360, 720, 1440];
 
-// Llindars de lectura del color d'un PNG
 export const MIN_ALPHA = 30;
 export const MAX_COLOR_DIST = 90;
 
@@ -74,6 +64,45 @@ export const SCALES = {
     format: (v) => {
       if (v >= 68) return '68+';
       if (v <= -4) return '< -4';
+      return v.toFixed(0);
+    },
+  },
+
+  // VRADH — Velocitat radial (Doppler)
+  // Verd   = cap al radar (negatiu)
+  // Vermell = allunyant-se (positiu)
+  // Blanc  = ~0 m/s (zona estàtica)
+  vel: {
+    label: 'Velocitat radial (VRADH)',
+    title: 'VRADH',
+    unit: 'm/s',
+    log: false,
+    min: -50,
+    max: 50,
+    stops: [
+      [-50, [128,   0,   0]],
+      [-40, [160,   0,   0]],
+      [-30, [208,   0,   0]],
+      [-25, [255,   0,   0]],
+      [-20, [255,  64,  64]],
+      [-15, [255, 128, 128]],
+      [-10, [255, 176, 176]],
+      [ -5, [255, 224, 224]],
+      [ -3, [255, 255, 255]],
+      [  3, [255, 255, 255]],
+      [  5, [224, 255, 224]],
+      [ 10, [176, 255, 176]],
+      [ 15, [128, 255, 128]],
+      [ 20, [ 64, 255,  64]],
+      [ 25, [  0, 255,   0]],
+      [ 30, [  0, 208,   0]],
+      [ 40, [  0, 160,   0]],
+      [ 50, [  0, 128,   0]],
+    ],
+    ticks: [-50, -40, -30, -20, -10, -3, 3, 10, 20, 30, 40, 50],
+    format: (v) => {
+      if (v >= 50) return '50+';
+      if (v <= -50) return '< -50';
       return v.toFixed(0);
     },
   },
@@ -138,11 +167,8 @@ export const SCALES = {
 // COLOR -> VALOR
 // ---------------------------------------------------------------------------
 
-/**
- * Busca el punt de l'escala (poligonal en RGB) més proper al color i en retorna el valor.
- * Retorna null si el color és massa lluny de l'escala.
- */
 export function colorToValue(r, g, b, scale) {
+  if (!scale || !Array.isArray(scale.stops) || scale.stops.length < 2) return null;
   const { stops, log } = scale;
   let best = null;
 

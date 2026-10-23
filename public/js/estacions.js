@@ -1,604 +1,448 @@
 // public/js/estacions.js
-// -----------------------------------------------------------------------------
-// Estacions meteorològiques d'AEMET sobre el mapa.
-//
-// Carrega les dades des de R2:
-//   https://radar-data.tempestes.cat/dades_aemet/estaciones_meta.js
-//
-// Marcador: punt minimalista, mida progressiva segons el zoom.
-// Papallugues: LCL baix, spread saturat, o convergència.
-// -----------------------------------------------------------------------------
+// Estacions AEMET amb focus exclusiu: triar-ne una -> flyTo + amagar la resta.
+// API: initEstacions({ map, visible }) -> { start, setVisible, getSelected, select, clearSelection, destroy }
+// No requereix tocar el HTML: s'enganxa sol al botó [title="Estacions"] de la banda dreta.
 
-// ---------------------------------------------------------------------------
-// CONFIGURACIÓ
-// ---------------------------------------------------------------------------
-
-const R2_BASE_AEMET = 'https://radar-data.tempestes.cat/dades_aemet';
-const DATA_URL = `${R2_BASE_AEMET}/estaciones_meta.js`;
-
-const SRC = 'estacions-src';
-const LAYER_PULSE = 'estacions-pulse';
+const AEMET_URL = '/dades/aemet/estacions.geojson'; // ajusta si tens un altre path
+const SRC_ID = 'estacions-src';
+const LAYER_HALO = 'estacions-halo';
+const LAYER_DOT  = 'estacions-dot';
 const LAYER_LABEL = 'estacions-label';
 
-// Trams de zoom: com més t'apropes, més estacions es mostren.
-const ZOOM_TIERS = [
-  { z: 0,  score: 4.5 },
-  { z: 6,  score: 4.0 },
-  { z: 7,  score: 3.5 },
-  { z: 8,  score: 3.0 },
-  { z: 9,  score: 2.0 },
-  { z: 10, score: 1.0 },
-  { z: 11, score: 0.1 },
-];
+const COLOR = {
+  normal: '#5a9dff',
+  selected: '#22c55e',
+  halo: 'rgba(90,157,255,0.35)',
+  haloSelected: 'rgba(34,197,94,0.45)',
+  label: '#ffffff',
+  labelHalo: 'rgba(0,0,0,0.85)',
+};
 
-// Colors per temperatura (°C)
-const TEMP_COLORS = [
-  [-15, '#6366f1'],
-  [-10, '#60a5fa'],
-  [ -5, '#7dd3fc'],
-  [  0, '#a5f3fc'],
-  [  5, '#a7f3d0'],
-  [ 10, '#bbf7d0'],
-  [ 15, '#fef08a'],
-  [ 20, '#fde047'],
-  [ 25, '#fcd34d'],
-  [ 30, '#fb923c'],
-  [ 35, '#f87171'],
-  [ 40, '#ef4444'],
-  [ 45, '#b91c1c'],
-];
-
-// Llindars papallona
-const PAP_LCL_MAX_M = 1000;
-const PAP_SPREAD_MAX_C = 3;
-const PAP_CONVERGENCIA_MIN = 0.5;
-
-// ---------------------------------------------------------------------------
-// UTILITATS
-// ---------------------------------------------------------------------------
-
-function tempColor(ta) {
-  if (ta == null) return '#94a3b8';
-  let c = TEMP_COLORS[0][1];
-  for (const [v, col] of TEMP_COLORS) {
-    if (ta >= v) c = col;
-  }
-  return c;
-}
-
-function textColorFor(hex) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-  return lum > 150 ? '#0a0c14' : '#ffffff';
-}
-
-function computeScore(e) {
-  let s = 0;
-  if (e.ta != null) s += 1.5;
-  if (e.vv != null) s += 1.5;
-  if (e.prec != null) s += 1.0;
-  if (e.hr != null) s += 0.5;
-  return Math.round(s * 2) / 2;
-}
-
-function calcLCL(ta, tpr) {
-  if (ta == null || tpr == null) return null;
-  const diff = ta - tpr;
-  if (diff < 0) return null;
-  return Math.round(125 * diff);
-}
-
-function calcUV(vv, dv) {
-  if (vv == null || dv == null) return { u: null, v: null };
-  const rad = (dv * Math.PI) / 180;
-  return { u: -vv * Math.sin(rad), v: -vv * Math.cos(rad) };
-}
-
-function calcConvergencia(features, maxDistKm = 35) {
-  const toRad = Math.PI / 180;
-  for (const f of features) f.properties.conv = 0;
-
-  for (let i = 0; i < features.length; i++) {
-    const fi = features[i];
-    const pi = fi.properties;
-    if (pi.u == null || pi.v == null) continue;
-
-    const lonI = fi.geometry.coordinates[0];
-    const latI = fi.geometry.coordinates[1];
-
-    let sum = 0, n = 0;
-    for (let j = 0; j < features.length; j++) {
-      if (i === j) continue;
-      const fj = features[j];
-      const pj = fj.properties;
-      if (pj.u == null || pj.v == null) continue;
-
-      const lonJ = fj.geometry.coordinates[0];
-      const latJ = fj.geometry.coordinates[1];
-
-      const dx = (lonJ - lonI) * Math.cos(((latI + latJ) / 2) * toRad) * 111.32;
-      const dy = (latJ - latI) * 110.57;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > maxDistKm || dist < 0.5) continue;
-
-      sum += (pi.u * dx + pi.v * dy) / dist;
-      n++;
-    }
-
-    if (n > 0) pi.conv = Math.round(-sum / n * 100) / 100;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DADES
-// ---------------------------------------------------------------------------
-
-let cachedData = null;
-
-async function loadData() {
-  if (cachedData) return cachedData;
-  if (window.estacionesData && Array.isArray(window.estacionesData.estaciones)) {
-    cachedData = window.estacionesData;
-    return cachedData;
-  }
-  await new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = `${DATA_URL}?t=${Date.now()}`;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('No s\'ha pogut carregar ' + DATA_URL));
-    document.head.appendChild(s);
-  });
-  if (!window.estacionesData || !Array.isArray(window.estacionesData.estaciones)) {
-    throw new Error('window.estacionesData no vàlid');
-  }
-  cachedData = window.estacionesData;
-  return cachedData;
-}
-
-function toGeoJSON(data) {
-  const features = [];
-  for (const e of data.estaciones) {
-    if (!Number.isFinite(e.lat) || !Number.isFinite(e.lon)) continue;
-    const score = computeScore(e);
-    if (score === 0) continue;
-
-    const lcl = calcLCL(e.ta, e.tpr);
-    const spread = (e.ta != null && e.tpr != null) ? Math.round((e.ta - e.tpr) * 10) / 10 : null;
-    const uv = calcUV(e.vv, e.dv);
-
-    const papLcl = (lcl != null && lcl <= PAP_LCL_MAX_M) ? 1 : 0;
-    const papSpread = (spread != null && spread <= PAP_SPREAD_MAX_C) ? 1 : 0;
-
-    const labelText = (e.ta != null || e.tpr != null)
-      ? `${e.ta != null ? Math.round(e.ta) : '?'}/${e.tpr != null ? Math.round(e.tpr) : '?'}`
-      : '?';
-
-    const bg = tempColor(e.ta);
-    const fg = textColorFor(bg);
-
-    features.push({
-      type: 'Feature',
-      properties: {
-        idema: e.idema, nombre: e.nombre, alt: e.alt,
-        ta: e.ta, hr: e.hr, tpr: e.tpr, tpr_calc: e.tpr_calc ? 1 : 0,
-        vv: e.vv, dv: e.dv, vmax: e.vmax,
-        prec: e.prec, fint: e.fint,
-        score,
-        lcl, spread,
-        u: uv.u, v: uv.v,
-        conv: 0,
-        papLcl, papSpread, papConv: 0, papallona: 0,
-        labelText, bg, fg,
-      },
-      geometry: { type: 'Point', coordinates: [e.lon, e.lat] },
-    });
-  }
-
-  calcConvergencia(features, 35);
-
-  for (const f of features) {
-    const p = f.properties;
-    p.papConv = (p.conv > PAP_CONVERGENCIA_MIN) ? 1 : 0;
-    p.papallona = (p.papLcl || p.papSpread || p.papConv) ? 1 : 0;
-  }
-
-  return { type: 'FeatureCollection', features };
-}
-
-// ---------------------------------------------------------------------------
-// POPUP
-// ---------------------------------------------------------------------------
-
-const escapeHtml = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-function fmt(val, unit, decimals = 1) {
-  if (val == null) return '<span class="na">—</span>';
-  const n = Number(val);
-  if (!Number.isFinite(n)) return '<span class="na">—</span>';
-  return `${n.toFixed(decimals)}${unit ? '<small>' + unit + '</small>' : ''}`;
-}
-
-function windDir(deg) {
-  if (deg == null) return '';
-  const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
-                'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
-  return dirs[Math.round(((deg % 360) / 22.5)) % 16];
-}
-
-function lclInfo(m) {
-  if (m == null) return { txt: '', color: '#7f8a9c' };
-  if (m <= 300)  return { txt: 'molt baix', color: '#ef4444' };
-  if (m <= 600)  return { txt: 'baix',      color: '#f97316' };
-  if (m <= 1000) return { txt: 'moderadament baix', color: '#eab308' };
-  if (m <= 1800) return { txt: 'moderat',   color: '#84cc16' };
-  return { txt: 'alt', color: '#3b82f6' };
-}
-
-function popupHtml(p) {
-  const fint = p.fint ? new Date(p.fint) : null;
-  const hora = fint && !isNaN(fint) ? new Intl.DateTimeFormat('ca-ES', {
-    timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit'
-  }).format(fint) : '';
-
-  const vvKmh = p.vv != null ? p.vv * 3.6 : null;
-  const vmaxKmh = p.vmax != null ? p.vmax * 3.6 : null;
-  const li = lclInfo(p.lcl);
-
-  const badges = [];
-  if (p.papLcl)    badges.push('<span class="b b-lcl">LCL</span>');
-  if (p.papSpread) badges.push('<span class="b b-spread">saturat</span>');
-  if (p.papConv)   badges.push('<span class="b b-conv">convergència</span>');
-
-  return `
-    <div class="ep">
-      <div class="ep-head">
-        <div class="ep-name">${escapeHtml(p.nombre)}</div>
-        <div class="ep-meta">${escapeHtml(p.idema)}${p.alt != null ? ' · ' + Math.round(p.alt) + ' m' : ''}${hora ? ' · ' + hora : ''}</div>
-        ${badges.length ? '<div class="ep-badges">' + badges.join('') + '</div>' : ''}
-      </div>
-
-      <div class="ep-row">
-        <div class="ep-c">
-          <span class="ep-l">Temperatura</span>
-          <span class="ep-v">${fmt(p.ta, '°C')}</span>
-        </div>
-        <div class="ep-c">
-          <span class="ep-l">Rosada</span>
-          <span class="ep-v">${fmt(p.tpr, '°C')}${p.tpr_calc ? '<em>*</em>' : ''}</span>
-        </div>
-        <div class="ep-c">
-          <span class="ep-l">Humitat</span>
-          <span class="ep-v">${fmt(p.hr, '%', 0)}</span>
-        </div>
-      </div>
-
-      <div class="ep-row">
-        <div class="ep-c">
-          <span class="ep-l">LCL</span>
-          <span class="ep-v" style="color:${li.color}">${p.lcl != null ? p.lcl.toLocaleString('ca-ES') : '—'}<small>m</small></span>
-          <span class="ep-s">${li.txt}</span>
-        </div>
-        <div class="ep-c">
-          <span class="ep-l">Spread</span>
-          <span class="ep-v">${fmt(p.spread, '°C')}</span>
-        </div>
-        <div class="ep-c">
-          <span class="ep-l">Pluja 1h</span>
-          <span class="ep-v ${p.prec > 0 ? 'rain' : ''}">${fmt(p.prec, 'mm')}</span>
-        </div>
-      </div>
-
-      <div class="ep-row">
-        <div class="ep-c">
-          <span class="ep-l">Vent</span>
-          <span class="ep-v">${fmt(vvKmh, 'km/h', 1)}</span>
-          <span class="ep-s">${windDir(p.dv)} ${p.dv != null ? Math.round(p.dv) + '°' : ''}</span>
-        </div>
-        <div class="ep-c">
-          <span class="ep-l">Ratxa</span>
-          <span class="ep-v">${fmt(vmaxKmh, 'km/h', 0)}</span>
-        </div>
-        <div class="ep-c">
-          <span class="ep-l">Convergència</span>
-          <span class="ep-v">${fmt(p.conv, 'm/s', 2)}</span>
-        </div>
-      </div>
-    </div>`;
-}
-
-// ---------------------------------------------------------------------------
-// ESTILS
-// ---------------------------------------------------------------------------
-
-function injectPopupStyles() {
-  if (document.getElementById('estacions-styles')) return;
-  const css = document.createElement('style');
-  css.id = 'estacions-styles';
-  css.textContent = `
-    .maplibregl-popup.est-popup-wrap .maplibregl-popup-content {
-      background: rgba(18, 20, 26, 0.98);
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.10);
-      border-radius: 12px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
-      padding: 0;
-      color: #eef2f8;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
-      min-width: 300px;
-    }
-    .maplibregl-popup.est-popup-wrap .maplibregl-popup-tip {
-      border-top-color: rgba(18, 20, 26, 0.98);
-      border-bottom-color: rgba(18, 20, 26, 0.98);
-    }
-    .maplibregl-popup.est-popup-wrap .maplibregl-popup-close-button {
-      color: #8b95a8; font-size: 18px; padding: 2px 8px;
-      width: auto; height: auto; border-radius: 0 12px 0 8px;
-    }
-    .maplibregl-popup.est-popup-wrap .maplibregl-popup-close-button:hover {
-      background: rgba(255,255,255,.08); color: #fff;
-    }
-
-    .ep { font-size: 13px; }
-    .ep-head {
-      padding: 12px 14px 10px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .ep-name {
-      font-size: 14px; font-weight: 600; line-height: 1.3;
-      padding-right: 22px; letter-spacing: -0.01em;
-    }
-    .ep-meta {
-      font-size: 11px; color: #8b95a8; margin-top: 3px;
-      font-variant-numeric: tabular-nums;
-    }
-    .ep-badges { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; }
-    .ep-badges .b {
-      font-size: 9.5px; font-weight: 700; letter-spacing: .3px;
-      padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
-    }
-    .b-lcl    { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
-    .b-spread { background: rgba(6, 182, 212, 0.15);  color: #22d3ee; }
-    .b-conv   { background: rgba(239, 68, 68, 0.15);  color: #f87171; }
-
-    .ep-row {
-      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px;
-      background: rgba(255, 255, 255, 0.06);
-      border-top: 1px solid rgba(255, 255, 255, 0.06);
-    }
-    .ep-row:first-of-type { border-top: none; }
-    .ep-c {
-      background: rgba(18, 20, 26, 0.98);
-      padding: 10px 12px;
-      display: flex; flex-direction: column; gap: 2px;
-      min-width: 0;
-    }
-    .ep-l {
-      font-size: 9.5px; font-weight: 600; color: #8b95a8;
-      text-transform: uppercase; letter-spacing: .5px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .ep-v {
-      font-size: 15px; font-weight: 600; color: #f5f7fa;
-      font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
-      white-space: nowrap;
-    }
-    .ep-v small { font-size: 10px; font-weight: 500; color: #8b95a8; margin-left: 2px; }
-    .ep-v em { color: #eab308; font-style: normal; font-weight: 700; margin-left: 1px; }
-    .ep-v.rain { color: #5ac8ff; }
-    .ep-v .na { color: #4a5364; }
-    .ep-s {
-      font-size: 10px; color: #8b95a8; font-variant-numeric: tabular-nums;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      min-height: 12px;
-    }
-  `;
-  document.head.appendChild(css);
-}
-
-// ---------------------------------------------------------------------------
-// API
-// ---------------------------------------------------------------------------
-
-export function initEstacions({ map, visible = true } = {}) {
-  if (!map) throw new Error('initEstacions: cal un map');
-
-  injectPopupStyles();
-
-  let isVisible = visible;
-  let data = null;
-  let geojson = null;
-  let lastFilterKey = '';
-  let pulsePhase = 0;
-  let pulseTimer = 0;
-
-  const popup = new maplibregl.Popup({
-    className: 'est-popup-wrap',
-    closeButton: true,
-    closeOnClick: true,
-    offset: 16,
-    maxWidth: '340px',
-  });
-
-  function filterForZoom(z) {
-    let score = ZOOM_TIERS[0].score;
-    for (const t of ZOOM_TIERS) {
-      if (z >= t.z) score = t.score;
-    }
-    return score;
-  }
-
-  function applyZoomFilters() {
-    if (!map.getLayer(LAYER_LABEL)) return;
-    const z = map.getZoom();
-    const minScore = filterForZoom(z);
-
-    const key = `s=${minScore}`;
-    if (key === lastFilterKey) return;
-    lastFilterKey = key;
-
-    const scoreFilter = ['>=', ['get', 'score'], minScore];
-
-    try {
-      map.setFilter(LAYER_LABEL, scoreFilter);
-      map.setFilter(LAYER_PULSE, ['all', ['==', ['get', 'papallona'], 1], scoreFilter]);
-    } catch (e) { /* no-op */ }
-  }
-
-  function startPulse() {
-    if (pulseTimer) return;
-    const tick = () => {
-      if (!map.getLayer(LAYER_PULSE)) return;
-      pulsePhase = (pulsePhase + 1) % 90;
-      const t = pulsePhase / 90;
-      const wave = 0.5 + 0.5 * Math.sin(t * Math.PI * 2);
-      const radiusMul = 1 + 0.6 * wave;
-      const opacity = 0.15 + 0.25 * wave;
-      try {
-        map.setPaintProperty(LAYER_PULSE, 'circle-radius', [
-          'interpolate', ['linear'], ['zoom'],
-          5, 10 * radiusMul, 10, 16 * radiusMul, 14, 24 * radiusMul,
-        ]);
-        map.setPaintProperty(LAYER_PULSE, 'circle-opacity', opacity);
-      } catch (e) { /* no-op */ }
+export function initEstacions({ map, visible = false } = {}) {
+  if (!map) {
+    console.warn('[estacions] initEstacions: falta map');
+    return {
+      start: async () => {},
+      setVisible: () => {},
+      getSelected: () => null,
+      select: () => {},
+      clearSelection: () => {},
+      destroy: () => {},
     };
-    pulseTimer = setInterval(tick, 50);
   }
 
-  function stopPulse() {
-    if (pulseTimer) clearInterval(pulseTimer);
-    pulseTimer = 0;
-  }
+  // ---------------------------------------------------------------- estat
+  let data = null;              // FeatureCollection
+  let started = false;          // start() ja ha carregat el geojson
+  let starting = null;          // promesa en curs
+  let visibleState = !!visible; // volums visibles o no
+  let selectedId = null;        // id de l'estació enfocada
+  let flyoutEl = null;
+  let boundBtn = null;
 
-  function addSourcesAndLayers() {
-    if (map.getSource(SRC)) return;
+  const allFeatures = () => (data && Array.isArray(data.features)) ? data.features : [];
+  const byId = new Map(); // id -> feature
+  const featureId = (f) => (f && f.properties && (f.properties.id || f.properties.codi || f.properties.indicatiu || f.properties.nom)) || null;
 
-    const z0 = map.getZoom();
-    const scoreFilter0 = ['>=', ['get', 'score'], filterForZoom(z0)];
+  // ---------------------------------------------------------------- utils
+  const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-    map.addSource(SRC, { type: 'geojson', data: geojson, generateId: false });
+  function ensureStyleLayers() {
+    if (map.getLayer(LAYER_HALO)) map.removeLayer(LAYER_HALO);
+    if (map.getLayer(LAYER_DOT))  map.removeLayer(LAYER_DOT);
+    if (map.getLayer(LAYER_LABEL)) map.removeLayer(LAYER_LABEL);
+    if (map.getSource(SRC_ID)) map.removeSource(SRC_ID);
 
-    map.addLayer({
-      id: LAYER_PULSE,
-      type: 'circle',
-      source: SRC,
-      filter: ['all', ['==', ['get', 'papallona'], 1], scoreFilter0],
-      layout: { visibility: isVisible ? 'visible' : 'none' },
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 10, 10, 16, 14, 24],
-        'circle-color': '#fb923c',
-        'circle-opacity': 0.25,
-        'circle-blur': 0.85,
-      },
+    map.addSource(SRC_ID, {
+      type: 'geojson',
+      data: data || { type: 'FeatureCollection', features: [] },
     });
 
+    // Halo (cercle gran translúcid)
     map.addLayer({
-      id: LAYER_LABEL,
-      type: 'symbol',
-      source: SRC,
-      filter: scoreFilter0,
-      layout: {
-        visibility: isVisible ? 'visible' : 'none',
-        'text-field': ['get', 'labelText'],
-        'text-font': ['Noto Sans Regular'],
-        'text-size': ['interpolate', ['linear'], ['zoom'],
-          5, 9,
-          8, 11,
-          11, 13,
-          14, 15,
+      id: LAYER_HALO, type: 'circle', source: SRC_ID, minzoom: 4,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 4, 10, 14, 14, 22],
+        'circle-color': [
+          'case',
+          ['==', ['get', 'id'], selectedId || '__none__'],
+          COLOR.haloSelected,
+          COLOR.halo,
         ],
-        'text-padding': 2,
+        'circle-opacity': 0.55,
+        'circle-stroke-width': 0,
+      },
+    });
+
+    // Punt
+    map.addLayer({
+      id: LAYER_DOT, type: 'circle', source: SRC_ID, minzoom: 4,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2.5, 10, 5, 14, 8],
+        'circle-color': [
+          'case',
+          ['==', ['get', 'id'], selectedId || '__none__'],
+          COLOR.selected,
+          COLOR.normal,
+        ],
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 1.4,
+        'circle-opacity': 1,
+      },
+    });
+
+    // Etiqueta (nom) només quan ja hi ha prou zoom o està seleccionada
+    map.addLayer({
+      id: LAYER_LABEL, type: 'symbol', source: SRC_ID, minzoom: 6,
+      filter: ['==', ['get', 'id'], selectedId || '__none__'],
+      layout: {
+        'text-field': ['get', 'nom'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 6, 11, 12, 13],
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
         'text-allow-overlap': true,
-        'text-ignore-placement': true,
-        'symbol-sort-key': ['-', 0, ['get', 'score']],
       },
       paint: {
-        'text-color': ['get', 'fg'],
-        'text-halo-color': ['get', 'bg'],
-        'text-halo-width': 2.2,
-        'text-halo-blur': 0.3,
+        'text-color': COLOR.label,
+        'text-halo-color': COLOR.labelHalo,
+        'text-halo-width': 1.6,
       },
     });
 
-    applyZoomFilters();
-    map.on('moveend', applyZoomFilters);
-    map.on('zoomend', applyZoomFilters);
-
-    map.on('click', LAYER_LABEL, (e) => {
-      const f = e.features && e.features[0];
-      if (!f) return;
-      popup.setLngLat(f.geometry.coordinates).setHTML(popupHtml(f.properties)).addTo(map);
-    });
-    map.on('mouseenter', LAYER_LABEL, () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', LAYER_LABEL, () => { map.getCanvas().style.cursor = ''; });
-
-    startPulse();
+    applyVisibility();
   }
 
-  function removeLayers() {
-    stopPulse();
-    for (const id of [LAYER_LABEL, LAYER_PULSE]) {
+  function applyVisibility() {
+    const v = visibleState ? 'visible' : 'none';
+    for (const id of [LAYER_HALO, LAYER_DOT, LAYER_LABEL]) {
       if (map.getLayer(id)) {
-        try { map.removeLayer(id); } catch (e) {}
+        try { map.setLayoutProperty(id, 'visibility', v); } catch (e) {}
       }
     }
-    if (map.getSource(SRC)) {
-      try { map.removeSource(SRC); } catch (e) {}
-    }
-    map.off('moveend', applyZoomFilters);
-    map.off('zoomend', applyZoomFilters);
-    lastFilterKey = '';
   }
 
+  function refreshSelectionPaint() {
+    if (!map.getLayer(LAYER_HALO) || !map.getLayer(LAYER_DOT)) return;
+    try {
+      map.setPaintProperty(LAYER_HALO, 'circle-color', [
+        'case',
+        ['==', ['get', 'id'], selectedId || '__none__'],
+        COLOR.haloSelected,
+        COLOR.halo,
+      ]);
+      map.setPaintProperty(LAYER_DOT, 'circle-color', [
+        'case',
+        ['==', ['get', 'id'], selectedId || '__none__'],
+        COLOR.selected,
+        COLOR.normal,
+      ]);
+      map.setFilter(LAYER_LABEL, ['==', ['get', 'id'], selectedId || '__none__']);
+    } catch (e) {}
+  }
+
+  // Aplica un filtre que amaga TOTES les estacions excepte la seleccionada
+  // (només s'aplica quan hi ha selectedId; si no, filtre buit = totes visibles).
+  function applyFocusFilter() {
+    const f = selectedId
+      ? ['==', ['get', 'id'], selectedId]
+      : null;
+    for (const id of [LAYER_HALO, LAYER_DOT]) {
+      if (!map.getLayer(id)) continue;
+      try { map.setFilter(id, f); } catch (e) {}
+    }
+    // L'etiqueta ja té el seu propi filtre (només la seleccionada)
+    if (map.getLayer(LAYER_LABEL)) {
+      try { map.setFilter(LAYER_LABEL, ['==', ['get', 'id'], selectedId || '__none__']); } catch (e) {}
+    }
+  }
+
+  // ---------------------------------------------------------------- càrrega
   async function load() {
-    const d = await loadData();
-    data = d;
-    geojson = toGeoJSON(d);
-    return geojson;
+    if (data) return data;
+    try {
+      const r = await fetch(AEMET_URL, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      if (!j || j.type !== 'FeatureCollection' || !Array.isArray(j.features)) {
+        throw new Error('format geojson inesperat');
+      }
+      // Normalitzem: assegurem que cada feature té un `id` a properties
+      j.features.forEach((f) => {
+        if (!f.properties) f.properties = {};
+        if (!f.properties.id) {
+          f.properties.id = f.properties.codi
+            || f.properties.indicatiu
+            || f.properties.nom
+            || (f.geometry && f.geometry.coordinates
+                ? `${f.geometry.coordinates[0]},${f.geometry.coordinates[1]}`
+                : Math.random().toString(36).slice(2));
+        }
+        if (!f.properties.nom) f.properties.nom = f.properties.name || f.properties.id;
+      });
+      data = j;
+      byId.clear();
+      j.features.forEach((f) => byId.set(f.properties.id, f));
+      return data;
+    } catch (e) {
+      console.warn('[estacions] no s\'ha pogut carregar', e.message);
+      data = { type: 'FeatureCollection', features: [] };
+      return data;
+    }
   }
 
-  const api = {
-    async start() {
-      removeLayers();
-      try {
-        await load();
-        addSourcesAndLayers();
-      } catch (e) {
-        console.warn('[estacions]', e.message);
+  async function start() {
+    if (started) return true;
+    if (starting) return starting;
+    starting = (async () => {
+      await load();
+      if (!map.getStyle || !map.getStyle()) {
+        // Si el mapa encara no té estil carregat, esperem
+        await new Promise((res) => map.once('style.load', res));
       }
-    },
+      ensureStyleLayers();
+      refreshSelectionPaint();
+      applyFocusFilter();
+      started = true;
+      return true;
+    })();
+    return starting;
+  }
 
-    setVisible(on) {
-      isVisible = !!on;
-      for (const id of [LAYER_PULSE, LAYER_LABEL]) {
-        if (map.getLayer(id)) {
-          map.setLayoutProperty(id, 'visibility', isVisible ? 'visible' : 'none');
-        }
+  // ---------------------------------------------------------------- focus
+  function flyToStation(feature) {
+    const [lon, lat] = feature.geometry.coordinates;
+    map.flyTo({
+      center: [lon, lat],
+      zoom: 10,
+      duration: 1400,
+      essential: true,
+      curve: 1.4,
+    });
+  }
+
+  function select(id) {
+    if (!id) return;
+    const f = byId.get(id);
+    if (!f) { console.warn('[estacions] select: id desconegut', id); return; }
+    selectedId = id;
+    visibleState = true;
+    applyVisibility();
+    refreshSelectionPaint();
+    applyFocusFilter();
+    flyToStation(f);
+    updateFlyoutSelection();
+  }
+
+  function clearSelection() {
+    if (!selectedId) return;
+    selectedId = null;
+    refreshSelectionPaint();
+    applyFocusFilter();
+    updateFlyoutSelection();
+  }
+
+  function getSelected() { return selectedId; }
+
+  function setVisible(v) {
+    visibleState = !!v;
+    if (!visibleState) {
+      // En amagar-les, també traiem el focus perquè no quedi res estrany
+      selectedId = null;
+      refreshSelectionPaint();
+      applyFocusFilter();
+      closeFlyout();
+    }
+    if (map.getLayer(LAYER_DOT)) applyVisibility();
+  }
+
+  // ---------------------------------------------------------------- flyout
+  function buildFlyout() {
+    const el = document.createElement('div');
+    el.className = 'flyout';
+    el.id = 'flyout-estacions';
+    el.innerHTML = `
+      <div class="flyout-title">Estacions AEMET</div>
+      <div class="estacions-search" style="padding:4px 6px 8px">
+        <input type="text" placeholder="Cerca estació…" autocomplete="off"
+          style="width:100%;padding:7px 9px;background:rgba(24,34,46,.9);
+                 color:#e8f0f8;border:1px solid rgba(80,120,160,.25);
+                 border-radius:8px;font:inherit;font-size:12px;outline:none" />
+      </div>
+      <div class="estacions-list" style="max-height:340px;overflow:auto;padding:2px 4px 4px"></div>
+      <div class="estacions-actions" style="display:flex;gap:6px;padding:6px 6px 4px;border-top:1px solid rgba(80,120,160,.2)">
+        <button class="opt" data-act="clear" style="justify-content:center;background:rgba(24,34,46,.9);border:1px solid rgba(80,120,160,.25)">
+          <span style="font-weight:600">Mostrar totes</span>
+        </button>
+      </div>
+    `;
+    document.body.appendChild(el);
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = e.target.closest('[data-station-id]');
+      if (btn) {
+        const id = btn.dataset.stationId;
+        if (id === selectedId) clearSelection();
+        else select(id);
+        return;
       }
-      if (!isVisible) { popup.remove(); stopPulse(); } else { startPulse(); }
-    },
+      const act = e.target.closest('[data-act]');
+      if (act && act.dataset.act === 'clear') { clearSelection(); return; }
+    });
 
-    isVisible: () => isVisible,
+    const input = el.querySelector('input[type="text"]');
+    input.addEventListener('input', () => renderList(input.value));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeFlyout();
+    });
 
-    async refresh() {
-      cachedData = null;
-      const d = await load();
-      const src = map.getSource(SRC);
-      if (src) src.setData(geojson);
-      return d;
-    },
+    return el;
+  }
 
-    getData: () => data,
+  function renderList(filter = '') {
+    const list = flyoutEl.querySelector('.estacions-list');
+    if (!list) return;
+    const q = norm(filter).trim();
+    const items = allFeatures()
+      .filter((f) => !q || norm(f.properties.nom).includes(q))
+      .sort((a, b) => (a.properties.nom || '').localeCompare(b.properties.nom || ''));
 
-    destroy() {
-      popup.remove();
-      removeLayers();
-    },
+    list.innerHTML = '';
+    if (items.length === 0) {
+      list.innerHTML = '<div style="padding:12px;text-align:center;font-size:12px;color:#8aa0b8">Cap resultat</div>';
+      return;
+    }
+    for (const f of items) {
+      const id = f.properties.id;
+      const btn = document.createElement('button');
+      btn.className = 'opt' + (id === selectedId ? ' selected' : '');
+      btn.dataset.stationId = id;
+      btn.style.justifyContent = 'flex-start';
+      btn.innerHTML = `
+        <span class="opt-main">
+          <span class="opt-name"></span>
+          <span class="opt-sub"></span>
+        </span>
+      `;
+      btn.querySelector('.opt-name').textContent = f.properties.nom || id;
+      btn.querySelector('.opt-sub').textContent =
+        (f.properties.comarca || f.properties.provincia || f.properties.regio || 'AEMET');
+      list.appendChild(btn);
+    }
+  }
+
+  function updateFlyoutSelection() {
+    if (!flyoutEl) return;
+    flyoutEl.querySelectorAll('[data-station-id]').forEach((b) => {
+      b.classList.toggle('selected', b.dataset.stationId === selectedId);
+    });
+  }
+
+  function positionFlyout(anchorBtn) {
+    if (!flyoutEl) return;
+    const rect = anchorBtn.getBoundingClientRect();
+    const isRight = anchorBtn.closest('.side-rail.right');
+    flyoutEl.classList.add('open');
+    flyoutEl.style.top = Math.max(12, rect.top) + 'px';
+    if (isRight) {
+      flyoutEl.style.right = (window.innerWidth - rect.left + 8) + 'px';
+      flyoutEl.style.left = '';
+    } else {
+      flyoutEl.style.left = (rect.right + 8) + 'px';
+      flyoutEl.style.right = '';
+    }
+    requestAnimationFrame(() => {
+      const fh = flyoutEl.offsetHeight;
+      if (rect.top + fh > window.innerHeight - 12) {
+        flyoutEl.style.top = Math.max(12, window.innerHeight - fh - 12) + 'px';
+      }
+    });
+  }
+
+  function openFlyout(anchorBtn) {
+    if (!flyoutEl) flyoutEl = buildFlyout();
+    positionFlyout(anchorBtn);
+    renderList();
+    anchorBtn.classList.add('active');
+  }
+
+  function closeFlyout() {
+    if (flyoutEl) flyoutEl.classList.remove('open');
+    if (boundBtn) boundBtn.classList.remove('active');
+  }
+
+  function toggleFlyout(anchorBtn) {
+    if (flyoutEl && flyoutEl.classList.contains('open')) closeFlyout();
+    else openFlyout(anchorBtn);
+  }
+
+  // ---------------------------------------------------------------- bind
+  function findRailButton() {
+    // Botó de la banda dreta amb title="Estacions" o aria-label que ho contingui
+    const btns = Array.from(document.querySelectorAll('.side-rail.right .rail-btn'));
+    return btns.find((b) =>
+      /estacion/i.test(b.getAttribute('title') || '') ||
+      /estacion/i.test(b.getAttribute('aria-label') || '') ||
+      /estacion/i.test(b.textContent || '')
+    ) || null;
+  }
+
+  function bindRailButton() {
+    boundBtn = findRailButton();
+    if (!boundBtn) {
+      console.warn('[estacions] no s\'ha trobat el botó "Estacions" a la banda dreta');
+      return;
+    }
+    boundBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFlyout(boundBtn);
+    });
+    // Tanquem en clicar fora
+    document.addEventListener('click', (e) => {
+      if (!flyoutEl) return;
+      if (e.target.closest('#flyout-estacions')) return;
+      if (e.target.closest('.side-rail.right .rail-btn')) return;
+      closeFlyout();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeFlyout();
+    });
+    window.addEventListener('resize', () => {
+      if (flyoutEl && flyoutEl.classList.contains('open')) positionFlyout(boundBtn);
+    });
+  }
+
+  // ---------------------------------------------------------------- init
+  async function boot() {
+    bindRailButton();
+    if (visible) {
+      await start();
+    }
+  }
+  boot();
+
+  // ---------------------------------------------------------------- API
+  function destroy() {
+    for (const id of [LAYER_LABEL, LAYER_DOT, LAYER_HALO]) {
+      if (map.getLayer(id)) { try { map.removeLayer(id); } catch (e) {} }
+    }
+    if (map.getSource(SRC_ID)) { try { map.removeSource(SRC_ID); } catch (e) {} }
+    if (flyoutEl) { flyoutEl.remove(); flyoutEl = null; }
+    if (boundBtn) boundBtn.classList.remove('active');
+    boundBtn = null;
+    started = false;
+    starting = null;
+  }
+
+  return {
+    start,
+    setVisible,
+    getSelected,
+    select,
+    clearSelection,
+    destroy,
   };
-
-  return api;
 }
 
 export default { initEstacions };

@@ -1,0 +1,162 @@
+{
+  "zoom": 9,
+  "bbox": {
+    "west": -10.00030517578125,
+    "east": 4.50164794921875,
+    "south": 37.3985281327286,
+    "north": 44.00071783428276
+  },
+  "coordinates": [
+    [
+      -10.00030517578125,
+      44.00071783428276
+    ],
+    [
+      4.50164794921875,
+      44.00071783428276
+    ],
+    [
+      4.50164794921875,
+      37.3985281327286
+    ],
+    [
+      -10.00030517578125,
+      37.3985281327286
+    ]
+  ],
+  "variants": [
+    {
+      "nom": "01_classic_nw",
+      "file": "catrell_01_classic_nw.png",
+      "exageracio": 4.0,
+      "altura": 25.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 1.8,
+      "ombra_proj_forca": 0.9,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "02_extrem_posta_sol",
+      "file": "catrell_02_extrem_posta_sol.png",
+      "exageracio": 5.0,
+      "altura": 16.0,
+      "acimuts": [
+        300
+      ],
+      "ao_forca": 2.2,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "03_fosc_elegant",
+      "file": "catrell_03_fosc_elegant.png",
+      "exageracio": 4.5,
+      "altura": 20.0,
+      "acimuts": [
+        315,
+        340
+      ],
+      "ao_forca": 2.0,
+      "ombra_proj_forca": 0.95,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "04_mapa_antic",
+      "file": "catrell_04_mapa_antic.png",
+      "exageracio": 3.5,
+      "altura": 30.0,
+      "acimuts": [
+        270,
+        315,
+        360
+      ],
+      "ao_forca": 1.6,
+      "ombra_proj_forca": 0.8,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "05_contrast_brutal",
+      "file": "catrell_05_contrast_brutal.png",
+      "exageracio": 5.5,
+      "altura": 18.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 2.5,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "06_3d_heavy_max",
+      "file": "catrell_06_3d_heavy_max.png",
+      "exageracio": 6.0,
+      "altura": 14.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 3.0,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "07_equilibrat",
+      "file": "catrell_07_equilibrat.png",
+      "exageracio": 3.0,
+      "altura": 33.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 1.5,
+      "ombra_proj_forca": 0.7,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "08_nit_fosc",
+      "file": "catrell_08_nit_fosc.png",
+      "exageracio": 4.5,
+      "altura": 22.0,
+      "acimuts": [
+        290
+      ],
+      "ao_forca": 2.2,
+      "ombra_proj_forca": 0.95,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "09_neu",
+      "file": "catrell_09_neu.png",
+      "exageracio": 4.0,
+      "altura": 28.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 1.7,
+      "ombra_proj_forca": 0.75,
+      "width": 1536,
+      "height": 923
+    },
+    {
+      "nom": "10_tinta",
+      "file": "catrell_10_tinta.png",
+      "exageracio": 5.5,
+      "altura": 20.0,
+      "acimuts": [
+        315
+      ],
+      "ao_forca": 2.8,
+      "ombra_proj_forca": 1.0,
+      "width": 1536,
+      "height": 923
+    }
+  ]
+}

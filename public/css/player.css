@@ -1,0 +1,174 @@
+/* =========================================================
+   player.css — Tempestes.cat
+   ========================================================= */
+
+#bottomBar {
+  position: absolute;
+  z-index: 15;
+  pointer-events: none;
+  left: calc(var(--rail-w) + 18px);
+  right: calc(var(--rail-w) + 18px);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#bottomBar > * { pointer-events: auto; }
+
+.player {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 15px 18px 22px;
+  background: rgba(9, 15, 22, 0.94);
+  border: 1px solid var(--tc-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.player-top { display: flex; align-items: center; gap: 16px; }
+.player-actions { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.player-actions button {
+  min-height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--btn);
+  color: var(--tc-text);
+  border: 1px solid var(--btn-border);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.btn-play {
+  min-width: 100px;
+  padding: 0 16px !important;
+  background: var(--tc-accent) !important;
+  color: #10160a !important;
+  border-color: var(--tc-accent) !important;
+  font-weight: 850 !important;
+}
+.btn-step { width: 38px; height: 38px; }
+.btn-step svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+.player-times { margin-left: auto; display: flex; align-items: baseline; gap: 10px; }
+.time-current { font-size: 21px; font-weight: 700; color: #fff; line-height: 1; }
+.time-date { font-size: 12px; color: var(--tc-text-2); }
+
+.timeline { position: relative; width: 100%; height: 42px; cursor: pointer; touch-action: none; user-select: none; }
+.timeline-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: var(--track-h);
+  border-radius: 4px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+.timeline-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: linear-gradient(90deg, #a4c52b, var(--tc-accent));
+  pointer-events: none;
+}
+.timeline-thumb {
+  position: absolute;
+  top: 14.5px;
+  left: 0;
+  width: var(--thumb);
+  height: var(--thumb);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--tc-accent);
+  border: 3px solid #101820;
+  box-shadow: 0 0 0 2px var(--tc-accent), 0 0 16px rgba(57, 230, 155, 0.35);
+  pointer-events: none;
+}
+.timeline-labels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14px;
+  pointer-events: none;
+}
+.timeline-label {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tc-text-2);
+}
+.timeline-label.active { color: var(--tc-accent); font-weight: 700; }
+.timeline-label.edge-l { transform: none; }
+.timeline-label.edge-r { transform: translateX(-100%); }
+.timeline-label.locked { opacity: 0.35; }
+
+.timeline-locked {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(150,150,150,0.3) 0 4px, rgba(150,150,150,0.12) 4px 8px);
+  border-right: 2px solid rgba(190,190,190,0.6);
+}
+.timeline-locked.right { left: auto; right: 0; border-right: none; border-left: 2px solid rgba(190,190,190,0.6); }
+.timeline-lock {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  transform: translateX(-50%);
+  color: var(--tc-text-3);
+  pointer-events: none;
+}
+.timeline-lock svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.2; display: block; }
+
+.acum-player { gap: 6px; }
+.acum-meta { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+#acumTime { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.1; white-space: nowrap; }
+.acum-date { font-size: 11.5px; color: var(--tc-text-2); text-align: right; }
+
+.acum-tick {
+  position: absolute;
+  top: 12px;
+  width: 2px;
+  height: var(--track-h);
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+.acum-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.acum-row::-webkit-scrollbar { display: none; }
+.acum-chip {
+  flex: 1 0 auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--btn);
+  color: var(--tc-text-2);
+  border: 1px solid var(--btn-border);
+  border-radius: 11px;
+  cursor: pointer;
+}
+.acum-chip.active { background: var(--tc-accent); border-color: var(--tc-accent); color: #10160a; }
+.acum-chip.locked { opacity: 0.55; border-style: dashed; }

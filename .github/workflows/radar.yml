@@ -2,32 +2,29 @@ name: Descarga Radar PNG
 
 on:
   workflow_dispatch: {}
-  # Si vols execució periòrica, descomenta:
+  # Si vols execució periòdica, descomenta:
   # schedule:
   #   - cron: '*/5 * * * *'
 
 permissions:
   contents: read
 
-# 👇 NOMÉS UN WORKFLOW ALHORA PER GRUP. Els que arribin mentre n'hi ha un
-# en curs quedaran en cua (no es cancel·len).
 concurrency:
   group: descarga-radar-png
   cancel-in-progress: false
 
 env:
   R2_BUCKET: tempestes-radar-data
-  R2_PREFIX: dades_radar_dbz/
-  R2_PREFIX_NIMBUS: dades_radar_nimbus/
-  R2_PREFIX_ACUM: dades_radar_acumulacions/
+  R2_PREFIX_DBZ: dades_radar_dbz/
+  R2_PREFIX_VRADH: dades_radar_vradh/
   DADES_PNG_DIR: scripts-privats/radar_out
-  DADES_ACUM_DIR: scripts-privats/radar_out_acum
+  DADES_VRADH_DIR: scripts-privats/radar_png_final
   R2_PUBLIC_BASE: https://radar-data.tempestes.cat
 
 jobs:
 
   # ============================================================
-  # JOB 1: Radar PNG (dBZ + NIMBUS)
+  # JOB 1: Radar dBZ (reflectivitat)
   # ============================================================
   radar-png:
     runs-on: ubuntu-latest
@@ -77,50 +74,35 @@ jobs:
           RADAR_FINESTRA_HORES: '26'
           RADAR_TIMEZONE: 'Europe/Madrid'
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
-          R2_PREFIX: ${{ env.R2_PREFIX }}
-          R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
+          R2_PREFIX: ${{ env.R2_PREFIX_DBZ }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: python -X faulthandler scripts-privats/radar-real.py
         continue-on-error: true
 
-      - name: Verificar manifest i PNGs
+      - name: Verificar manifest i PNGs dBZ
         id: verify
         run: |
           set -euo pipefail
-          ok=true
-          n_total=0
+          dir="$DADES_PNG_DIR/dades_radar_dbz"
 
-          declare -A SUBS=(
-            ["dbz"]="dades_radar_dbz"
-            ["lluvia"]="dades_radar_nimbus"
-          )
+          if [ ! -d "$dir" ]; then
+            echo "AVIS: no existeix $dir"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
 
-          for sub in "${!SUBS[@]}"; do
-            dir="$DADES_PNG_DIR/${SUBS[$sub]}"
-            echo "--- Comprovant $sub ($dir) ---"
+          if [ ! -s "$dir/manifest.json" ]; then
+            echo "ERROR: falta $dir/manifest.json"
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
 
-            if [ ! -d "$dir" ]; then
-              echo "AVIS: no existeix $dir"
-              ok=false
-              continue
-            fi
+          n=$(find "$dir" -maxdepth 1 -name "*.png" | wc -l)
+          n=$((n))
+          echo "dBZ: $n PNGs"
 
-            if [ ! -s "$dir/manifest.json" ]; then
-              echo "ERROR: falta $dir/manifest.json"
-              ok=false
-              continue
-            fi
-
-            n=$(find "$dir" -maxdepth 1 -name "*.png" | wc -l)
-            n=$((n))
-            echo "$sub: $n PNGs"
-            n_total=$((n_total + n))
-          done
-
-          echo "Total PNGs: $n_total"
-
-          if [ "$ok" != "true" ] || [ "$n_total" -eq 0 ]; then
+          if [ "$n" -eq 0 ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -132,15 +114,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dades-radar-png
-          path: ${{ env.DADES_PNG_DIR }}/
+          path: ${{ env.DADES_PNG_DIR }}/dades_radar_dbz/
           retention-days: 1
           if-no-files-found: error
 
 
   # ============================================================
-  # JOB 2: Acumulacions (en paral·lel amb radar-png)
+  # JOB 2: Doppler VRADH (velocitat radial)
   # ============================================================
-  acumulacions:
+  radar-vradh:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -178,39 +160,39 @@ jobs:
       - name: Instal·lar dependències
         run: |
           set -euo pipefail
-          pip install --quiet requests numpy pillow
+          pip install --quiet requests h5py numpy pillow pyproj matplotlib cartopy
           pip check || true
 
-      - name: Executar cumul.py
+      - name: Executar radar_aemet_plot_vradh_transparent.py
         env:
           RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
-          R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
-        run: python -X faulthandler scripts-privats/cumul.py
+        run: python -X faulthandler scripts-privats/radar_aemet_plot_vradh_transparent.py
         continue-on-error: true
 
-      - name: Verificar acumulacions
+      - name: Verificar manifest i PNGs VRADH
         id: verify
         run: |
           set -euo pipefail
+          dir="$DADES_VRADH_DIR"
 
-          if [ ! -d "$DADES_ACUM_DIR" ]; then
-            echo "AVIS: no existeix $DADES_ACUM_DIR"
+          if [ ! -d "$dir" ]; then
+            echo "AVIS: no existeix $dir"
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if [ ! -s "$DADES_ACUM_DIR/manifest.json" ]; then
-            echo "AVIS: no s'ha generat manifest.json"
+          if [ ! -s "$dir/manifest.json" ]; then
+            echo "AVIS: no s'ha generat manifest.json a $dir"
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          n=$(find "$DADES_ACUM_DIR" -maxdepth 1 -name "*.png" | wc -l)
+          n=$(find "$dir" -maxdepth 1 -name "*.png" | wc -l)
           n=$((n))
-          echo "Acumulacions: $n PNGs"
+          echo "VRADH: $n PNGs"
 
           if [ "$n" -eq 0 ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
@@ -218,14 +200,13 @@ jobs:
           fi
 
           echo "files_ok=true" >> "$GITHUB_OUTPUT"
-          echo "OK: $n PNGs d'acumulacions"
 
-      - name: Pujar artifact acumulacions
+      - name: Pujar artifact radar-vradh
         if: steps.verify.outputs.files_ok == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: dades-acumulacions
-          path: ${{ env.DADES_ACUM_DIR }}/
+          name: dades-radar-vradh
+          path: ${{ env.DADES_VRADH_DIR }}/
           retention-days: 1
           if-no-files-found: warn
 
@@ -234,7 +215,7 @@ jobs:
   # JOB 3: Publicar a R2
   # ============================================================
   publicar:
-    needs: [radar-png, acumulacions]
+    needs: [radar-png, radar-vradh]
     if: |
       always() &&
       needs.radar-png.outputs.files_ok == 'true'
@@ -250,47 +231,43 @@ jobs:
           name: dades-radar-png
           path: dades_png/
 
-      - name: Descarregar artifact acumulacions (si existeix)
+      - name: Descarregar artifact radar-vradh (si existeix)
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: dades-acumulacions
-          path: dades_acum/
+          name: dades-radar-vradh
+          path: dades_vradh/
 
       - name: Verificar què tenim
         id: check
         run: |
           set -euo pipefail
 
-          echo "=== radar-png ==="
+          echo "=== radar-png (dBZ) ==="
           ls -la dades_png/ || echo "no existeix"
+          ok_dbz=false
+          if [ -d "dades_png" ] && [ -s "dades_png/manifest.json" ]; then
+            n=$(find "dades_png" -maxdepth 1 -name "*.png" | wc -l)
+            echo "  dBZ: $n PNGs"
+            ok_dbz=true
+          fi
 
-          ok_radar=false
-          for sub in dades_radar_dbz dades_radar_nimbus; do
-            if [ -d "dades_png/$sub" ] && [ -s "dades_png/$sub/manifest.json" ]; then
-              n=$(find "dades_png/$sub" -maxdepth 1 -name "*.png" | wc -l)
-              echo "  $sub: $n PNGs"
-              ok_radar=true
-            fi
-          done
-
-          echo "=== acumulacions ==="
-          ls -la dades_acum/ || echo "no existeix"
-
-          ok_acum=false
-          if [ -d "dades_acum" ] && [ -s "dades_acum/manifest.json" ]; then
-            n=$(find "dades_acum" -maxdepth 1 -name "*.png" | wc -l)
-            echo "  acumulacions: $n PNGs"
+          echo "=== radar-vradh ==="
+          ls -la dades_vradh/ || echo "no existeix"
+          ok_vradh=false
+          if [ -d "dades_vradh" ] && [ -s "dades_vradh/manifest.json" ]; then
+            n=$(find "dades_vradh" -maxdepth 1 -name "*.png" | wc -l)
+            echo "  VRADH: $n PNGs"
             if [ "$n" -gt 0 ]; then
-              ok_acum=true
+              ok_vradh=true
             fi
           fi
 
-          echo "radar_ok=$ok_radar" >> "$GITHUB_OUTPUT"
-          echo "acum_ok=$ok_acum" >> "$GITHUB_OUTPUT"
+          echo "dbz_ok=$ok_dbz" >> "$GITHUB_OUTPUT"
+          echo "vradh_ok=$ok_vradh" >> "$GITHUB_OUTPUT"
 
-          if [ "$ok_radar" != "true" ]; then
-            echo "::error::No hi ha dades de radar per publicar"
+          if [ "$ok_dbz" != "true" ]; then
+            echo "::error::No hi ha dades de radar dBZ per publicar"
             exit 1
           fi
 
@@ -299,9 +276,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           R2_BUCKET: ${{ env.R2_BUCKET }}
-          R2_PREFIX: ${{ env.R2_PREFIX }}
-          R2_PREFIX_NIMBUS: ${{ env.R2_PREFIX_NIMBUS }}
-          R2_PREFIX_ACUM: ${{ env.R2_PREFIX_ACUM }}
+          R2_PREFIX_DBZ: ${{ env.R2_PREFIX_DBZ }}
+          R2_PREFIX_VRADH: ${{ env.R2_PREFIX_VRADH }}
         run: |
           set -euo pipefail
 
@@ -380,13 +356,12 @@ jobs:
             cd - > /dev/null
           }
 
-          upload_dir "dades_png/dades_radar_dbz" "$R2_PREFIX"
-          upload_dir "dades_png/dades_radar_nimbus" "$R2_PREFIX_NIMBUS"
+          upload_dir "dades_png" "$R2_PREFIX_DBZ"
 
-          if [ -d "dades_acum" ] && [ -s "dades_acum/manifest.json" ]; then
-            upload_dir "dades_acum" "$R2_PREFIX_ACUM"
+          if [ -d "dades_vradh" ] && [ -s "dades_vradh/manifest.json" ]; then
+            upload_dir "dades_vradh" "$R2_PREFIX_VRADH"
           else
-            echo "AVIS: no hi ha acumulacions per publicar (es salta)"
+            echo "AVIS: no hi ha dades VRADH per publicar (es salta)"
           fi
 
           if [ "$fail_count" -gt 0 ]; then

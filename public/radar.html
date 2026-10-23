@@ -1,2501 +1,1219 @@
 <!DOCTYPE html>
 <html lang="ca">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0c14" />
-  <title>Tempestes.cat — Radar meteorològic</title>
-  <link rel="icon" href="/img/Tempestes_cat.ico" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0f14" />
+<title>Tempestes.cat | Radar meteorològic</title>
+<link rel="icon" href="/img/Tempestes_cat.ico" />
 
-  <!-- Connexions i mòduls anticipats -->
-  <link rel="preconnect" href="https://radar-data.tempestes.cat" crossorigin />
-  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
-  <link rel="modulepreload" href="./js/radar.js" />
-  <link rel="modulepreload" href="./js/estacions.js" />
-  <link rel="modulepreload" href="./js/alertes.js" />
+<link rel="preconnect" href="https://radar-data.tempestes.cat" crossorigin />
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+<link rel="modulepreload" href="/js/radar.js" />
+<link rel="modulepreload" href="/js/estacions.js" />
+<link rel="modulepreload" href="/js/alertes.js" />
+<link rel="modulepreload" href="/dades/escales.js" />
 
-  <link href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <script defer src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
-  <script defer src="/dades/ciutats.js"></script>
-  <script defer src="/dades/cobertura.js"></script>
+<link href="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script defer src="https://unpkg.com/maplibre-gl@5.0.1/dist/maplibre-gl.js"></script>
+<script defer src="/dades/ciutats.js"></script>
+<script defer src="/dades/cobertura.js"></script>
 
-  <!-- Google Analytics (GA4) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDWCZ0Z9XF"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){ dataLayer.push(arguments); }
-    gtag('js', new Date());
-    gtag('config', 'G-QDWCZ0Z9XF', { anonymize_ip: true });
-  </script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-QDWCZ0Z9XF"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', 'G-QDWCZ0Z9XF', { anonymize_ip: true });
+</script>
 
-  <style>
-    /* ===== Base ===== */
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body {
-      width: 100%; height: 100%; overflow: hidden; overscroll-behavior: none;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      background: #0a0c14; color: #eef;
-    }
-    #map { position: absolute; inset: 0; }
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width:100%; height:100%; overflow:hidden; overscroll-behavior:none; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:#0a0c14; color:#eef; }
+  #map { position:absolute; inset:0; }
 
-    :root {
-      --panel-bg: rgba(10, 12, 20, 0.86);
-      --panel-border: rgba(120, 140, 180, 0.22);
-      --radius: 14px;
-      --blur: blur(14px);
-      --accent: #5a9dff;
-      --accent-dark: #3559a0;
-      --text: #eef;
-      --text-2: #8fa5cb;
-      --text-3: #7f94b4;
-      --btn: rgba(30, 40, 62, 0.85);
-      --btn-hover: rgba(45, 60, 90, 0.95);
-      --btn-border: rgba(120, 140, 180, 0.28);
-      --btn-border-hover: rgba(140, 170, 220, 0.55);
-      --shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
-      --panel-w: 340px;
-      --player-h: 108px;
-      --track-h: 8px;
-      --thumb: 20px;
-      --brand: #fff;
-      --brand-accent: #6aa5ff;
-      --brand-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
-    }
-    body.theme-clar {
-      --brand: #0d0f14;
-      --brand-accent: #1e5fbf;
-      --brand-shadow: 0 0 3px rgba(255,255,255,.9), 0 1px 3px rgba(255,255,255,.9), 0 0 8px rgba(255,255,255,.5);
-    }
-    body.theme-clar .brand-logo {
-      filter: drop-shadow(0 1px 2px rgba(255,255,255,.9)) drop-shadow(0 0 5px rgba(255,255,255,.6));
-    }
+  :root {
+    --panel-bg: rgba(10, 12, 20, 0.86);
+    --panel-border: rgba(120, 140, 180, 0.22);
+    --radius: 14px;
+    --blur: blur(14px);
+    --accent: #5a9dff;
+    --accent-dark: #3559a0;
+    --text: #eef;
+    --text-2: #8fa5cb;
+    --text-3: #7f94b4;
+    --btn: rgba(30, 40, 62, 0.85);
+    --btn-hover: rgba(45, 60, 90, 0.95);
+    --btn-border: rgba(120, 140, 180, 0.28);
+    --btn-border-hover: rgba(140, 170, 220, 0.55);
+    --shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+    --side-w: 64px;
+    --player-h: 108px;
+    --track-h: 8px;
+    --thumb: 20px;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* ===================== BANDAS LATERALES ===================== */
+  .side-rail {
+    position:fixed; top:0; bottom:0; z-index:30; width:var(--side-w);
+    display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 6px;
+    background:var(--panel-bg); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
+  }
+  .side-rail.left { left:0; border-right:1px solid var(--panel-border); }
+  .side-rail.right { right:0; border-left:1px solid var(--panel-border); }
 
-    /* ===== Barra superior ===== */
-    .top-bar {
-      position: absolute; z-index: 20;
-      top: max(12px, env(safe-area-inset-top));
-      left: max(12px, env(safe-area-inset-left));
-      right: max(12px, env(safe-area-inset-right));
-      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
-      pointer-events: none;
-    }
-    .top-bar > * { pointer-events: auto; }
-    .left-slot { display: flex; gap: 8px; min-width: 0; }
-    .right-slot { display: flex; justify-content: flex-end; gap: 8px; }
+  .rail-btn {
+    position:relative; width:50px; height:50px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    background:transparent; border:none; border-radius:10px;
+    color:var(--text-3); cursor:pointer; transition:background .15s, color .15s;
+  }
+  .rail-btn:hover { background:var(--btn-hover); color:var(--text); }
+  .rail-btn.active { background:rgba(90,157,255,.15); color:var(--accent); }
+  .rail-btn svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .rail-btn .label { font-size:9px; font-weight:600; letter-spacing:.3px; text-transform:uppercase; }
+  .rail-btn.disabled { opacity:.4; cursor:not-allowed; }
+  .rail-btn.disabled:hover { background:transparent; color:var(--text-3); }
+  .rail-sep { width:28px; height:1px; background:var(--panel-border); margin:4px 0; }
 
-    .brand { display: flex; align-items: center; gap: 10px; height: 46px; }
-    .brand-logo {
-      width: 34px; height: 34px; object-fit: contain; flex-shrink: 0;
-      filter: drop-shadow(0 1px 3px rgba(0,0,0,.9)) drop-shadow(0 0 6px rgba(0,0,0,.6));
-    }
-    .brand-title {
-      font-size: 17px; font-weight: 700; letter-spacing: .3px; white-space: nowrap;
-      color: var(--brand); text-shadow: var(--brand-shadow);
-    }
-    .brand-title span { color: var(--brand-accent); }
+  #userBtn { overflow:hidden; }
+  #userBtn img { width:100%; height:100%; object-fit:cover; border-radius:10px; }
+  #userBtn .ini { font-weight:700; font-size:15px; color:#fff; }
 
-    .icon-btn {
-      width: 46px; height: 46px; padding: 0; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--panel-bg); color: var(--text);
-      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border: 1px solid var(--panel-border); border-radius: 12px;
-      box-shadow: var(--shadow); cursor: pointer;
-      transition: background .15s, border-color .15s, transform .1s;
-    }
-    .icon-btn:hover { background: rgba(30, 45, 70, .95); border-color: var(--btn-border-hover); }
-    .icon-btn:active { transform: scale(.95); }
-    .icon-btn.on { border-color: var(--accent); }
-    .icon-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  /* ===================== FLYOUTS ===================== */
+  .flyout {
+    position:fixed; z-index:40; min-width:260px; max-width:340px; padding:10px;
+    background:var(--panel-bg); backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur);
+    border:1px solid var(--panel-border); border-radius:var(--radius);
+    box-shadow:var(--shadow); display:none; max-height:80vh; overflow-y:auto;
+  }
+  .flyout.open { display:block; animation:flyIn .12s ease-out; }
+  @keyframes flyIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+  .flyout-title { font-size:11px; font-weight:700; color:var(--text-2); text-transform:uppercase; letter-spacing:.6px; padding:4px 8px 8px; border-bottom:1px solid var(--panel-border); margin-bottom:6px; }
 
-    /* ===== Buscador ===== */
-    .search-wrap { position: relative; flex: 1; max-width: 320px; min-width: 0; }
-    .search-input {
-      width: 100%; height: 46px; padding: 0 42px 0 40px;
-      background: var(--panel-bg); color: var(--text);
-      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border: 1px solid var(--panel-border); border-radius: 12px;
-      font: inherit; font-size: 14px; outline: none; box-shadow: var(--shadow);
-      transition: border-color .15s, background .15s;
-    }
-    .search-input::placeholder { color: var(--text-3); }
-    .search-input:focus { border-color: var(--accent); background: rgba(15, 20, 32, .95); }
-    .search-icon {
-      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-      width: 18px; height: 18px; stroke: var(--text-2); fill: none; stroke-width: 2;
-      stroke-linecap: round; pointer-events: none;
-    }
-    .search-clear {
-      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-      width: 28px; height: 28px; min-height: 0; padding: 0; display: none;
-      align-items: center; justify-content: center;
-      background: transparent; border: none; border-radius: 6px; color: var(--text-2); cursor: pointer;
-    }
-    .search-clear.visible { display: flex; }
-    .search-clear:hover { background: rgba(120,140,180,.18); color: var(--text); }
-    .search-clear svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+  .opt {
+    display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%;
+    padding:9px 10px; background:transparent; border:none; border-radius:8px;
+    color:var(--text); font:inherit; font-size:13px; text-align:left; cursor:pointer; transition:background .12s;
+  }
+  .opt:hover { background:var(--btn-hover); }
+  .opt.selected { background:rgba(90,157,255,.18); }
+  .opt .opt-main { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .opt .opt-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .opt .opt-sub { font-size:11px; color:var(--text-3); }
+  .opt .check { width:14px; height:14px; stroke:var(--accent); fill:none; stroke-width:2.5; opacity:0; flex-shrink:0; }
+  .opt.selected .check { opacity:1; }
+  .opt:disabled { opacity:.4; cursor:not-allowed; }
 
-    .search-results {
-      position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30;
-      display: none; max-height: 320px; overflow-y: auto; padding: 4px;
-      background: rgba(12, 15, 24, .96);
-      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border: 1px solid var(--panel-border); border-radius: 12px; box-shadow: var(--shadow);
-    }
-    .search-results.visible { display: block; }
-    .search-result {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
-      padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
-    }
-    .search-result:hover, .search-result.selected { background: rgba(60, 90, 150, .4); }
-    .search-result-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .search-result-meta { flex-shrink: 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-    .search-empty { padding: 14px 12px; text-align: center; font-size: 12px; color: var(--text-3); }
+  .check { display:flex; align-items:center; gap:10px; padding:8px 0; font-size:13px; cursor:pointer; }
+  .check input { width:18px; height:18px; accent-color:var(--accent); cursor:pointer; flex-shrink:0; }
+  .check.disabled { opacity:.45; cursor:not-allowed; }
+  .check.disabled input { cursor:not-allowed; }
+  .check .tag { margin-left:auto; padding:1px 7px; font-size:10px; font-weight:700; border-radius:999px; }
+  .check .tag.pro { background:var(--accent-dark); border:1px solid var(--accent); color:#fff; }
+  .check .tag.free { background:rgba(90,157,255,.15); border:1px solid rgba(90,157,255,.5); color:var(--accent); }
+  .check .tag.soon { background:rgba(120,140,180,.15); border:1px solid rgba(120,140,180,.4); color:var(--text-3); }
 
-    /* ===== Menú lateral ===== */
-    #sidePanel {
-      position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
-      width: var(--panel-w); max-width: 92vw; overflow-y: auto;
-      padding: calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));
-      background: var(--panel-bg);
-      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border-right: 1px solid var(--panel-border); box-shadow: 4px 0 40px rgba(0,0,0,.5);
-      transform: translateX(-100%); transition: transform .3s cubic-bezier(.4, 0, .2, 1);
-    }
-    #sidePanel.open { transform: translateX(0); }
-    #sideBackdrop {
-      position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,.5);
-      opacity: 0; pointer-events: none; transition: opacity .3s;
-    }
-    #sideBackdrop.visible { opacity: 1; pointer-events: auto; }
+  .info-text { font-size:12px; line-height:1.5; color:var(--text-3); }
 
-    .panel-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--panel-border);
-    }
-    .panel-header h2 { font-size: 15px; font-weight: 700; letter-spacing: .3px; }
-    .panel-close {
-      width: 32px; height: 32px; min-height: 0; padding: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: transparent; border: none; border-radius: 6px; color: var(--text-2); cursor: pointer;
-    }
-    .panel-close:hover { background: rgba(120,140,180,.15); color: var(--text); }
-    .panel-close svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+  /* Account */
+  .account-box { display:grid; gap:10px; padding:12px; background:rgba(30,40,62,.6); border:1px solid var(--btn-border); border-radius:10px; }
+  .acc-who { display:flex; align-items:center; gap:10px; min-width:0; }
+  .acc-av { width:34px; height:34px; border-radius:50%; overflow:hidden; background:var(--accent-dark); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+  .acc-av img { width:100%; height:100%; object-fit:cover; }
+  .acc-name { font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .acc-mail { font-size:11px; color:var(--text-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .acc-line { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; color:var(--text-2); }
+  .acc-badge { padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; color:#fff; background:var(--accent-dark); border:1px solid var(--accent); }
+  .acc-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .acc-actions button, .acc-actions a {
+    flex:1; min-height:36px; padding:8px 12px; font-size:12px; text-align:center;
+    text-decoration:none; display:inline-flex; align-items:center; justify-content:center;
+    background:var(--btn); color:var(--text); border:1px solid var(--btn-border);
+    border-radius:8px; font-weight:500; cursor:pointer;
+  }
+  .acc-actions .primary { background:var(--accent-dark); border-color:var(--accent); color:#fff; }
 
-    .section { margin-bottom: 22px; }
-    .section-title { margin-bottom: 10px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+  /* Auth forms */
+  .auth-form { display:grid; gap:8px; margin-top:6px; }
+  .auth-form input {
+    width:100%; min-height:36px; padding:8px 10px;
+    background:rgba(24,34,46,.9); color:var(--text);
+    border:1px solid var(--btn-border); border-radius:8px;
+    font:inherit; font-size:13px; outline:none;
+  }
+  .auth-form input:focus { border-color:var(--accent); }
+  .auth-form .primary {
+    background:var(--accent-dark); border:1px solid var(--accent); color:#fff; font-weight:600;
+    min-height:38px; padding:8px 12px; border-radius:8px; cursor:pointer;
+    font:inherit; font-size:13px;
+  }
+  .auth-toggle {
+    text-align:center; font-size:12px; color:var(--text-3);
+    padding:8px 0 2px; cursor:pointer; background:transparent; border:none;
+    text-decoration:underline; width:100%;
+  }
+  .auth-error { color:#f87171; font-size:12px; padding:2px 4px; min-height:0; }
 
-    button {
-      min-height: 38px; padding: 8px 14px;
-      background: var(--btn); color: var(--text);
-      border: 1px solid var(--btn-border); border-radius: 8px;
-      font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
-      transition: background .15s, border-color .15s;
-    }
-    button:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--btn-border-hover); }
-    button:disabled { opacity: .3; cursor: not-allowed; }
-    button.active { background: var(--accent-dark); border-color: var(--accent); color: #fff; }
-    button.full { width: 100%; }
-    .stack { display: grid; gap: 8px; }
+  /* ===================== TOPBAR ===================== */
+  .topbar {
+    position:absolute; z-index:25;
+    top:max(12px, env(safe-area-inset-top));
+    left:calc(var(--side-w) + max(12px, env(safe-area-inset-left)));
+    right:calc(var(--side-w) + max(12px, env(safe-area-inset-right)));
+    display:flex; align-items:center; gap:8px; pointer-events:none;
+  }
+  .topbar > * { pointer-events:auto; }
+  .brand {
+    display:flex; align-items:center; gap:8px; padding:8px 14px;
+    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px;
+    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); font-weight:700; font-size:14px;
+    box-shadow:var(--shadow);
+  }
+  .brand span { color:#6aa5ff; }
+  .topbar .spacer { flex:1; }
+  .chip {
+    display:flex; align-items:center; gap:6px; padding:8px 12px;
+    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:12px;
+    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); font-size:12px; font-weight:600;
+    box-shadow:var(--shadow);
+  }
+  .chip .dot { width:7px; height:7px; border-radius:50%; background:#22c55e; box-shadow:0 0 8px #22c55e; }
+  .chip.plan { color:#eaf2ff; border-color:var(--accent); background:rgba(53,89,160,.6); }
 
-    .segmented {
-      display: flex; gap: 2px; padding: 3px;
-      background: rgba(30, 40, 62, .6); border: 1px solid var(--btn-border); border-radius: 10px;
-    }
-    .segmented button { flex: 1; min-height: 34px; background: transparent; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; color: var(--text-2); }
-    .segmented button.active { background: var(--accent-dark); color: #fff; }
+  /* ===================== LEYENDA ===================== */
+  #legend {
+    position:absolute; z-index:20;
+    left:calc(var(--side-w) + max(12px, env(safe-area-inset-left)));
+    bottom:calc(var(--player-h) + max(12px, env(safe-area-inset-bottom)) + 8px);
+    padding:10px 12px;
+    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:var(--radius);
+    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); box-shadow:var(--shadow);
+    transition:opacity .2s, transform .2s;
+  }
+  #legend.hidden { opacity:0; pointer-events:none; transform:translateX(-20px); }
+  #legend h3 { margin-bottom:8px; font-size:12px; font-weight:700; color:var(--text-2); }
+  .legend-body { display:flex; gap:8px; height:170px; }
+  .legend-bar { width:12px; border-radius:6px; border:1px solid rgba(255,255,255,.12); }
+  .legend-ticks { position:relative; width:30px; }
+  .legend-tick { position:absolute; left:0; transform:translateY(50%); font-size:11px; color:#cfdcf0; font-variant-numeric:tabular-nums; }
 
-    select {
-      width: 100%; min-height: 38px; padding: 8px 10px;
-      background: var(--btn); color: var(--text);
-      border: 1px solid var(--btn-border); border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer;
-    }
-    select:hover { border-color: var(--btn-border-hover); }
+  /* ===================== BOTTOM BAR ===================== */
+  #bottomBar {
+    position:absolute; z-index:15; pointer-events:none;
+    bottom:max(12px, env(safe-area-inset-bottom));
+    left:calc(var(--side-w) + max(12px, env(safe-area-inset-left)));
+    right:calc(var(--side-w) + max(12px, env(safe-area-inset-right)));
+  }
+  .player {
+    pointer-events:auto; display:flex; flex-direction:column; gap:6px;
+    padding:10px 14px 8px;
+    background:var(--panel-bg); border:1px solid var(--panel-border); border-radius:var(--radius);
+    backdrop-filter:var(--blur); -webkit-backdrop-filter:var(--blur); box-shadow:var(--shadow);
+  }
+  .player-top { display:flex; align-items:center; gap:12px; }
+  .player-actions { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .player-actions button { min-height:36px; padding:0; display:flex; align-items:center; justify-content:center; }
+  .btn-play { min-width:78px; padding:0 12px !important; font-weight:600; }
+  .btn-step { width:36px; height:36px; }
+  .btn-step svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
 
-    .check { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 13px; cursor: pointer; }
-    .check input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
-    .check .pro {
-      margin-left: auto; padding: 1px 7px; font-size: 10px; font-weight: 700;
-      border-radius: 999px; background: var(--accent-dark); border: 1px solid var(--accent); color: #fff;
-    }
-    .check .free {
-      margin-left: auto; padding: 1px 7px; font-size: 10px; font-weight: 700;
-      border-radius: 999px; background: rgba(90,157,255,.15); border: 1px solid rgba(90,157,255,.5); color: var(--accent);
-    }
-    .info-text { font-size: 12px; line-height: 1.5; color: var(--text-3); }
+  button {
+    min-height:38px; padding:8px 14px;
+    background:var(--btn); color:var(--text);
+    border:1px solid var(--btn-border); border-radius:8px;
+    font:inherit; font-size:13px; font-weight:500; cursor:pointer;
+    transition:background .15s, border-color .15s;
+  }
+  button:hover:not(:disabled) { background:var(--btn-hover); border-color:var(--btn-border-hover); }
+  button:disabled { opacity:.3; cursor:not-allowed; }
+  button.active { background:var(--accent-dark); border-color:var(--accent); color:#fff; }
 
-    /* ===== Reproductor ===== */
-    #bottomBar {
-      position: absolute; z-index: 15; pointer-events: none;
-      bottom: max(12px, env(safe-area-inset-bottom));
-      left: max(12px, env(safe-area-inset-left));
-      right: max(12px, env(safe-area-inset-right));
-    }
-    .player {
-      pointer-events: auto; display: flex; flex-direction: column; gap: 6px;
-      padding: 10px 14px 8px;
-      background: var(--panel-bg);
-      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--shadow);
-    }
-    .player-top { display: flex; align-items: center; gap: 12px; }
-    .player-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-    .player-actions button { min-height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; }
-    .btn-play { min-width: 78px; padding: 0 12px !important; font-weight: 600; }
-    .btn-step { width: 36px; height: 36px; }
-    .btn-step svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .player-times { margin-left:auto; display:flex; align-items:baseline; gap:10px; font-variant-numeric:tabular-nums; }
+  .time-current { font-size:18px; font-weight:700; color:#fff; line-height:1; }
+  .time-date { font-size:12px; color:var(--text-2); }
 
-    .player-times { margin-left: auto; display: flex; align-items: baseline; gap: 10px; font-variant-numeric: tabular-nums; }
-    .time-current { font-size: 18px; font-weight: 700; color: #fff; line-height: 1; }
-    .time-date { font-size: 12px; color: var(--text-2); }
+  .timeline { position:relative; width:100%; height:38px; cursor:pointer; touch-action:none; user-select:none; }
+  .timeline-track { position:absolute; left:0; right:0; top:12px; height:var(--track-h); border-radius:4px; overflow:hidden; background:rgba(30,40,62,.85); }
+  .timeline-progress { position:absolute; left:0; top:0; bottom:0; width:0; background:linear-gradient(90deg,#3a6ac0,#5a9dff); pointer-events:none; }
+  .timeline-thumb { position:absolute; top:16px; left:0; width:var(--thumb); height:var(--thumb); transform:translate(-50%,-50%); border-radius:50%; background:#fff; border:3px solid var(--accent); box-shadow:0 2px 10px rgba(90,157,255,.6); pointer-events:none; }
+  .timeline-labels { position:absolute; left:0; right:0; bottom:0; height:14px; pointer-events:none; }
+  .timeline-label { position:absolute; transform:translateX(-50%); white-space:nowrap; font-size:10px; font-weight:600; color:var(--text-2); font-variant-numeric:tabular-nums; }
+  .timeline-label.active { color:var(--accent); font-weight:700; }
+  .timeline-label.edge-l { transform:none; }
+  .timeline-label.edge-r { transform:translateX(-100%); }
+  .timeline-label.locked { opacity:.35; }
 
-    .timeline { position: relative; width: 100%; height: 38px; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
-    .timeline-track {
-      position: absolute; left: 0; right: 0; top: 12px; height: var(--track-h);
-      border-radius: 4px; overflow: hidden; background: rgba(30, 40, 62, .85);
-    }
-    .timeline-progress { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: linear-gradient(90deg, #3a6ac0, #5a9dff); pointer-events: none; }
-    .timeline-thumb {
-      position: absolute; top: 16px; left: 0; width: var(--thumb); height: var(--thumb);
-      transform: translate(-50%, -50%); border-radius: 50%;
-      background: #fff; border: 3px solid var(--accent);
-      box-shadow: 0 2px 10px rgba(90, 157, 255, .6); pointer-events: none;
-    }
-    .timeline-labels { position: absolute; left: 0; right: 0; bottom: 0; height: 14px; pointer-events: none; }
-    .timeline-label {
-      position: absolute; transform: translateX(-50%); white-space: nowrap;
-      font-size: 10px; font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums;
-    }
-    .timeline-label.active { color: var(--accent); font-weight: 700; }
-    .timeline-label.edge-l { transform: none; }
-    .timeline-label.edge-r { transform: translateX(-100%); }
+  .timeline-locked {
+    position:absolute; left:0; top:0; bottom:0; width:0; pointer-events:none;
+    background:repeating-linear-gradient(135deg, rgba(150,150,150,.30) 0 4px, rgba(150,150,150,.12) 4px 8px);
+    border-right:2px solid rgba(190,190,190,.6);
+  }
+  .timeline-lock { position:absolute; top:0; left:0; display:none; transform:translateX(-50%); color:var(--text-3); pointer-events:none; }
+  .timeline-lock svg { width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; display:block; }
 
-    /* ===== Barra d'acumulacions ===== */
-    .acum-player { gap: 6px; }
-    .acum-meta { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-variant-numeric: tabular-nums; min-width: 0; }
-    #acumTime { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.1; white-space: nowrap; }
-    .acum-date { font-size: 11.5px; color: var(--text-2); text-align: right; line-height: 1.2; }
-    .acum-tick { position: absolute; top: 12px; width: 2px; height: var(--track-h); transform: translateX(-50%); background: rgba(255,255,255,.22); pointer-events: none; }
-    .acum-row { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
-    .acum-row::-webkit-scrollbar { display: none; }
-    .acum-chip {
-      flex: 1 0 auto; min-height: 40px; padding: 8px 12px;
-      font-size: 13px; font-weight: 600; white-space: nowrap;
-      background: var(--btn); color: var(--text-2);
-      border: 1px solid var(--btn-border); border-radius: 9px; cursor: pointer;
-      transition: background .15s, border-color .15s, color .15s;
-    }
-    .acum-chip:hover:not(.active):not(:disabled) { background: var(--btn-hover); border-color: var(--btn-border-hover); color: var(--text); }
-    .acum-chip.active { background: var(--accent-dark); border-color: var(--accent); color: #fff; }
-    .acum-chip:disabled { opacity: .35; cursor: not-allowed; }
-    .acum-chip.locked { opacity: .55; border-style: dashed; }
-    .acum-chip.partial::after { content: '*'; margin-left: 2px; color: #facc15; }
+  /* ===================== UPSELL ===================== */
+  .upsell { position:fixed; inset:0; z-index:200; display:none; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); }
+  .upsell.open { display:flex; }
+  .upsell-card { position:relative; width:100%; max-width:400px; padding:26px 22px 20px; background:#12151f; border:1px solid var(--panel-border); border-radius:16px; box-shadow:var(--shadow); text-align:center; }
+  .upsell-x { position:absolute; top:10px; right:10px; width:32px; height:32px; min-height:0; padding:0; background:transparent; border:none; font-size:22px; color:var(--text-2); cursor:pointer; }
+  .upsell-ico { width:46px; height:46px; margin:0 auto 12px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:var(--accent-dark); color:#fff; }
+  .upsell-ico svg { width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .upsell-card h3 { font-size:18px; margin-bottom:6px; }
+  .upsell-card p { font-size:13px; line-height:1.55; color:var(--text-2); margin-bottom:14px; }
+  .upsell-tiers { display:grid; gap:6px; margin-bottom:16px; text-align:left; }
+  .tier-row { display:flex; align-items:center; gap:10px; padding:8px 12px; font-size:12.5px; border:1px solid var(--btn-border); border-radius:9px; color:var(--text-2); }
+  .tier-row b { color:var(--text); font-weight:600; margin-right:auto; }
+  .tier-row.ok { color:var(--text); }
+  .tier-row.need { border-color:var(--accent); background:rgba(90,157,255,.12); color:var(--text); }
+  .tier-row.here b::after { content:" (tu)"; font-weight:400; color:var(--text-3); }
+  .upsell-actions { display:grid; gap:8px; }
+  .upsell-actions .primary { background:var(--accent-dark); border-color:var(--accent); color:#fff; font-weight:600; min-height:42px; }
 
-    /* ===== Llegenda ===== */
-    #legend {
-      position: absolute; z-index: 15;
-      left: max(12px, env(safe-area-inset-left));
-      bottom: calc(var(--player-h) + max(12px, env(safe-area-inset-bottom)) + 8px);
-      padding: 10px 12px;
-      background: var(--panel-bg);
-      backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--shadow);
-      transition: opacity .2s, transform .2s;
-    }
-    #legend.hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); }
-    #legend h3 { margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--text-2); }
-    .legend-body { display: flex; gap: 8px; height: 170px; }
-    .legend-bar { width: 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.12); }
-    .legend-ticks { position: relative; width: 30px; }
-    .legend-tick { position: absolute; left: 0; transform: translateY(50%); font-size: 11px; line-height: 1; color: #cfdcf0; font-variant-numeric: tabular-nums; }
+  /* ===================== LOADER ===================== */
+  #loader {
+    position:fixed; inset:0; z-index:500;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px;
+    background:radial-gradient(ellipse at center, #10141f 0%, #06080d 100%);
+    transition:opacity .3s ease;
+  }
+  #loader.hide { opacity:0; pointer-events:none; }
+  .loader-logo { display:flex; align-items:center; gap:12px; }
+  .loader-logo img { width:46px; height:46px; object-fit:contain; }
+  .loader-brand { font-size:26px; font-weight:800; color:#fff; }
+  .loader-brand span { color:#6aa5ff; }
+  .loader-bar { position:relative; width:min(340px,72vw); height:6px; border-radius:999px; background:rgba(120,140,180,.16); overflow:hidden; }
+  .loader-bar-fill { position:absolute; left:0; top:0; bottom:0; width:0; border-radius:999px; background:linear-gradient(90deg,#3a6ac0,#5a9dff); transition:width .25s ease; }
+  .loader-text { font-size:12.5px; color:#8fa5cb; }
 
-    /* ===== Accés (bloqueig de la línia de temps) ===== */
-    .timeline-locked {
-      position: absolute; left: 0; top: 0; bottom: 0; width: 0; pointer-events: none;
-      background: repeating-linear-gradient(135deg, rgba(150,150,150,.30) 0 4px, rgba(150,150,150,.12) 4px 8px);
-      border-right: 2px solid rgba(190,190,190,.6);
-    }
-    .timeline-locked.right { left: auto; right: 0; border-right: none; border-left: 2px solid rgba(190,190,190,.6); }
-    .timeline-lock { position: absolute; top: 0; left: 0; display: none; transform: translateX(-50%); color: var(--text-3); pointer-events: none; }
-    .timeline-lock svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; display: block; }
-    .timeline-label.locked { opacity: .35; }
+  /* MapLibre */
+  .maplibregl-ctrl-top-right { top:calc(max(12px, env(safe-area-inset-top)) + 58px); right:calc(var(--side-w) + max(12px, env(safe-area-inset-right))) !important; }
+  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom:calc(var(--player-h) + max(12px, env(safe-area-inset-bottom))); }
+  .maplibregl-ctrl-group { background:var(--panel-bg) !important; border:1px solid var(--panel-border) !important; border-radius:10px !important; box-shadow:var(--shadow) !important; }
+  .maplibregl-ctrl-group button { background:transparent !important; }
+  .maplibregl-ctrl-attrib { background:rgba(10,12,20,.7) !important; color:#9cb4d8 !important; font-size:10px !important; }
 
-    #userBtn { overflow: hidden; }
-    #userBtn img { width: 100%; height: 100%; object-fit: cover; }
-    #userBtn .ini { font-weight: 700; font-size: 15px; }
-
-    .account-box { display: grid; gap: 10px; padding: 12px; background: rgba(30,40,62,.6); border: 1px solid var(--btn-border); border-radius: 10px; }
-    .acc-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .acc-av { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: var(--accent-dark); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
-    .acc-av img { width: 100%; height: 100%; object-fit: cover; }
-    .acc-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .acc-mail { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .acc-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
-    .acc-badge { padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; background: var(--accent-dark); border: 1px solid var(--accent); }
-    .acc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .acc-actions button, .acc-actions a { flex: 1; min-height: 34px; padding: 6px 10px; font-size: 12px; text-align: center; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; background: var(--btn); color: var(--text); border: 1px solid var(--btn-border); border-radius: 8px; font-weight: 500; }
-    .acc-actions .primary { background: var(--accent-dark); border-color: var(--accent); color: #fff; }
-
-    .upsell { position: fixed; inset: 0; z-index: 200; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); }
-    .upsell.open { display: flex; }
-    .upsell-card { position: relative; width: 100%; max-width: 400px; padding: 26px 22px 20px; background: #12151f; border: 1px solid var(--panel-border); border-radius: 16px; box-shadow: var(--shadow); text-align: center; }
-    .upsell-x { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; min-height: 0; padding: 0; background: transparent; border: none; font-size: 22px; color: var(--text-2); }
-    .upsell-ico { width: 46px; height: 46px; margin: 0 auto 12px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--accent-dark); color: #fff; }
-    .upsell-ico svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .upsell-card h3 { font-size: 18px; margin-bottom: 6px; }
-    .upsell-card p { font-size: 13px; line-height: 1.55; color: var(--text-2); margin-bottom: 14px; }
-    .upsell-tiers { display: grid; gap: 6px; margin-bottom: 16px; text-align: left; }
-    .tier-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 12.5px; border: 1px solid var(--btn-border); border-radius: 9px; color: var(--text-2); }
-    .tier-row b { color: var(--text); font-weight: 600; margin-right: auto; }
-    .tier-row.ok { color: var(--text); }
-    .tier-row.need { border-color: var(--accent); background: rgba(90,157,255,.12); color: var(--text); }
-    .tier-row.here b::after { content: " (tu)"; font-weight: 400; color: var(--text-3); }
-    .upsell-actions { display: grid; gap: 8px; }
-    .upsell-actions .primary { background: var(--accent-dark); border-color: var(--accent); color: #fff; font-weight: 600; min-height: 42px; }
-
-    /* ===== Avisos de pluja ===== */
-    #avisBtn { position: relative; }
-    #avisBtn.locked { opacity: .75; }
-    .avis-badge {
-      position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px;
-      display: none; align-items: center; justify-content: center;
-      border-radius: 999px; font-size: 11px; font-weight: 700; color: #111; background: #facc15;
-      border: 2px solid #0a0c14;
-    }
-    .avis-badge.on { display: flex; }
-
-    .avis-panel {
-      position: absolute; z-index: 22; display: none; flex-direction: column;
-      top: calc(max(12px, env(safe-area-inset-top)) + 58px); right: max(12px, env(safe-area-inset-right));
-      width: 340px; max-height: calc(100% - 220px);
-      background: var(--panel-bg); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
-      border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
-    }
-    .avis-panel.open { display: flex; }
-    .avis-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px 6px; }
-    .avis-head h3 { font-size: 14px; }
-    .avis-x { width: 28px; height: 28px; min-height: 0; padding: 0; background: transparent; border: none; font-size: 20px; color: var(--text-2); }
-    .avis-meta { padding: 0 16px 10px; font-size: 11.5px; color: var(--text-3); line-height: 1.45; }
-    .avis-msg { padding: 14px 16px 18px; font-size: 13px; color: var(--text-2); }
-    .avis-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 10px; }
-    .avis-chip { min-height: 0; padding: 4px 10px; font-size: 11.5px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
-    .avis-chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .avis-chip.active { background: var(--accent-dark); border-color: var(--accent); color: #fff; }
-
-    .avis-list { overflow-y: auto; min-height: 0; padding: 0 8px 10px; display: flex; flex-direction: column; gap: 4px; }
-    .avis-item {
-      flex: 0 0 auto; display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; text-align: left;
-      width: 100%; min-height: 54px; padding: 9px 10px; background: transparent; border: 1px solid transparent; border-radius: 10px;
-    }
-    .avis-item:hover:not(:disabled) { background: rgba(60, 90, 150, .3); border-color: var(--btn-border); }
-    .avis-item:disabled { cursor: default; opacity: .95; }
-    .avis-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .avis-txt { display: block; min-width: 0; }
-    .avis-name { display: block; font-size: 13px; font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .avis-sub { display: block; margin-top: 3px; font-size: 11px; line-height: 1.25; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .avis-val { text-align: right; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
-    .avis-val small { display: block; margin-top: 2px; font-size: 10px; font-weight: 500; color: var(--text-3); }
-    .avis-legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 10px 16px 14px; border-top: 1px solid var(--panel-border); font-size: 11px; color: var(--text-3); }
-    .avis-legend span { display: inline-flex; align-items: center; gap: 5px; }
-    .avis-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-
-    .avis-more { padding: 14px 16px 6px; text-align: center; font-size: 12px; color: var(--text-3); line-height: 1.5; }
-    .avis-more a { color: var(--accent); font-weight: 600; text-decoration: none; display: inline-block; margin-top: 4px; }
-    .avis-more a:hover { text-decoration: underline; }
-
-    @media (max-width: 768px) {
-      .avis-panel { left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto; top: calc(max(12px, env(safe-area-inset-top)) + 54px); max-height: 55%; }
-    }
-
-    .legal-links { display: grid; gap: 6px; }
-    .legal-links a { font-size: 12.5px; color: var(--text-2); text-decoration: none; padding: 4px 0; }
-    .legal-links a:hover { color: var(--text); }
-
-    /* ===== Controls MapLibre ===== */
-    .maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 58px); }
-    .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: calc(var(--player-h) + max(12px, env(safe-area-inset-bottom))); }
-    .maplibregl-ctrl-group { background: var(--panel-bg) !important; border: 1px solid var(--panel-border) !important; border-radius: 10px !important; box-shadow: var(--shadow) !important; overflow: hidden; }
-    .maplibregl-ctrl-group button { background: transparent !important; border: none !important; border-radius: 0 !important; width: 38px !important; height: 38px !important; min-height: 0 !important; padding: 0 !important; }
-    .maplibregl-ctrl-group button + button { border-top: 1px solid rgba(120,140,180,.2) !important; }
-    .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(.9); }
-    .maplibregl-ctrl-attrib { background: rgba(10,12,20,.7) !important; color: #9cb4d8 !important; font-size: 10px !important; }
-    .maplibregl-ctrl-attrib a { color: #b6c8e4 !important; }
-
-    /* ===== Barra de càrrega ===== */
-    #loader {
-      position: fixed; inset: 0; z-index: 500;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-      background: radial-gradient(ellipse at center, #10141f 0%, #06080d 100%);
-      color: #eef; transition: opacity .3s ease;
-    }
-    #loader.hide { opacity: 0; pointer-events: none; }
-    .loader-logo { display: flex; align-items: center; gap: 12px; animation: pulse 2.4s ease-in-out infinite; }
-    .loader-logo img { width: 46px; height: 46px; object-fit: contain; filter: drop-shadow(0 2px 10px rgba(90,157,255,.55)); }
-    .loader-brand { font-size: 26px; font-weight: 800; letter-spacing: .5px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
-    .loader-brand span { color: #6aa5ff; }
-    .loader-bar { position: relative; width: min(340px, 72vw); height: 6px; border-radius: 999px; background: rgba(120,140,180,.16); overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.4); }
-    .loader-bar::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(90,157,255,.35), transparent); animation: shimmer 1.8s linear infinite; }
-    .loader-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; background: linear-gradient(90deg, #3a6ac0, #5a9dff, #8cc6ff); box-shadow: 0 0 14px rgba(90,157,255,.75); transition: width .25s ease; }
-    .loader-text { font-size: 12.5px; color: #8fa5cb; letter-spacing: .3px; min-height: 18px; font-variant-numeric: tabular-nums; }
-    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.03); opacity: .92; } }
-    @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-
-    /* ===== Responsive ===== */
-    @media (max-width: 768px) {
-      :root { --panel-w: 300px; --player-h: 98px; --track-h: 6px; --thumb: 18px; }
-      .top-bar { grid-template-columns: 1fr auto; gap: 8px; }
-      .brand { display: none; }
-      .icon-btn { width: 42px; height: 42px; }
-      .icon-btn svg { width: 20px; height: 20px; }
-      .search-wrap { max-width: none; }
-      .search-input { height: 42px; font-size: 13px; }
-      .maplibregl-ctrl-top-right { top: calc(max(12px, env(safe-area-inset-top)) + 54px); }
-      .player { padding: 8px 10px 6px; }
-      .player-top { gap: 8px; }
-      .btn-play { min-width: 64px; font-size: 12px; }
-      .btn-step { width: 32px; height: 32px; }
-      .time-current { font-size: 16px; }
-      .time-date { font-size: 11px; }
-      .timeline { height: 32px; }
-      .timeline-track { top: 10px; }
-      .timeline-thumb { top: 13px; }
-      .acum-tick { top: 10px; }
-      .timeline-label { font-size: 9px; }
-      .legend-body { height: 140px; }
-      .loader-brand { font-size: 22px; }
-      .acum-chip { font-size: 12px; min-height: 38px; padding: 6px 10px; }
-      #acumTime { font-size: 13px; }
-    }
-    @media (max-width: 400px) { .time-date { display: none; } }
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-
-    /* ===== Punt temporal de cerca (5 segons) ===== */
-.search-marker {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-  z-index: 50;
-}
-.search-marker-dot {
-  position: absolute;
-  left: -7px;
-  top: -7px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #5a9dff;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px rgba(90, 157, 255, 0.9);
-}
-.search-marker-pulse {
-  position: absolute;
-  left: -20px;
-  top: -20px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(90, 157, 255, 0.4);
-  animation: search-marker-pulse 1.2s ease-out infinite;
-}
-@keyframes search-marker-pulse {
-  0%   { transform: scale(0.5); opacity: 1; }
-  100% { transform: scale(1.8); opacity: 0; }
-}
-  </style>
+  @media (max-width: 768px) {
+    :root { --side-w:56px; --player-h:98px; --track-h:6px; --thumb:18px; }
+    .brand { display:none; }
+    .chip { padding:6px 9px; font-size:11px; }
+    .flyout { min-width:220px; max-width:calc(100vw - 80px); }
+  }
+</style>
 </head>
 <body>
 
-  <div id="map"></div>
+<div id="map" role="application" aria-label="Mapa de radar meteorològic"></div>
 
-  <!-- ===== Barra de càrrega ===== -->
-  <div id="loader" aria-hidden="true">
-    <div class="loader-logo">
-      <img src="/img/Tempestes_cat.ico" alt="" />
-      <div class="loader-brand">Tempestes<span>.cat</span></div>
-    </div>
-    <div class="loader-bar"><div id="loaderFill" class="loader-bar-fill"></div></div>
-    <div id="loaderText" class="loader-text">Preparant el radar…</div>
+<div id="loader" aria-hidden="true">
+  <div class="loader-logo">
+    <img src="/img/Tempestes_cat.ico" alt="" />
+    <div class="loader-brand">Tempestes<span>.cat</span></div>
+  </div>
+  <div class="loader-bar"><div id="loaderFill" class="loader-bar-fill"></div></div>
+  <div id="loaderText" class="loader-text">Preparant el radar…</div>
+</div>
+
+<!-- ===================== BANDA IZQUIERDA ===================== -->
+<aside class="side-rail left" aria-label="Eines esquerra">
+  <button class="rail-btn" data-flyout="productSelect" title="Producte">
+    <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 5-8 4 5"/></svg>
+    <span class="label">Producte</span>
+  </button>
+  <button class="rail-btn" data-flyout="layerSelect" title="Capes">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    <span class="label">Capes</span>
+  </button>
+  <div class="rail-sep"></div>
+  <button class="rail-btn" data-flyout="mapSelect" title="Mapa base">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    <span class="label">Mapa</span>
+  </button>
+</aside>
+
+<!-- ===================== BANDA DERECHA ===================== -->
+<aside class="side-rail right" aria-label="Eines dreta">
+  <button class="rail-btn disabled" id="avisBtn" title="Properament">
+    <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+    <span class="label">Avisos</span>
+  </button>
+  <button class="rail-btn" title="Estacions" id="estacionsBtn">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+    <span class="label">Estacions</span>
+  </button>
+  <div class="rail-sep"></div>
+  <button id="userBtn" class="rail-btn" title="El meu perfil" aria-label="El meu perfil">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+    <span class="label">Perfil</span>
+  </button>
+  <button class="rail-btn" data-flyout="settings" title="Ajustos">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span class="label">Ajustos</span>
+  </button>
+</aside>
+
+<!-- ===================== FLYOUTS ===================== -->
+
+<!-- Productes: només dBZ i Doppler -->
+<div class="flyout" id="flyout-productSelect">
+  <div class="flyout-title">Producte de radar</div>
+  <button class="opt selected" data-product="dbz">
+    <div class="opt-main"><span class="opt-name">Reflectivitat</span><span class="opt-sub">dBZ · CIRRUS</span></div>
+    <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </button>
+  <button class="opt" data-product="vel">
+    <div class="opt-main"><span class="opt-name">Velocitat radial</span><span class="opt-sub">m/s · Doppler (VRADH)</span></div>
+    <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </button>
+</div>
+
+<!-- Capes -->
+<div class="flyout" id="flyout-layerSelect">
+  <div class="flyout-title">Capes</div>
+  <label class="check"><input type="checkbox" id="chkRadar" checked /><span>Radar</span></label>
+  <label class="check"><input type="checkbox" id="chkRelleu" /><span>Relleu</span></label>
+  <label class="check"><input type="checkbox" id="chkComarques" checked /><span>Comarques</span></label>
+  <label class="check"><input type="checkbox" id="chkMunicipis" checked /><span>Municipis</span></label>
+  <label class="check"><input type="checkbox" id="chkCiutats" checked /><span>Ciutats i pobles</span></label>
+  <label class="check disabled">
+    <input type="checkbox" id="chkLlamps" disabled />
+    <span>Llamps en directe</span>
+    <span class="tag soon">Properament</span>
+  </label>
+  <label class="check"><input type="checkbox" id="chkEstacions" /><span>Estacions AEMET</span></label>
+  <label class="check"><input type="checkbox" id="chkAlertes" checked /><span>Alertes AEMET</span></label>
+  <label class="check disabled">
+    <input type="checkbox" id="chkAvisos" disabled />
+    <span>Avisos de pluja</span>
+    <span class="tag soon">Properament</span>
+  </label>
+  <label class="check"><input type="checkbox" id="chkValor" checked /><span>Valor sota el cursor</span></label>
+</div>
+
+<!-- Mapa base -->
+<div class="flyout" id="flyout-mapSelect">
+  <div class="flyout-title">Mapa base</div>
+  <button class="opt selected" data-theme="fosc">
+    <div class="opt-main"><span class="opt-name">Fosc</span></div>
+    <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </button>
+  <button class="opt" data-theme="clar">
+    <div class="opt-main"><span class="opt-name">Clar</span></div>
+    <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+  </button>
+</div>
+
+<!-- Ajustos + perfil -->
+<div class="flyout" id="flyout-settings" style="min-width:320px;max-width:360px">
+  <div class="flyout-title">El meu perfil</div>
+  <div id="accountBox" class="account-box"></div>
+
+  <div class="flyout-title" style="margin-top:10px">Densitat de noms</div>
+  <select id="densitySelect" style="width:100%;min-height:36px;padding:8px 10px;background:var(--btn);color:var(--text);border:1px solid var(--btn-border);border-radius:8px;font:inherit;font-size:13px;">
+    <option value="poc">Poca</option>
+    <option value="normal">Normal</option>
+    <option value="dens">Alta</option>
+    <option value="molt-dens">Molt alta</option>
+  </select>
+
+  <div class="flyout-title" style="margin-top:10px">Mode directe</div>
+  <label class="check">
+    <input type="checkbox" id="chkAutoReload" checked />
+    <span>Actualitzar automàticament</span>
+  </label>
+
+  <div class="flyout-title" style="margin-top:10px">Informació</div>
+  <div style="display:grid;gap:4px;padding:2px 4px">
+    <a href="https://tempestes.cat/privacitat/preus" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Plans i preus</a>
+    <a href="https://tempestes.cat/privacitat/privacitat" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Privacitat</a>
+    <a href="https://tempestes.cat/privacitat/termes" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Termes i condicions</a>
+    <a href="https://tempestes.cat/privacitat/contacte" target="_blank" rel="noopener" style="font-size:12px;color:var(--text-2);text-decoration:none;padding:3px 0">Contacte</a>
   </div>
 
-  <!-- Barra superior -->
-  <header class="top-bar">
-    <div class="left-slot">
-      <button id="menuBtn" class="icon-btn" title="Obrir el menú" aria-label="Obrir el menú">
-        <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-      <div class="search-wrap">
-        <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="searchInput" class="search-input" type="text" placeholder="Cerca un poble o una ciutat" autocomplete="off" spellcheck="false" />
-        <button id="searchClear" class="search-clear" title="Esborrar" aria-label="Esborrar la cerca">
-          <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-        <div id="searchResults" class="search-results"></div>
+  <div class="flyout-title" style="margin-top:10px">Estat</div>
+  <div id="statusText" class="info-text"></div>
+</div>
+
+<!-- ===================== TOPBAR ===================== -->
+<header class="topbar">
+  <div class="brand">Tempestes<span>.cat</span></div>
+  <div class="spacer"></div>
+  <div class="chip"><span class="dot"></span><span id="chipProduct">dBZ</span></div>
+  <div class="chip plan" id="chipPlan">Sense sessió · 25 minuts</div>
+</header>
+
+<!-- ===================== LEYENDA ===================== -->
+<div id="legend">
+  <h3 id="legendTitle">dBZ</h3>
+  <div class="legend-body">
+    <div id="legendBar" class="legend-bar"></div>
+    <div id="legendTicks" class="legend-ticks"></div>
+  </div>
+</div>
+
+<!-- ===================== BOTTOM BAR ===================== -->
+<div id="bottomBar">
+  <div class="player" id="playerRadar">
+    <div class="player-top">
+      <div class="player-actions">
+        <button id="playPauseBtn" class="btn-play">Pausa</button>
+        <button id="prevBtn" class="btn-step" title="Anterior"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg></button>
+        <button id="nextBtn" class="btn-step" title="Següent"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></button>
+      </div>
+      <div class="player-times">
+        <span id="timeCurrent" class="time-current">—</span>
+        <span id="timeDate" class="time-date">—</span>
       </div>
     </div>
-
-    <div class="brand">
-      <img class="brand-logo" src="/img/Tempestes_cat.ico" alt="" />
-      <div class="brand-title">Tempestes<span>.cat</span></div>
-    </div>
-
-    <div class="right-slot">
-      <button id="avisBtn" class="icon-btn" title="Avisos" aria-label="Avisos">
-        <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-        <span id="avisBadge" class="avis-badge"></span>
-      </button>
-      <button id="userBtn" class="icon-btn" title="Compte" aria-label="Compte">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-      </button>
-      <button id="legendToggle" class="icon-btn on" title="Llegenda" aria-label="Mostrar o amagar la llegenda">
-        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <!-- Menú lateral -->
-  <div id="sideBackdrop"></div>
-  <aside id="sidePanel" aria-label="Configuració">
-    <div class="panel-header">
-      <h2>Tempestes.cat</h2>
-      <button id="panelCloseBtn" class="panel-close" title="Tancar" aria-label="Tancar el menú">
-        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Compte</div>
-      <div id="accountBox" class="account-box"></div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Mapa base</div>
-      <div class="segmented">
-        <button id="themeClar">Clar</button>
-        <button id="themeFosc">Fosc</button>
+    <div id="timeline" class="timeline">
+      <div class="timeline-track">
+        <div id="timelineLocked" class="timeline-locked"></div>
+        <div id="timelineProgress" class="timeline-progress"></div>
       </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Producte</div>
-      <div class="stack">
-        <button id="prodDbz" class="full active">Reflectivitat (dBZ)</button>
-        <button id="prodLluvia" class="full">Intensitat de pluja (mm/h)</button>
-        <button id="prodAcum" class="full">Acumulació de pluja aproximada</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Capes</div>
-      <label class="check"><input type="checkbox" id="chkRadar" checked /><span>Radar</span></label>
-      <label class="check"><input type="checkbox" id="chkRelleu" checked /><span>Relleu</span></label>
-      <label class="check"><input type="checkbox" id="chkComarques" checked /><span>Comarques</span></label>
-      <label class="check"><input type="checkbox" id="chkMunicipis" checked /><span>Municipis</span></label>
-   <label class="check"><input type="checkbox" id="chkCiutats" checked /><span>Ciutats i pobles</span></label>
-<label class="check"><input type="checkbox" id="chkLlamps" checked /><span>Llamps en directe</span></label>
-<label class="check"><input type="checkbox" id="chkEstacions" /><span>Estacions AEMET</span></label>
-      <label class="check"><input type="checkbox" id="chkAlertes" checked /><span>Alertes AEMET</span></label>
-      <label class="check">
-        <input type="checkbox" id="chkAvisos" checked />
-        <span>Avisos de pluja</span>
-        <span class="free" id="avisBadgeTier">Free</span>
-      </label>
-      <label class="check"><input type="checkbox" id="chkValor" checked /><span>Valor sota el cursor</span></label>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Vols caçar tempestes?</div>
-      <label class="check"><input type="checkbox" id="chk3D" /><span>Ubicació en temps real</span></label>
-      <div id="row3D" style="display:none;margin-top:6px">
-        
-        <input type="range" id="exag3D" min="1" max="8" step="0.5" value="3" style="width:100%;accent-color:var(--accent)" />
-      </div>
-      <div class="info-text" style="margin-top:6px"></div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Densitat de noms</div>
-      <select id="densitySelect">
-        <option value="poc">Poca</option>
-        <option value="normal">Normal</option>
-        <option value="dens">Alta</option>
-        <option value="molt-dens">Molt alta</option>
-      </select>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Mode directe</div>
-      <label class="check">
-        <input type="checkbox" id="chkAutoReload" />
-        <span>Actualitzar automàticament quan hi hagi dades noves</span>
-      </label>
-      <div class="info-text">Quan el radar publica frames nous, s'actualitzen sols, sense recarregar la pàgina i sense moure l'hora ni la pausa.</div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Informació</div>
-      <div class="legal-links">
-        <a href="https://tempestes.cat/privacitat/preus">Plans i preus</a>
-        <a href="https://tempestes.cat/privacitat/privacitat">Privacitat</a>
-        <a href="https://tempestes.cat/privacitat/termes">Termes i condicions</a>
-        <a href="https://tempestes.cat/privacitat/negoci">Avís legal</a>
-        <a href="https://tempestes.cat/privacitat/contacte">Contacte</a>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Estat</div>
-      <div id="statusText" class="info-text"></div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Crèdits</div>
-      <div class="info-text" style="line-height:1.6">
-        Dades radar: <b>OPERA</b> (EUMETNET) i <b>Météo-France</b>.
-        Productes <i>CIRRUS</i> (dBZ) i <i>NIMBUS</i> (mm/h).
-        Estacions i alertes: <b>AEMET</b> (OpenData).
-        Font: <a href="https://www.eumetnet.eu/activities/observations-programme/current-activities/opera/" target="_blank" rel="noopener">eumetnet.eu/opera</a>.
-        Ús autoritzat segons els termes d'EUMETNET i AEMET.
-      </div>
-    </div>
-  </aside>
-
-  <!-- Llegenda -->
-  <div id="legend">
-    <h3 id="legendTitle">dBZ</h3>
-    <div class="legend-body">
-      <div id="legendBar" class="legend-bar"></div>
-      <div id="legendTicks" class="legend-ticks"></div>
+      <div id="timelineThumb" class="timeline-thumb"></div>
+      <div id="timelineLock" class="timeline-lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+      <div id="timelineLabels" class="timeline-labels"></div>
     </div>
   </div>
+</div>
 
-  <!-- Reproductor / Barra d'acumulacions -->
-  <div id="bottomBar">
-    <div class="player" id="playerRadar">
-      <div class="player-top">
-        <div class="player-actions">
-          <button id="playPauseBtn" class="btn-play">Pausa</button>
-          <button id="prevBtn" class="btn-step" title="Imatge anterior" aria-label="Imatge anterior">
-            <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
-          <button id="nextBtn" class="btn-step" title="Imatge següent" aria-label="Imatge següent">
-            <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
-        </div>
-        <div class="player-times">
-          <span id="timeCurrent" class="time-current">—</span>
-          <span id="timeDate" class="time-date">—</span>
-        </div>
-      </div>
-      <div id="timeline" class="timeline">
-        <div class="timeline-track"><div id="timelineLocked" class="timeline-locked"></div><div id="timelineProgress" class="timeline-progress"></div></div>
-        <div id="timelineThumb" class="timeline-thumb"></div>
-        <div id="timelineLock" class="timeline-lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
-        <div id="timelineLabels" class="timeline-labels"></div>
-      </div>
-    </div>
-
-    <div class="player acum-player" id="playerAcum" style="display:none">
-      <div class="player-top">
-        <div class="player-actions">
-          <button id="acumPlayBtn" class="btn-play">Reprodueix</button>
-        </div>
-        <div class="acum-meta">
-          <span id="acumTime">—</span>
-          <span id="acumDate" class="acum-date">—</span>
-        </div>
-      </div>
-      <div id="acumSlider" class="timeline" role="slider" aria-label="Període d'acumulació">
-        <div class="timeline-track"><div id="acumLocked" class="timeline-locked right"></div><div id="acumProgress" class="timeline-progress"></div></div>
-        <div id="acumTicks"></div>
-        <div id="acumThumb" class="timeline-thumb"></div>
-        <div id="acumLock" class="timeline-lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
-        <div id="acumLabels" class="timeline-labels"></div>
-      </div>
-      <div class="acum-row">
-        <button class="acum-chip" data-min="30">30 min</button>
-        <button class="acum-chip active" data-min="60">1 h</button>
-        <button class="acum-chip" data-min="180">3 h</button>
-        <button class="acum-chip" data-min="360">6 h</button>
-        <button class="acum-chip" data-min="720">12 h</button>
-        <button class="acum-chip" data-min="1440">24 h</button>
-      </div>
+<!-- Upsell -->
+<div id="upsell" class="upsell" aria-hidden="true">
+  <div class="upsell-card" role="dialog" aria-modal="true" aria-labelledby="upsellTitle">
+    <button id="upsellX" class="upsell-x" aria-label="Tancar">&times;</button>
+    <div class="upsell-ico"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+    <h3 id="upsellTitle"></h3>
+    <p id="upsellText"></p>
+    <div id="upsellTiers" class="upsell-tiers"></div>
+    <div class="upsell-actions">
+      <button id="upsellPrimary" class="primary"></button>
+      <button id="upsellSecondary">Ara no</button>
     </div>
   </div>
+</div>
 
-  <!-- Panell d'avisos i alertes -->
-  <div id="avisPanel" class="avis-panel" role="dialog" aria-label="Avisos">
-    <div class="avis-head"><h3 id="avisTitle">Avisos · ara mateix</h3><button id="avisX" class="avis-x" aria-label="Tancar">&times;</button></div>
-    <div id="avisMeta" class="avis-meta"></div>
-    <div id="avisChips" class="avis-chips"></div>
-    <div id="avisMsg" class="avis-msg"></div>
-    <div id="avisList" class="avis-list"></div>
-    <div class="avis-legend" id="avisLegend"></div>
-  </div>
+<script type="module">
+import radarDefault, * as radarNs from '/js/radar.js';
+const radar = { ...radarDefault, ...radarNs };
 
-  <!-- Avís d'accés -->
-  <div id="upsell" class="upsell" aria-hidden="true">
-    <div class="upsell-card" role="dialog" aria-modal="true" aria-labelledby="upsellTitle">
-      <button id="upsellX" class="upsell-x" aria-label="Tancar">&times;</button>
-      <div class="upsell-ico"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
-      <h3 id="upsellTitle"></h3>
-      <p id="upsellText"></p>
-      <div id="upsellTiers" class="upsell-tiers"></div>
-      <div class="upsell-actions">
-        <button id="upsellPrimary" class="primary"></button>
-        <button id="upsellSecondary">Ara no</button>
-      </div>
-    </div>
-  </div>
+if (!radar.pauseRadarAnimation && radar.stopAllAnimations) radar.pauseRadarAnimation = radar.stopAllAnimations;
+if (!radar.resumeRadarAnimation && radar.startAllAnimations) radar.resumeRadarAnimation = radar.startAllAnimations;
 
-  <script type="module">
-    import radarDefault, * as radarNs from './js/radar.js';
-    // Accepta tant l'export per defecte com els exports amb nom
-    const radar = { ...radarDefault, ...radarNs };
+import { initValor } from '/dades/valor.js';
+import { SCALES } from '/dades/escales.js';
+import { initAutoReload } from '/dades/autoreload.js';
+import { initEstacions } from '/js/estacions.js';
+import { initAlertes } from '/js/alertes.js';
 
-    // Compatibilitat: si el radar.js del servidor és una versió antiga, s'evita que l'app peti
-    if (!radar.pauseRadarAnimation && radar.stopAllAnimations) radar.pauseRadarAnimation = radar.stopAllAnimations;
-    if (!radar.resumeRadarAnimation && radar.startAllAnimations) radar.resumeRadarAnimation = radar.startAllAnimations;
-    {
-      const rawState = radar.getLayerState;
-      radar.getLayerState = (key) => {
-        const s = rawState(key);
-        if (s && s.currentTime === undefined) {
-          const d = s.timestamps && s.timestamps[s.currentIndex];
-          s.currentTime = d ? d.getTime() : null;
-        }
-        return s;
-      };
+/* ===================== Helpers ===================== */
+const $ = (id) => document.getElementById(id);
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+const setStatus = (t) => { const el = $('statusText'); if (el) el.textContent = t || ''; };
+
+/* ===================== Loader ===================== */
+const loader = $('loader'), loaderFill = $('loaderFill'), loaderText = $('loaderText');
+function setLoad(pct, text) {
+  if (loaderFill) loaderFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  if (text && loaderText) loaderText.textContent = text;
+}
+function hideLoader() {
+  if (!loader) return;
+  loader.classList.add('hide');
+  setTimeout(() => loader.remove(), 400);
+}
+setLoad(10, 'Preparant el mapa…');
+
+/* ===================== Config ===================== */
+const MAP_CENTER = [1.5, 41.7];
+const MAP_ZOOM = 6.4;
+const BASEMAPS = {
+  clar: 'https://tiles.openfreemap.org/styles/positron',
+  fosc: 'https://tiles.openfreemap.org/styles/dark',
+};
+
+// Només dBZ i Doppler (VRADH)
+const PRODUCTS = {
+  dbz: { label: 'Reflectivitat (dBZ)', scale: SCALES.dbz, chip: 'dBZ' },
+  vel: { label: 'Velocitat radial (m/s)', scale: SCALES.vel, chip: 'm/s' },
+};
+
+/* ===================== Estat ===================== */
+let currentTheme = 'fosc';
+try { currentTheme = localStorage.getItem('radar.theme') === 'clar' ? 'clar' : 'fosc'; } catch (e) {}
+
+let uiPaused = false;
+let radarOn = true;
+let totalFrames = 0;
+let activeKey = 'dbz';
+let timestamps = [];
+let intervalMin = 5;
+let lastRendered = -1;
+let dragging = false;
+let minIndex = 0;
+let lockPct = 0;
+let lockPrompted = false;
+let appReady = false;
+let switchSeq = 0;
+let lastRadarMs = null;
+
+const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
+const ACCESS = {
+  anon:         { minutes: 25,       name: 'Sense sessió', window: '25 minuts' },
+  free:         { minutes: 60,       name: 'Compte gratuït', window: '1 hora' },
+  entusiasta:   { minutes: 180,      name: 'Entusiasta', window: '3 hores' },
+  professional: { minutes: Infinity, name: 'Professional', window: '24 hores i arxiu' },
+};
+let tier = 'anon';
+let planLabel = '';
+let currentUser = null;
+
+let stopAutoReload = null;
+
+/* ===================== Mapa ===================== */
+const map = new maplibregl.Map({
+  container: 'map',
+  style: BASEMAPS[currentTheme],
+  center: MAP_CENTER,
+  zoom: MAP_ZOOM,
+  pitch: 0,
+  bearing: 0,
+  attributionControl: false,
+});
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+
+function hideBaseLabels() {
+  const style = map.getStyle();
+  if (!style) return;
+  for (const l of style.layers) {
+    if (l.type === 'symbol') {
+      try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (e) {}
     }
-    if (!radar.syncToTime) {
-      radar.syncToTime = async (key, ms) => {
-        const s = radar.getLayerState(key);
-        if (!s || !s.initialized || !s.totalFrames) return -1;
-        let idx = s.totalFrames - 1;
-        if (Number.isFinite(ms)) {
-          let best = Infinity;
-          s.timestamps.forEach((d, i) => {
-            if (!d) return;
-            const dd = Math.abs(d.getTime() - ms);
-            if (dd < best) { best = dd; idx = i; }
-          });
-        }
-        radar.goToFrameLayer(key, idx);
-        await new Promise((r) => setTimeout(r, 400));
-        return idx;
-      };
+  }
+}
+
+/* ===================== Estacions & alertes ===================== */
+const estacions = initEstacions({ map, visible: false });
+const alertes = initAlertes({ map, visible: true });
+
+/* ===================== FLYOUTS ===================== */
+const UI = { open: null };
+function closeAllFlyouts() {
+  document.querySelectorAll('.flyout.open').forEach((f) => f.classList.remove('open'));
+  document.querySelectorAll('.rail-btn.active').forEach((b) => b.classList.remove('active'));
+  UI.open = null;
+}
+function positionFlyout(flyout, anchorBtn) {
+  const rect = anchorBtn.getBoundingClientRect();
+  const isRight = anchorBtn.closest('.side-rail.right');
+  flyout.style.top = Math.max(12, rect.top) + 'px';
+  flyout.style.left = ''; flyout.style.right = '';
+  if (isRight) flyout.style.right = (window.innerWidth - rect.left + 8) + 'px';
+  else flyout.style.left = (rect.right + 8) + 'px';
+  requestAnimationFrame(() => {
+    const fh = flyout.offsetHeight;
+    if (rect.top + fh > window.innerHeight - 12) {
+      flyout.style.top = Math.max(12, window.innerHeight - fh - 12) + 'px';
     }
-    if (!radar.refreshNow) radar.refreshNow = () => Promise.resolve();
-    import { initValor } from './dades/valor.js';
-    import {
-      computeAvisos, toFeatureCollection, boundsOf, LEVELS, WINDOW_MIN,
-      getResumAlertesCatalunya, resetAlertesCatalunya,
-    } from './js/avisos.js';
-    import { loadManifest, periodsFromManifest } from './dades/acumulacions.js';
-    import { SCALES, regioCoordinates } from './dades/escales.js';
-    import { initAutoReload } from './dades/autoreload.js';
-    import { initEstacions } from './js/estacions.js';
-    import { initAlertes } from './js/alertes.js';
-
-    // ------------------------------------------------------------------
-    // Utilitats
-    // ------------------------------------------------------------------
-    const $ = (id) => document.getElementById(id);
-    const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
-    const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const setStatus = (t) => { const el = $('statusText'); if (el) el.textContent = t || ''; };
-
-    // ------------------------------------------------------------------
-    // Barra de càrrega
-    // ------------------------------------------------------------------
-    const loader = $('loader'), loaderFill = $('loaderFill'), loaderText = $('loaderText');
-    function setLoad(pct, text) {
-      loaderFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
-      if (text) loaderText.textContent = text;
-    }
-    function hideLoader() {
-      loader.classList.add('hide');
-      setTimeout(() => loader.remove(), 400);
-    }
-    setLoad(10, 'Preparant el mapa…');
-
-    // ------------------------------------------------------------------
-    // Configuració
-    // ------------------------------------------------------------------
-    const MAP_CENTER = [1.5, 41.7];
-    const MAP_ZOOM = 6.4;
-    const BASEMAPS = {
-      clar: 'https://tiles.openfreemap.org/styles/positron',
-      fosc: 'https://tiles.openfreemap.org/styles/dark',
-    };
-
-    const PRODUCTS = { dbz: SCALES.dbz, lluvia: SCALES.lluvia };
-
-    // Cada quant es llegeixen dades vives (sempre sense caché)
-    const ACUM_REFRESH_MS = 30000;
-    const AVISOS_REFRESH_MS = 60000;
-
-    // ------------------------------------------------------------------
-    // Estat
-    // ------------------------------------------------------------------
-    let currentTheme = 'fosc';
-    try { currentTheme = localStorage.getItem('radar.theme') === 'clar' ? 'clar' : 'fosc'; } catch (e) {}
-
-    let uiPaused = false;
-    let radarOn = true;
-    let totalFrames = 0;
-    let activeKey = 'dbz';
-    let timestamps = [];
-    let intervalMin = 5;
-    let lastRendered = -1;
-    let dragging = false;
-    let minIndex = 0;
-    let lockPct = 0;
-    let lockPrompted = false;
-    let appReady = false;
-    let switchSeq = 0;        // evita curses en canviar de producte ràpidament
-    let lastRadarMs = null;   // última hora vista al radar (per tornar-hi des d'acumulació)
-
-    const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
-    const ACCESS = {
-      anon:         { minutes: 25,       name: 'Sense sessió', window: '25 minuts' },
-      free:         { minutes: 60,       name: 'Compte gratuït', window: '1 hora' },
-      entusiasta:   { minutes: 180,      name: 'Entusiasta', window: '3 hores' },
-      professional: { minutes: Infinity, name: 'Professional', window: '24 hores i arxiu' },
-    };
-    let tier = 'anon';
-    let planLabel = '';
-    let currentUser = null;
-
-    // Acumulacions
-    let acumManifest = null;
-    let acumPeriods = [];
-    let acumPeriod = 60;
-    let acumPromise = null;
-    let acumKey = '';
-    const ACUM_LAYER_ID = 'acum-layer';
-    const ACUM_SOURCE_ID = 'acum-src';
-    const ACUM_BASE = 'https://radar-data.tempestes.cat/dades_radar_acumulacions';
-    const DEFAULT_ACUM_STEPS = [30, 60, 180, 360, 720, 1440];
-    const ACUM_STEP_MS = 1200;
-    const acumBlobs = new Map();   // url -> blob URL (només memòria)
-    let acumTimer = 0;
-    let acumSliderSig = '';
-    let acumDragging = false;
-    let acumLockPrompted = false;
-
-    // Avisos
-    let avisosLayerOn = true;
-    let avisKey = '';
-    let avisBusy = false;
-    let avisItems = [];
-    let avisLatest = null;
-    let avisFilter = 0;
-
-    // Alertes AEMET (Catalunya)
-    let alertesCatalunya = null;
-
-    // Auto-reload
-    let stopAutoReload = null;
-
-    // ------------------------------------------------------------------
-    // Estat de la vista (sobreviu a recàrregues i a l'autoreload)
-    // ------------------------------------------------------------------
-    const VIEW_KEY = 'radar.view.v1';
-    let lastAtLatest = true;
-    let authSettled = false;
-    let lateDone = false;
-
-    function loadView() {
-      try {
-        const j = JSON.parse(sessionStorage.getItem(VIEW_KEY) || 'null');
-        return j && typeof j === 'object' ? j : null;
-      } catch (e) { return null; }
-    }
-    const saved = loadView();
-
-    // L'autoreload afegeix ?_r=...: es neteja de l'URL
-    try {
-      const u = new URL(location.href);
-      if (u.searchParams.has('_r')) { u.searchParams.delete('_r'); history.replaceState(null, '', u.toString()); }
-    } catch (e) {}
-
-    // ------------------------------------------------------------------
-    // Mapa
-    // ------------------------------------------------------------------
-    const map = new maplibregl.Map({
-      container: 'map',
-      style: BASEMAPS[currentTheme],
-      center: (saved && Array.isArray(saved.c) && saved.c.length === 2 && saved.c.every(Number.isFinite)) ? saved.c : MAP_CENTER,
-      zoom: (saved && Number.isFinite(saved.z)) ? saved.z : MAP_ZOOM,
-      pitch: (saved && Number.isFinite(saved.p)) ? Math.min(60, saved.p) : 0,
-      bearing: (saved && Number.isFinite(saved.b)) ? saved.b : 0,
-      attributionControl: false,
+  });
+}
+function openFlyout(id, btn) {
+  const flyout = document.getElementById('flyout-' + id);
+  if (!flyout || !btn) return;
+  closeAllFlyouts();
+  flyout.classList.add('open');
+  positionFlyout(flyout, btn);
+  btn.classList.add('active');
+  UI.open = id;
+}
+function bindFlyoutTriggers() {
+  document.querySelectorAll('.rail-btn[data-flyout]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (UI.open === btn.dataset.flyout) closeAllFlyouts();
+      else openFlyout(btn.dataset.flyout, btn);
     });
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.flyout') && !e.target.closest('.rail-btn')) closeAllFlyouts();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeAllFlyouts(); closeUpsell(); } });
+  window.addEventListener('resize', () => {
+    if (!UI.open) return;
+    const btn = document.querySelector(`.rail-btn[data-flyout="${UI.open}"]`);
+    const flyout = document.getElementById('flyout-' + UI.open);
+    if (btn && flyout) positionFlyout(flyout, btn);
+  });
+}
 
-    // Alertes AEMET sempre per sota del radar (i de l'acumulació)
-    function lowerAlertes() {
-      try {
-        const style = map.getStyle();
-        if (!style) return;
-        const ids = style.layers.map((l) => l.id);
-        let before = null, bi = Infinity;
-        for (const id of ['acum-layer', 'radar-layer-dbz', 'radar-layer-lluvia']) {
-          const i = ids.indexOf(id);
-          if (i >= 0 && i < bi) { bi = i; before = id; }
-        }
-        if (!before) return;
-        for (const id of ids) {
-          if (id.startsWith('alertes-') && ids.indexOf(id) > bi) map.moveLayer(id, before);
-        }
-      } catch (e) { /* el mapa encara no està a punt */ }
+/* ===================== Leyenda ===================== */
+function legendPct(p, v) {
+  if (p.log) return ((Math.log10(v) - Math.log10(p.min)) / (Math.log10(p.max) - Math.log10(p.min))) * 100;
+  return ((v - p.min) / (p.max - p.min)) * 100;
+}
+function paintLegend(p, title) {
+  $('legendTitle').textContent = title;
+  const stops = p.stops.map(([v, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
+  $('legendBar').style.background = `linear-gradient(to top, ${stops})`;
+  $('legendTicks').innerHTML = p.ticks.map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`).join('');
+}
+const renderLegend = (key) => paintLegend(PRODUCTS[key].scale, PRODUCTS[key].scale.title);
+
+/* ===================== Tema ===================== */
+function applyTheme(theme) {
+  if (theme === currentTheme) return;
+  currentTheme = theme;
+  try { localStorage.setItem('radar.theme', theme); } catch (e) {}
+  document.querySelectorAll('#flyout-mapSelect .opt').forEach((o) => o.classList.toggle('selected', o.dataset.theme === theme));
+  radar.setBaseTheme(theme);
+  map.setStyle(BASEMAPS[theme], { diff: false });
+  map.once('style.load', async () => {
+    hideBaseLabels();
+    await radar.reapplyLayers();
+    await estacions.start().catch(() => {});
+    await alertes.start().catch(() => {});
+  });
+}
+document.querySelectorAll('#flyout-mapSelect .opt').forEach((o) => {
+  o.addEventListener('click', () => { applyTheme(o.dataset.theme); closeAllFlyouts(); });
+});
+
+/* ===================== Timeline ===================== */
+const hourFmt = new Intl.DateTimeFormat('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });
+const dayFmt = new Intl.DateTimeFormat('ca-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: 'short', year: 'numeric' });
+const hourOnlyFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hour12: false });
+const minuteOnlyFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', minute: '2-digit' });
+
+function rebuildTimelineLabels() {
+  const tl = $('timelineLabels');
+  if (!tl) return;
+  tl.innerHTML = '';
+  if (totalFrames === 0) return;
+  const totalH = (totalFrames * intervalMin) / 60;
+  const stepH = totalH <= 4 ? 1 : totalH <= 12 ? 2 : totalH <= 24 ? 3 : totalH <= 48 ? 6 : 12;
+  for (let i = 0; i < totalFrames; i++) {
+    const d = timestamps[i];
+    if (!d) continue;
+    const h = Number(hourOnlyFmt.format(d)) % 24;
+    const m = Number(minuteOnlyFmt.format(d));
+    if (m === 0 && h % stepH === 0) {
+      const el = document.createElement('div');
+      el.className = 'timeline-label';
+      el.style.left = (totalFrames > 1 ? (i / (totalFrames - 1)) * 100 : 0) + '%';
+      el.textContent = String(h).padStart(2, '0') + 'h';
+      tl.appendChild(el);
     }
-
-    function hideBaseLabels() {
-      const style = map.getStyle();
-      if (!style) return;
-      for (const l of style.layers) {
-        if (l.type === 'symbol') {
-          try { map.setLayoutProperty(l.id, 'visibility', 'none'); } catch (e) {}
-        }
-      }
-    }
-
-    // ------------------------------------------------------------------
-    // Estacions AEMET (desactivades per defecte)
-    // ------------------------------------------------------------------
-    const estacions = initEstacions({
-      map,
-      visible: false,
-    });
-
-    // ------------------------------------------------------------------
-    // Alertes AEMET
-    // ------------------------------------------------------------------
-    const alertes = initAlertes({
-      map,
-      visible: true,
-    });
-
-    // ------------------------------------------------------------------
-    // DOM
-    // ------------------------------------------------------------------
-    const sidePanel = $('sidePanel'), sideBackdrop = $('sideBackdrop');
-    const legend = $('legend'), legendToggle = $('legendToggle');
-    const themeClarBtn = $('themeClar'), themeFoscBtn = $('themeFosc');
-    const prodDbzBtn = $('prodDbz'), prodLluviaBtn = $('prodLluvia'), prodAcumBtn = $('prodAcum');
-    const playPauseBtn = $('playPauseBtn');
-    const timelineEl = $('timeline'), timelineProg = $('timelineProgress'), timelineThumb = $('timelineThumb'), timelineLabels = $('timelineLabels');
-    const timeCurrent = $('timeCurrent'), timeDate = $('timeDate');
-    const searchInput = $('searchInput'), searchClear = $('searchClear'), searchResults = $('searchResults');
-    const playerRadar = $('playerRadar'), playerAcum = $('playerAcum');
-    const acumTime = $('acumTime'), acumDate = $('acumDate');
-    const acumPlayBtn = $('acumPlayBtn'), acumSliderEl = $('acumSlider');
-    const acumProgress = $('acumProgress'), acumThumb = $('acumThumb'), acumLabels = $('acumLabels');
-    const acumTicks = $('acumTicks'), acumLockedEl = $('acumLocked'), acumLockIcon = $('acumLock');
-    const accountBox = $('accountBox'), userBtn = $('userBtn');
-    const upsell = $('upsell');
-
-    // L'alçada del reproductor canvia (radar / acumulació): la llegenda i els
-    // controls del mapa se'n mantenen per sobre.
-    if ('ResizeObserver' in window) {
-      new ResizeObserver((entries) => {
-        const h = Math.ceil(entries[0].target.getBoundingClientRect().height);
-        if (h > 0) document.documentElement.style.setProperty('--player-h', h + 'px');
-      }).observe($('bottomBar'));
-    }
-
-    // ------------------------------------------------------------------
-    // Menú lateral
-    // ------------------------------------------------------------------
-    const openPanel = () => { sidePanel.classList.add('open'); sideBackdrop.classList.add('visible'); };
-    const closePanel = () => { sidePanel.classList.remove('open'); sideBackdrop.classList.remove('visible'); };
-    $('menuBtn').addEventListener('click', openPanel);
-    $('panelCloseBtn').addEventListener('click', closePanel);
-    sideBackdrop.addEventListener('click', closePanel);
-
-    // ------------------------------------------------------------------
-    // Formats de data
-    // ------------------------------------------------------------------
-    const hourFmt = new Intl.DateTimeFormat('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });
-    const dayFmt = new Intl.DateTimeFormat('ca-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: 'short', year: 'numeric' });
-    const hourOnlyFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hour12: false });
-    const minuteOnlyFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', minute: '2-digit' });
-
-    // ------------------------------------------------------------------
-    // Llegenda
-    // ------------------------------------------------------------------
-    function legendPct(p, v) {
-      if (p.log) {
-        return ((Math.log10(v) - Math.log10(p.min)) / (Math.log10(p.max) - Math.log10(p.min))) * 100;
-      }
-      return ((v - p.min) / (p.max - p.min)) * 100;
-    }
-    function paintLegend(p, title) {
-      $('legendTitle').textContent = title;
-      const stops = p.stops.map(([v, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${legendPct(p, v).toFixed(1)}%`).join(', ');
-      $('legendBar').style.background = `linear-gradient(to top, ${stops})`;
-      $('legendTicks').innerHTML = p.ticks
-        .map((v) => `<span class="legend-tick" style="bottom:${legendPct(p, v).toFixed(1)}%">${v}</span>`).join('');
-    }
-    const renderLegend = (key) => paintLegend(PRODUCTS[key], PRODUCTS[key].title);
-    const renderLegendAcum = () => paintLegend(SCALES.acum, `${formatPeriodLabel(acumPeriod)} · mm`);
-    legendToggle.addEventListener('click', () => {
-      legend.classList.toggle('hidden');
-      legendToggle.classList.toggle('on', !legend.classList.contains('hidden'));
-    });
-
-    // ------------------------------------------------------------------
-    // Tema del mapa
-    // ------------------------------------------------------------------
-    function paintThemeUI(theme) {
-      themeClarBtn.classList.toggle('active', theme === 'clar');
-      themeFoscBtn.classList.toggle('active', theme === 'fosc');
-      document.body.classList.toggle('theme-clar', theme === 'clar');
-      document.body.classList.toggle('theme-fosc', theme === 'fosc');
-    }
-
-    function applyTheme(theme) {
-      if (theme === currentTheme) return;
-      currentTheme = theme;
-      try { localStorage.setItem('radar.theme', theme); } catch (e) {}
-      paintThemeUI(theme);
-      radar.setBaseTheme(theme);
-
-      map.setStyle(BASEMAPS[theme], { diff: false });
-      map.once('style.load', async () => {
-        hideBaseLabels();
-        await radar.reapplyLayers();
-        if (r3d) r3d.reapply();
-        if (activeKey === 'acum' && acumPeriods.length) showAcumOnMap(acumPeriod);
-        applyAvisosVisibility();
-        // Reafegir estacions i alertes
-        await estacions.start().catch((e) => console.warn('[estacions]', e));
-        await alertes.start().catch((e) => console.warn('[alertes]', e));
-        lowerAlertes();
-        $('chkEstacions').checked = estacions.isVisible();
-        $('chkAlertes').checked = alertes.isVisible();
-      });
-    }
-    themeClarBtn.addEventListener('click', () => applyTheme('clar'));
-    themeFoscBtn.addEventListener('click', () => applyTheme('fosc'));
-
-    // ------------------------------------------------------------------
-    // Línia de temps
-    // ------------------------------------------------------------------
-    function rebuildTimelineLabels() {
-      timelineLabels.innerHTML = '';
-      if (totalFrames === 0 || timestamps.length === 0) return;
-
-      const totalH = (totalFrames * intervalMin) / 60;
-      const stepH = totalH <= 4 ? 1 : totalH <= 12 ? 2 : totalH <= 24 ? 3 : totalH <= 48 ? 6 : 12;
-
-      for (let i = 0; i < totalFrames; i++) {
-        const d = timestamps[i];
-        if (!d) continue;
-        const h = Number(hourOnlyFmt.format(d)) % 24;
-        const m = Number(minuteOnlyFmt.format(d));
-        if (m === 0 && h % stepH === 0) {
-          const el = document.createElement('div');
-          el.className = 'timeline-label';
-          el.style.left = (totalFrames > 1 ? (i / (totalFrames - 1)) * 100 : 0) + '%';
-          el.textContent = String(h).padStart(2, '0') + 'h';
-          timelineLabels.appendChild(el);
-        }
-      }
-    }
-
-    function updateUI(index) {
-      if (index === lastRendered) return;
-      lastRendered = index;
-
-      const d = timestamps[index];
-      timeCurrent.textContent = d ? hourFmt.format(d) : '—';
-      timeDate.textContent = d ? dayFmt.format(d) : '—';
-
-      const pct = totalFrames > 1 ? (index / (totalFrames - 1)) * 100 : 0;
-      timelineProg.style.left = lockPct + '%';
-      timelineProg.style.width = Math.max(0, pct - lockPct) + '%';
-      timelineThumb.style.left = pct + '%';
-
-      let closest = null, best = Infinity;
-      const labels = timelineLabels.querySelectorAll('.timeline-label');
-      labels.forEach((el) => {
-        const delta = Math.abs(parseFloat(el.style.left) - pct);
-        if (delta < best) { best = delta; closest = el; }
-      });
-      labels.forEach((el) => el.classList.toggle('active', el === closest));
-    }
-
-    function indexFromEvent(e) {
-      const rect = timelineEl.getBoundingClientRect();
-      const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-      return Math.round(Math.max(0, Math.min(1, x / rect.width)) * (totalFrames - 1));
-    }
-
-    function seek(idx) {
-      idx = Math.max(0, Math.min(totalFrames - 1, idx));
-      if (idx < minIndex) { promptLocked(idx); idx = minIndex; }
-      if (idx === lastRendered) return;
-      radar.goToFrameLayer(activeKey, idx);
-      updateUI(idx);
-    }
-
-    timelineEl.addEventListener('mousedown', (e) => {
-      if (!totalFrames) return;
-      dragging = true; pauseUI(); seek(indexFromEvent(e));
-    });
-    timelineEl.addEventListener('touchstart', (e) => {
-      if (!totalFrames) return;
-      dragging = true; pauseUI(); seek(indexFromEvent(e));
-    }, { passive: true });
-    window.addEventListener('mousemove', (e) => { if (dragging) seek(indexFromEvent(e)); });
-    window.addEventListener('touchmove', (e) => { if (dragging) seek(indexFromEvent(e)); }, { passive: true });
-    window.addEventListener('mouseup', () => { dragging = false; lockPrompted = false; });
-    window.addEventListener('touchend', () => { dragging = false; lockPrompted = false; });
-
-    // ------------------------------------------------------------------
-    // Reproducció
-    // ------------------------------------------------------------------
-    function setPausedUI(paused) {
-      uiPaused = paused;
-      playPauseBtn.textContent = paused ? 'Reprèn' : 'Pausa';
-    }
-    function pauseUI() { radar.pauseRadarAnimation(); setPausedUI(true); }
-
-    playPauseBtn.addEventListener('click', () => {
-      if (uiPaused) { radar.resumeRadarAnimation(); setPausedUI(false); }
-      else pauseUI();
-    });
-
-    function step(delta) {
-      pauseUI();
-      const s = radar.getLayerState(activeKey);
-      if (!s || totalFrames === 0) return;
-      const span = Math.max(1, totalFrames - minIndex);
-      const idx = minIndex + ((((s.currentIndex - minIndex) + delta) % span) + span) % span;
-      radar.goToFrameLayer(activeKey, idx);
-      updateUI(idx);
-    }
-    $('prevBtn').addEventListener('click', () => step(-1));
-    $('nextBtn').addEventListener('click', () => step(1));
-
-    // ------------------------------------------------------------------
-    // Producte (dBZ / mm/h): sempre es manté la mateixa hora
-    // ------------------------------------------------------------------
-    function syncTimeline(key) {
-      const st = radar.getLayerState(key);
-      if (!st || !st.initialized) return false;
-      totalFrames = st.totalFrames;
-      timestamps = st.timestamps || [];
-      intervalMin = timestamps.length >= 2 && timestamps[0] && timestamps[1]
-        ? Math.max(1, Math.round((timestamps[1] - timestamps[0]) / 60000)) : 5;
-      rebuildTimelineLabels();
-      computeAccess();
-      return true;
-    }
-
-    async function selectProduct(key, opts) {
-      const seq = ++switchSeq;
-      stopAcumPlay();
-      hideAcumOnMap();
-      prodAcumBtn.classList.remove('active');
-      playerRadar.style.display = '';
-      playerAcum.style.display = 'none';
-
-      const st = radar.getLayerState(key);
-      if (!st || !st.initialized) return;
-
-      // Hora de referència: la del producte que s'estava veient
-      let ms = lastRadarMs;
-      if (opts && 'ms' in opts) {
-        ms = opts.ms;   // restauració: NaN = últim frame
-      } else {
-        const prev = radar.getLayerState(activeKey);
-        if (prev && prev.initialized && prev.currentTime) ms = prev.currentTime;
-      }
-
-      // Es posa el nou producte a aquella hora abans de mostrar-lo (sense salts)
-      await radar.syncToTime(key, ms);
-      if (seq !== switchSeq) return;
-
-      activeKey = key;
-      for (const k of Object.keys(PRODUCTS)) {
-        const s = radar.getLayerState(k);
-        if (s && s.initialized) radar.setLayerVisibility(k, k === key && radarOn);
-      }
-      prodDbzBtn.classList.toggle('active', key === 'dbz');
-      prodLluviaBtn.classList.toggle('active', key === 'lluvia');
-
-      renderLegend(key);
-      syncTimeline(key);
-      if (is3D()) r3d.setKey(key);
-    }
-
-    prodDbzBtn.addEventListener('click', () => { selectProduct('dbz'); if (isMobile()) closePanel(); });
-    prodLluviaBtn.addEventListener('click', () => { selectProduct('lluvia'); if (isMobile()) closePanel(); });
-
-    // ------------------------------------------------------------------
-    // Acumulació de pluja
-    // ------------------------------------------------------------------
-    const acumAllowed = (m) => m <= Math.max(30, ACCESS[tier].minutes);
-    const acumNeeded = (m) => (m <= 30 ? 'anon' : m <= 60 ? 'free' : m <= 180 ? 'entusiasta' : 'professional');
-    const acumSteps = () => (acumPeriods.length ? acumPeriods.map((p) => p.min) : DEFAULT_ACUM_STEPS);
-    const acumMaxIdx = () => {
-      let m = 0;
-      acumSteps().forEach((v, i) => { if (acumAllowed(v)) m = i; });
-      return m;
-    };
-    const shortPeriod = (m) => (m < 60 ? `${m} min` : `${Math.round((m / 60) * 10) / 10} h`);
-    const acumUrl = (p) => `${p.url}?v=${encodeURIComponent(acumKey)}`;
-
-    function formatPeriodLabel(mins) {
-      if (mins < 60) return `${Math.round(mins)} min`;
-      const h = mins / 60;
-      if (Number.isInteger(h)) return h === 1 ? '1 hora' : `${h} hores`;
-      return `${h.toFixed(1)} hores`;
-    }
-
-    // --- Imatges en memòria (sempre revalidades amb el servidor) ---
-    function dropAcumBlobs() {
-      for (const b of acumBlobs.values()) URL.revokeObjectURL(b);
-      acumBlobs.clear();
-    }
-
-    async function preloadAcum() {
-      const live = new Set(acumPeriods.map((p) => p.url));
-      for (const [u, b] of acumBlobs) {
-        if (!live.has(u)) { URL.revokeObjectURL(b); acumBlobs.delete(u); }
-      }
-      const pending = acumPeriods.filter((p) => acumAllowed(p.min) && !acumBlobs.has(p.url));
-      await Promise.all(pending.map(async (p) => {
-        try {
-          const r = await fetch(p.url, { mode: 'cors', cache: 'no-cache' });
-          if (!r.ok) return;
-          const blob = await r.blob();
-          if (blob.size) acumBlobs.set(p.url, URL.createObjectURL(blob));
-        } catch (e) { /* es mostrarà directament per URL */ }
-      }));
-    }
-
-    // --- Pintat al mapa ---
-    function showAcumOnMap(minutes) {
-      const p = acumPeriods.find((x) => x.min === minutes);
-      if (!p) return;
-      const src = acumBlobs.get(p.url) || acumUrl(p);
-      const coords = regioCoordinates();
-
-      const source = map.getSource(ACUM_SOURCE_ID);
-      if (source && map.getLayer(ACUM_LAYER_ID)) {
-        try {
-          source.updateImage({ url: src, coordinates: coords });
-          return;
-        } catch (e) { hideAcumOnMap(); }
-      }
-
-      map.addSource(ACUM_SOURCE_ID, { type: 'image', url: src, coordinates: coords });
-
-      let before;
-      for (const id of ['radar-layer-dbz', 'radar-layer-lluvia', 'radar-layer']) {
-        if (map.getLayer(id)) { before = id; break; }
-      }
-
-      map.addLayer({
-        id: ACUM_LAYER_ID,
-        type: 'raster',
-        source: ACUM_SOURCE_ID,
-        paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 0, 'raster-resampling': 'linear' },
-      }, before);
-      lowerAlertes();
-    }
-
-    function hideAcumOnMap() {
-      if (map.getLayer(ACUM_LAYER_ID)) map.removeLayer(ACUM_LAYER_ID);
-      if (map.getSource(ACUM_SOURCE_ID)) map.removeSource(ACUM_SOURCE_ID);
-    }
-
-    // --- Slider i botons de període ---
-    function paintAcumSlider() {
-      const steps = acumSteps();
-      const n = steps.length;
-      const pctOf = (i) => (n > 1 ? (i / (n - 1)) * 100 : 0);
-      const maxIdx = acumMaxIdx();
-      const cur = Math.max(0, steps.indexOf(acumPeriod));
-
-      const sig = `${steps.join(',')}|${maxIdx}`;
-      if (sig !== acumSliderSig) {
-        acumSliderSig = sig;
-        acumTicks.innerHTML = steps.map((v, i) => `<i class="acum-tick" style="left:${pctOf(i)}%"></i>`).join('');
-        acumLabels.innerHTML = steps.map((v, i) =>
-          `<div class="timeline-label${i === 0 ? ' edge-l' : ''}${i === n - 1 ? ' edge-r' : ''}${i > maxIdx ? ' locked' : ''}" data-i="${i}" style="left:${pctOf(i)}%">${shortPeriod(v)}</div>`
-        ).join('');
-        const hasLock = maxIdx < n - 1;
-        const lockStart = hasLock ? ((maxIdx + 0.5) / (n - 1)) * 100 : 100;
-        acumLockedEl.style.width = (100 - lockStart) + '%';
-        acumLockIcon.style.display = hasLock ? 'block' : 'none';
-        acumLockIcon.style.left = ((lockStart + 100) / 2) + '%';
-      }
-
-      acumThumb.style.left = pctOf(cur) + '%';
-      acumProgress.style.width = pctOf(cur) + '%';
-      acumLabels.querySelectorAll('.timeline-label').forEach((el) => {
-        el.classList.toggle('active', Number(el.dataset.i) === cur);
-      });
-    }
-
-    function updateAcumChipsUI() {
-      document.querySelectorAll('.acum-chip').forEach((b) => {
-        const min = Number(b.dataset.min);
-        const p = acumPeriods.find((x) => x.min === min);
-        const allowed = acumAllowed(min);
-        b.classList.toggle('active', min === acumPeriod);
-        b.classList.toggle('locked', !allowed);
-        b.classList.toggle('partial', !!(p && p.parcial));
-        b.title = !allowed ? 'Requereix un pla superior' : (p && p.parcial ? 'Dades parcials: historial incomplet' : '');
-        b.disabled = acumPeriods.length > 0 && !p;
-      });
-      acumTime.textContent = `Acumulació ${formatPeriodLabel(acumPeriod)}`;
-
-      if (acumManifest && acumManifest.last_timestamp) {
-        const d = new Date(acumManifest.last_timestamp);
-        const base = `fins ${hourFmt.format(d)} · ${dayFmt.format(d)}`;
-        const p = acumPeriods.find((x) => x.min === acumPeriod);
-        acumDate.textContent = p && p.parcial
-          ? `${base} · només ${formatPeriodLabel(p.cobertura_min)} de dades`
-          : base;
-      } else {
-        acumDate.textContent = '';
-      }
-      paintAcumSlider();
-    }
-
-    function setAcumPeriod(mins) {
-      if (!Number.isFinite(mins)) return;
-      if (!acumAllowed(mins)) { openUpsell(acumNeeded(mins)); return; }
-      acumPeriod = mins;
-      updateAcumChipsUI();
-      if (activeKey !== 'acum') return;
-      showAcumOnMap(acumPeriod);
-      renderLegendAcum();
-    }
-
-    // --- Animació dels períodes (només els permesos pel pla) ---
-    function acumAdvance() {
-      const steps = acumSteps();
-      const maxIdx = acumMaxIdx();
-      const cur = Math.max(0, steps.indexOf(acumPeriod));
-      setAcumPeriod(steps[(cur + 1) % (maxIdx + 1)]);
-    }
-
-    function startAcumPlay() {
-      if (acumTimer) return;
-      if (acumMaxIdx() < 1) {
-        const steps = acumSteps();
-        openUpsell(acumNeeded(steps[1] || 60));
-        return;
-      }
-      acumTimer = setInterval(acumAdvance, ACUM_STEP_MS);
-      acumPlayBtn.textContent = 'Pausa';
-    }
-
-    function stopAcumPlay() {
-      if (acumTimer) clearInterval(acumTimer);
-      acumTimer = 0;
-      acumPlayBtn.textContent = 'Reprodueix';
-    }
-
-    acumPlayBtn.addEventListener('click', () => { if (acumTimer) stopAcumPlay(); else startAcumPlay(); });
-
-    // --- Slider: arrossegar / tocar ---
-    function acumIdxFromEvent(e) {
-      const rect = acumSliderEl.getBoundingClientRect();
-      const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-      const n = acumSteps().length;
-      return Math.round(Math.max(0, Math.min(1, x / rect.width)) * (n - 1));
-    }
-
-    function seekAcum(idx) {
-      const steps = acumSteps();
-      idx = Math.max(0, Math.min(steps.length - 1, idx));
-      const maxIdx = acumMaxIdx();
-      if (idx > maxIdx) {
-        if (!acumLockPrompted) { acumLockPrompted = true; openUpsell(acumNeeded(steps[idx])); }
-        idx = maxIdx;
-      }
-      if (steps[idx] !== acumPeriod) setAcumPeriod(steps[idx]);
-    }
-
-    acumSliderEl.addEventListener('mousedown', (e) => { acumDragging = true; stopAcumPlay(); seekAcum(acumIdxFromEvent(e)); });
-    acumSliderEl.addEventListener('touchstart', (e) => { acumDragging = true; stopAcumPlay(); seekAcum(acumIdxFromEvent(e)); }, { passive: true });
-    window.addEventListener('mousemove', (e) => { if (acumDragging) seekAcum(acumIdxFromEvent(e)); });
-    window.addEventListener('touchmove', (e) => { if (acumDragging) seekAcum(acumIdxFromEvent(e)); }, { passive: true });
-    window.addEventListener('mouseup', () => { acumDragging = false; acumLockPrompted = false; });
-    window.addEventListener('touchend', () => { acumDragging = false; acumLockPrompted = false; });
-
-    document.querySelectorAll('.acum-chip').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const mins = Number(btn.dataset.min);
-        if (!Number.isFinite(mins)) return;
-        stopAcumPlay();
-        if (!acumAllowed(mins)) { openUpsell(acumNeeded(mins)); return; }
-
-        if (activeKey === 'acum' && !acumPeriods.length) await refreshAcumulacions();
-        if (activeKey !== 'acum' && !acumPeriods.length) { acumPeriod = mins; updateAcumChipsUI(); return; }
-        setAcumPeriod(mins);
-      });
-    });
-
-    // --- Entrar al mode acumulació ---
-    prodAcumBtn.addEventListener('click', async () => {
-      switchSeq++;
-      off3D();
-      prodDbzBtn.classList.remove('active');
-      prodLluviaBtn.classList.remove('active');
-      prodAcumBtn.classList.add('active');
-
-      playerRadar.style.display = 'none';
-      playerAcum.style.display = '';
-
-      for (const k of Object.keys(PRODUCTS)) radar.setLayerVisibility(k, false);
-      hideAcumOnMap();
-
-      activeKey = 'acum';
-      if (!acumAllowed(acumPeriod)) acumPeriod = 30;
-      renderLegendAcum();
-      updateAcumChipsUI();
-
-      // Si ja hi ha dades, es mostren de seguida i es revaliden en segon pla
-      if (acumPeriods.length) { showAcumOnMap(acumPeriod); }
-      await refreshAcumulacions();
-      if (activeKey !== 'acum') return;
-      showAcumOnMap(acumPeriod);
-      renderLegendAcum();
-      updateAcumChipsUI();
-      preloadAcum().catch(() => {});
-
-      if (isMobile()) closePanel();
-    });
-
-    // --- Lectura del manifest (sempre fresc) ---
-    function refreshAcumulacions() {
-      if (acumPromise) return acumPromise;
-      acumPromise = (async () => {
-        try {
-          const manifest = await loadManifest(ACUM_BASE);
-          if (!manifest || !Array.isArray(manifest.frames) || manifest.frames.length === 0) {
-            if (!acumPeriods.length) acumDate.textContent = "Sense dades d'acumulació";
-            return;
-          }
-          const key = `${manifest.updated || ''}|${manifest.last_timestamp || ''}`;
-          const changed = key !== acumKey || !acumPeriods.length;
-          acumManifest = manifest;
-          if (changed) {
-            acumPeriods = periodsFromManifest(manifest, ACUM_BASE);
-            acumKey = key;
-            dropAcumBlobs();
-          }
-          updateAcumChipsUI();
-          if (changed && activeKey === 'acum') {
-            showAcumOnMap(acumPeriod);
-            renderLegendAcum();
-            preloadAcum().catch(() => {});
-          }
-        } catch (e) {
-          console.error('[acumulacions]', e);
-          if (!acumPeriods.length) acumDate.textContent = "No s'han pogut carregar";
-        } finally {
-          acumPromise = null;
-        }
-      })();
-      return acumPromise;
-    }
-
-    // ------------------------------------------------------------------
-    // Vista 3D (càrrega mandrosa: el mòdul només es descarrega si s'activa)
-    // ------------------------------------------------------------------
-    let r3d = null;
-    const chk3D = $('chk3D'), row3D = $('row3D'), exag3D = $('exag3D'), exagVal = $('exagVal');
-
-    async function ensure3D() {
-      if (!r3d) {
-        const mod = await import('./js/3d.js');
-        r3d = mod.init3D({ map, radar, getKey: () => activeKey });
-      }
-      return r3d;
-    }
-    function is3D() { return !!(r3d && r3d.isEnabled()); }
-    function off3D() {
-      if (r3d && r3d.isEnabled()) r3d.disable();
-      chk3D.checked = false;
-      row3D.style.display = 'none';
-    }
-
-    chk3D.addEventListener('change', async (e) => {
-      if (!e.target.checked) { off3D(); return; }
-      if (activeKey === 'acum') {
-        // El 3D és per al radar (dBZ o mm/h): se salta a dBZ
-        await selectProduct('dbz');
-      }
-      try {
-        const r = await ensure3D();
-        r.setExaggeration(Number(exag3D.value));
-        r.enable();
-        r.setVisible(radarOn);
-        row3D.style.display = '';
-      } catch (err) {
-        console.error('[3d]', err);
-        setStatus('No s\'ha pogut activar la vista 3D en aquest dispositiu.');
-        off3D();
-      }
-    });
-    exag3D.addEventListener('input', () => {
-      exagVal.textContent = exag3D.value;
-      if (r3d) r3d.setExaggeration(Number(exag3D.value));
-    });
-
-    // ------------------------------------------------------------------
-    // Altres capes
-    // ------------------------------------------------------------------
-    $('chkRadar').addEventListener('change', (e) => {
-      radarOn = e.target.checked;
-      radar.setLayerVisibility(activeKey, radarOn);
-      if (r3d) r3d.setVisible(radarOn);
-    });
-    $('chkComarques').addEventListener('change', (e) => radar.setComarquesVisibility(e.target.checked));
-    $('chkMunicipis').addEventListener('change', (e) => radar.setMunicipisVisibility(e.target.checked));
-    $('chkRelleu').addEventListener('change', (e) => radar.setReliefVisibility(e.target.checked));
+  }
+}
+
+function updateUI(index) {
+  if (index === lastRendered) return;
+  lastRendered = index;
+  const d = timestamps[index];
+  $('timeCurrent').textContent = d ? hourFmt.format(d) : '—';
+  $('timeDate').textContent = d ? dayFmt.format(d) : '—';
+  const pct = totalFrames > 1 ? (index / (totalFrames - 1)) * 100 : 0;
+  $('timelineProgress').style.left = lockPct + '%';
+  $('timelineProgress').style.width = Math.max(0, pct - lockPct) + '%';
+  $('timelineThumb').style.left = pct + '%';
+  let closest = null, best = Infinity;
+  const labels = $('timelineLabels').querySelectorAll('.timeline-label');
+  labels.forEach((el) => {
+    const delta = Math.abs(parseFloat(el.style.left) - pct);
+    if (delta < best) { best = delta; closest = el; }
+  });
+  labels.forEach((el) => el.classList.toggle('active', el === closest));
+}
+
+function indexFromEvent(e) {
+  const rect = $('timeline').getBoundingClientRect();
+  const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+  return Math.round(Math.max(0, Math.min(1, x / rect.width)) * (totalFrames - 1));
+}
+
+function seek(idx) {
+  idx = Math.max(0, Math.min(totalFrames - 1, idx));
+  if (idx < minIndex) { promptLocked(idx); idx = minIndex; }
+  if (idx === lastRendered) return;
+  radar.goToFrameLayer(activeKey, idx);
+  updateUI(idx);
+}
+
+$('timeline').addEventListener('mousedown', (e) => {
+  if (!totalFrames) return;
+  dragging = true; pauseUI(); seek(indexFromEvent(e));
+});
+$('timeline').addEventListener('touchstart', (e) => {
+  if (!totalFrames) return;
+  dragging = true; pauseUI(); seek(indexFromEvent(e));
+}, { passive: true });
+window.addEventListener('mousemove', (e) => { if (dragging) seek(indexFromEvent(e)); });
+window.addEventListener('touchmove', (e) => { if (dragging) seek(indexFromEvent(e)); }, { passive: true });
+window.addEventListener('mouseup', () => { dragging = false; lockPrompted = false; });
+window.addEventListener('touchend', () => { dragging = false; lockPrompted = false; });
+
+/* ===================== Play/Pause ===================== */
+function setPausedUI(paused) {
+  uiPaused = paused;
+  $('playPauseBtn').textContent = paused ? 'Reprèn' : 'Pausa';
+}
+function pauseUI() { radar.pauseRadarAnimation(); setPausedUI(true); }
+
+$('playPauseBtn').addEventListener('click', () => {
+  if (uiPaused) { radar.resumeRadarAnimation(); setPausedUI(false); }
+  else pauseUI();
+});
+
+function step(delta) {
+  pauseUI();
+  const s = radar.getLayerState(activeKey);
+  if (!s || totalFrames === 0) return;
+  const span = Math.max(1, totalFrames - minIndex);
+  const idx = minIndex + ((((s.currentIndex - minIndex) + delta) % span) + span) % span;
+  radar.goToFrameLayer(activeKey, idx);
+  updateUI(idx);
+}
+$('prevBtn').addEventListener('click', () => step(-1));
+$('nextBtn').addEventListener('click', () => step(1));
+
+/* ===================== Productes ===================== */
+function syncTimeline(key) {
+  const st = radar.getLayerState(key);
+  if (!st || !st.initialized) return false;
+  totalFrames = st.totalFrames;
+  timestamps = st.timestamps || [];
+  intervalMin = timestamps.length >= 2 && timestamps[0] && timestamps[1]
+    ? Math.max(1, Math.round((timestamps[1] - timestamps[0]) / 60000)) : 5;
+  rebuildTimelineLabels();
+  computeAccess();
+  return true;
+}
+
+async function selectProduct(key) {
+  if (!PRODUCTS[key]) return;
+  const seq = ++switchSeq;
+  const st = radar.getLayerState(key);
+  if (!st || !st.initialized) {
+    console.warn('[ui] producte no inicialitzat:', key);
+    return;
+  }
+
+  let ms = lastRadarMs;
+  const prev = radar.getLayerState(activeKey);
+  if (prev && prev.initialized && prev.currentTime) ms = prev.currentTime;
+
+  await radar.syncToTime(key, ms);
+  if (seq !== switchSeq) return;
+
+  activeKey = key;
+  for (const k of Object.keys(PRODUCTS)) {
+    const s = radar.getLayerState(k);
+    if (s && s.initialized) radar.setLayerVisibility(k, k === key && radarOn);
+  }
+  document.querySelectorAll('#flyout-productSelect .opt').forEach((o) => o.classList.toggle('selected', o.dataset.product === key));
+  $('chipProduct').textContent = PRODUCTS[key].chip;
+  renderLegend(key);
+  syncTimeline(key);
+}
+
+document.querySelectorAll('#flyout-productSelect .opt').forEach((o) => {
+  o.addEventListener('click', () => { selectProduct(o.dataset.product); closeAllFlyouts(); });
+});
+
+/* ===================== Altres capes ===================== */
+$('chkRadar').addEventListener('change', (e) => {
+  radarOn = e.target.checked;
+  radar.setLayerVisibility(activeKey, radarOn);
+});
+$('chkRelleu').addEventListener('change', (e) => radar.setReliefVisibility(e.target.checked));
+$('chkComarques').addEventListener('change', (e) => radar.setComarquesVisibility(e.target.checked));
+$('chkMunicipis').addEventListener('change', (e) => radar.setMunicipisVisibility(e.target.checked));
 $('chkCiutats').addEventListener('change', (e) => radar.setCiutatsVisibility(e.target.checked));
-$('chkLlamps').addEventListener('change', (e) => radar.setLightningVisibility(e.target.checked));
 $('chkEstacions').addEventListener('change', (e) => estacions.setVisible(e.target.checked));
-    $('chkAlertes').addEventListener('change', (e) => { alertes.setVisible(e.target.checked); setTimeout(lowerAlertes, 50); });
-    $('densitySelect').addEventListener('change', (e) => radar.setDensity(e.target.value));
-    $('densitySelect').value = radar.getDensity();
+$('chkAlertes').addEventListener('change', (e) => alertes.setVisible(e.target.checked));
+$('densitySelect').addEventListener('change', (e) => radar.setDensity(e.target.value));
+$('densitySelect').value = radar.getDensity();
 
-    const valor = initValor({
-      map,
-      getLayerState: radar.getLayerState,
-      getKey: () => activeKey,
-      isRadarVisible: () => radarOn || activeKey === 'acum',
-      getAcumUrl: () => {
-        if (activeKey !== 'acum') return null;
-        const p = acumPeriods.find((x) => x.min === acumPeriod);
-        return p ? p.url : null;
-      },
-    });
-    $('chkValor').addEventListener('change', (e) => valor.setEnabled(e.target.checked));
+// Llamps i Avisos de pluja → "Properament": no enganxem cap listener actiu
+// (els checkboxes ja venen amb `disabled` al HTML)
 
-    // ------------------------------------------------------------------
-    // Mode directe (auto-reload)
-    // ------------------------------------------------------------------
-    const chkAutoReload = $('chkAutoReload');
+const valor = initValor({
+  map,
+  getLayerState: radar.getLayerState,
+  getKey: () => activeKey,
+  isRadarVisible: () => radarOn,
+});
+$('chkValor').addEventListener('change', (e) => valor.setEnabled(e.target.checked));
 
-    function setAutoReload(on) {
-      if (on) {
-        if (stopAutoReload) return;
-        stopAutoReload = initAutoReload({
-          intervalMs: 30000,
-          watch: ['dbz', 'lluvia'],
-        });
-        chkAutoReload.checked = true;
-        console.log('[autoreload] activat');
-      } else {
-        if (stopAutoReload) { stopAutoReload(); stopAutoReload = null; }
-        chkAutoReload.checked = false;
-        console.log('[autoreload] desactivat');
-      }
-    }
-
-    // Dades noves publicades: acumulacions i avisos es refresquen sense recarregar
-    window.addEventListener('radar:data-updated', () => {
-      refreshAcumulacions().catch(() => {});
-      refreshAvisos().catch(() => {});
-    });
-
-    chkAutoReload.addEventListener('change', (e) => {
-      setAutoReload(e.target.checked);
-      try { localStorage.setItem('radar.autoreload', e.target.checked ? '1' : '0'); } catch (_) {}
-    });
-
-    const arParam = new URLSearchParams(location.search).get('autoreload');
-    let arStored = null;
-    try { arStored = localStorage.getItem('radar.autoreload'); } catch (_) {}
-    const arDefault = arParam === '1' || (arParam !== '0' && arStored !== '0');
-    if (arDefault) {
-      setTimeout(() => setAutoReload(true), 2000);
-    }
-
-    // ------------------------------------------------------------------
-    // Buscador
-    // ------------------------------------------------------------------
-    const cities = (window.CIUTATS && Array.isArray(window.CIUTATS.llista)) ? window.CIUTATS.llista : [];
-    let matches = [];
-    let selIndex = -1;
-
-function searchCities(query) {
-  const q = norm(query).trim();
-  if (q.length < 2) return [];
-  const out = [];
-  for (const raw of cities) {
-    const c = Array.isArray(raw)
-      ? { nom: raw[0], lon: raw[1], lat: raw[2], poblacio: 0 }
-      : raw;
-    if (!c.nom) continue;
-    const n = norm(c.nom);
-    if (n.startsWith(q)) out.push({ ...c, score: 2 });
-    else if (n.includes(q)) out.push({ ...c, score: 1 });
+/* ===================== AutoReload (activat per defecte) ===================== */
+function setAutoReload(on) {
+  try { localStorage.setItem('radar.autoreload', on ? '1' : '0'); } catch (_) {}
+  if (on) {
+    if (stopAutoReload) return;
+    stopAutoReload = initAutoReload({ intervalMs: 30000, watch: ['dbz', 'vel'] });
+    $('chkAutoReload').checked = true;
+    console.log('[autoreload] activat');
+  } else {
+    if (stopAutoReload) { stopAutoReload(); stopAutoReload = null; }
+    $('chkAutoReload').checked = false;
+    console.log('[autoreload] desactivat');
   }
-  out.sort((a, b) => (b.score - a.score) || ((b.poblacio || 0) - (a.poblacio || 0)));
-  return out.slice(0, 12);
 }
 
-    function fmtPop(n) {
-      if (!n) return '';
-      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-      if (n >= 1e3) return Math.round(n / 1e3) + 'k';
-      return String(n);
-    }
+$('chkAutoReload').addEventListener('change', (e) => setAutoReload(e.target.checked));
 
-    function renderResults() {
-      searchResults.innerHTML = '';
-      selIndex = -1;
-      if (matches.length === 0) {
-        searchResults.innerHTML = '<div class="search-empty">Cap resultat</div>';
-      } else {
-        matches.forEach((c) => {
-          const div = document.createElement('div');
-          div.className = 'search-result';
-          div.innerHTML = `<span class="search-result-name">${escapeHtml(c.nom)}</span>
-            <span class="search-result-meta">${escapeHtml(c.pais || '')} ${c.poblacio ? '· ' + fmtPop(c.poblacio) : ''}</span>`;
-          div.addEventListener('click', () => pickCity(c));
-          searchResults.appendChild(div);
-        });
-      }
-      searchResults.classList.add('visible');
-    }
+/* ===================== Accés per pla ===================== */
+function minIndexFor(key) {
+  const st = radar.getLayerState(key);
+  if (!st || !st.initialized) return 0;
+  const mins = ACCESS[tier].minutes;
+  if (!isFinite(mins)) return 0;
+  const ts = st.timestamps;
+  let latest = null;
+  for (let i = ts.length - 1; i >= 0; i--) { if (ts[i]) { latest = ts[i].getTime(); break; } }
+  if (latest === null) return 0;
+  const limit = latest - mins * 60000 - 1000;
+  for (let i = 0; i < ts.length; i++) { if (ts[i] && ts[i].getTime() >= limit) return i; }
+  return 0;
+}
 
-// ------------------------------------------------------------------
-// Punt temporal al lloc cercat (5 segons)
-// ------------------------------------------------------------------
-let searchMarkerEl = null;
-let searchMarkerTimer = 0;
-let searchMarkerMoveHandler = null;
+function computeAccess() {
+  for (const k of Object.keys(PRODUCTS)) radar.setMinIndex(k, minIndexFor(k));
+  const st = radar.getLayerState(activeKey);
+  minIndex = st ? st.minIndex : 0;
+  lockPct = totalFrames > 1 ? (minIndex / (totalFrames - 1)) * 100 : 0;
+  const locked = $('timelineLocked'), lock = $('timelineLock');
+  if (locked) locked.style.width = lockPct + '%';
+  if (lock) {
+    lock.style.display = lockPct > 0 ? 'block' : 'none';
+    lock.style.left = (lockPct / 2) + '%';
+  }
+  $('timelineLabels').querySelectorAll('.timeline-label').forEach((el) => {
+    el.classList.toggle('locked', parseFloat(el.style.left) < lockPct - 0.01);
+  });
+  lastRendered = -1;
+  if (st && st.initialized) updateUI(Math.max(st.currentIndex, minIndex));
+}
 
-function showSearchMarker(lon, lat) {
-  const mapEl = document.getElementById('map');
-  if (!mapEl) return;
+function requiredTierFor(idx) {
+  const ts = timestamps;
+  let latest = null;
+  for (let i = ts.length - 1; i >= 0; i--) { if (ts[i]) { latest = ts[i].getTime(); break; } }
+  const d = ts[idx];
+  if (latest === null || !d) return 'free';
+  const age = (latest - d.getTime()) / 60000;
+  if (age <= ACCESS.anon.minutes) return 'anon';
+  if (age <= ACCESS.free.minutes) return 'free';
+  if (age <= ACCESS.entusiasta.minutes) return 'entusiasta';
+  return 'professional';
+}
 
-  hideSearchMarker();
+function promptLocked(idx) {
+  if (lockPrompted) return;
+  lockPrompted = true;
+  openUpsell(requiredTierFor(idx));
+}
 
-  searchMarkerEl = document.createElement('div');
-  searchMarkerEl.className = 'search-marker';
-  searchMarkerEl.innerHTML = '<div class="search-marker-pulse"></div><div class="search-marker-dot"></div>';
-  mapEl.appendChild(searchMarkerEl);
+/* ===================== Upsell ===================== */
+const PREUS_URL = 'https://tempestes.cat/privacitat/preus';
+const DB_URL = 'https://tempestescat-default-rtdb.europe-west1.firebasedatabase.app';
+const userName = (u) => (u.displayName || '').trim() || (u.email ? u.email.split('@')[0] : 'Usuari');
 
-  const positionMarker = () => {
-    if (!searchMarkerEl) return;
-    const p = map.project([lon, lat]);
-    searchMarkerEl.style.transform = `translate(${p.x}px, ${p.y}px)`;
+function openUpsell(need, custom) {
+  const here = TIERS.indexOf(tier);
+  const texts = {
+    anon: ['Inicia sessió per veure més', 'Sense compte pots veure els últims 25 minuts. Amb un compte gratuït desbloqueges l\'hora sencera.', 'Iniciar sessió amb Google', () => loginGoogle()],
+    free: ['Inicia sessió per veure 1 hora', 'Sense compte pots veure els últims 25 minuts. Amb un compte gratuït desbloqueges l\'hora sencera.', 'Iniciar sessió amb Google', () => loginGoogle()],
+    entusiasta: ['Amplia fins a 3 hores', 'Aquest tram del radar és del pla Entusiasta.', 'Veure el pla Entusiasta', () => { location.href = PREUS_URL + '?pla=entusiasta'; }],
+    professional: ['24 hores i arxiu', 'Aquest tram del radar i l\'arxiu històric són del pla Professional.', 'Veure el pla Professional', () => { location.href = PREUS_URL + '?pla=professional'; }],
   };
-
-  positionMarker();
-
-  searchMarkerMoveHandler = positionMarker;
-  map.on('move', searchMarkerMoveHandler);
-  map.on('zoom', searchMarkerMoveHandler);
-
-  // 5 segons, amb fade-out suau al final
-  searchMarkerTimer = setTimeout(() => {
-    if (searchMarkerEl) {
-      searchMarkerEl.style.transition = 'opacity 400ms ease';
-      searchMarkerEl.style.opacity = '0';
-      setTimeout(hideSearchMarker, 400);
-    }
-  }, 4600);
+  let [title, text, cta, action] = texts[need] || texts.free;
+  if (custom) { title = custom.title; text = custom.text; }
+  $('upsellTitle').textContent = title;
+  $('upsellText').textContent = text;
+  const needIdx = TIERS.indexOf(need);
+  $('upsellTiers').innerHTML = TIERS.map((k, i) => {
+    const cls = ['tier-row', i <= here ? 'ok' : '', i === needIdx ? 'need' : '', i === here ? 'here' : ''].join(' ');
+    return `<div class="${cls}"><b>${ACCESS[k].name}</b><span>${ACCESS[k].window}</span></div>`;
+  }).join('');
+  const primary = $('upsellPrimary');
+  primary.textContent = cta;
+  primary.onclick = action;
+  $('upsell').classList.add('open');
+  $('upsell').setAttribute('aria-hidden', 'false');
 }
 
-function hideSearchMarker() {
-  if (searchMarkerTimer) {
-    clearTimeout(searchMarkerTimer);
-    searchMarkerTimer = 0;
-  }
-  if (searchMarkerMoveHandler) {
-    try {
-      map.off('move', searchMarkerMoveHandler);
-      map.off('zoom', searchMarkerMoveHandler);
-    } catch (e) { /* ignore */ }
-    searchMarkerMoveHandler = null;
-  }
-  if (searchMarkerEl) {
-    searchMarkerEl.style.transition = '';
-    searchMarkerEl.style.opacity = '';
-    searchMarkerEl.remove();
-    searchMarkerEl = null;
-  }
+function closeUpsell() {
+  $('upsell').classList.remove('open');
+  $('upsell').setAttribute('aria-hidden', 'true');
+}
+$('upsellX').addEventListener('click', closeUpsell);
+$('upsellSecondary').addEventListener('click', closeUpsell);
+$('upsell').addEventListener('click', (e) => { if (e.target === $('upsell')) closeUpsell(); });
+
+/* ===================== Firebase ===================== */
+async function fetchPlan(u) {
+  try {
+    const token = await u.getIdToken();
+    const r = await fetch(`${DB_URL}/users/${encodeURIComponent(u.uid)}/pla.json?auth=${token}`, { cache: 'no-store' });
+    if (!r.ok) return 'gratuït';
+    const k = String((await r.json()) || '').trim().toLowerCase().replace('gratuit', 'gratuït');
+    return ['gratuït', 'entusiasta', 'professional', 'equips'].includes(k) ? k : 'gratuït';
+  } catch (e) { return 'gratuït'; }
 }
 
-function pickCity(c) {
-  if (!c || !Number.isFinite(c.lon) || !Number.isFinite(c.lat)) return;
-  map.flyTo({ center: [c.lon, c.lat], zoom: 11, duration: 1200, essential: true });
-  searchInput.value = c.nom;
-  searchResults.classList.remove('visible');
-  searchClear.classList.add('visible');
-  searchInput.blur();
-  showSearchMarker(c.lon, c.lat);   // <-- AFEGIR AIXÒ
+async function fetchIsAdmin(u) {
+  if (!u || !u.email) return false;
+  try {
+    const token = await u.getIdToken();
+    const k = u.email.toLowerCase().replace(/\./g, ',');
+    const r = await fetch(`${DB_URL}/admin/${encodeURIComponent(k)}.json?auth=${token}`, { cache: 'no-store' });
+    return r.ok && (await r.json()) === true;
+  } catch (e) { return false; }
 }
 
-    function clearSearch() {
-      searchInput.value = '';
-      searchResults.classList.remove('visible');
-      searchResults.innerHTML = '';
-      searchClear.classList.remove('visible');
-      matches = []; selIndex = -1;
-    }
+let auth = null, fb = null;
 
-    searchInput.addEventListener('input', (e) => {
-      const v = e.target.value;
-      searchClear.classList.toggle('visible', v.length > 0);
-      if (v.trim().length < 2) { searchResults.classList.remove('visible'); matches = []; return; }
-      matches = searchCities(v);
-      renderResults();
+const authReady = (async () => {
+  try {
+    const [appMod, authMod] = await Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'),
+    ]);
+    fb = authMod;
+    auth = authMod.getAuth(appMod.initializeApp({
+      apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
+      authDomain: "tempestescat.firebaseapp.com",
+      projectId: "tempestescat",
+      storageBucket: "tempestescat.firebasestorage.app",
+      messagingSenderId: "683240351775",
+      appId: "1:683240351775:web:bc65d73249537b9cc28d2a",
+    }));
+
+    authMod.onAuthStateChanged(auth, async (u) => {
+      currentUser = u;
+      if (!u) { tier = 'anon'; planLabel = ''; accessChanged(); return; }
+      tier = 'free'; planLabel = 'Gratuït';
+      accessChanged();
+      const [plan, admin] = await Promise.all([fetchPlan(u), fetchIsAdmin(u)]);
+      if (currentUser !== u) return;
+      if (admin) { tier = 'professional'; planLabel = 'Admin'; }
+      else if (plan === 'entusiasta') { tier = 'entusiasta'; planLabel = 'Entusiasta'; }
+      else if (plan === 'professional' || plan === 'equips') { tier = 'professional'; planLabel = plan === 'equips' ? 'Equips' : 'Professional'; }
+      else { tier = 'free'; planLabel = 'Gratuït'; }
+      accessChanged();
     });
+  } catch (e) { console.warn('[firebase]', e); }
+})();
 
-    searchInput.addEventListener('keydown', (e) => {
-      if (!searchResults.classList.contains('visible')) return;
-      const items = searchResults.querySelectorAll('.search-result');
-      if (e.key === 'ArrowDown') { e.preventDefault(); selIndex = Math.min(selIndex + 1, items.length - 1); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); selIndex = Math.max(selIndex - 1, 0); }
-      else if (e.key === 'Enter') { e.preventDefault(); pickCity(matches[selIndex >= 0 ? selIndex : 0]); return; }
-      else if (e.key === 'Escape') { clearSearch(); return; }
-      else return;
-      items.forEach((it, i) => it.classList.toggle('selected', i === selIndex));
-      if (items[selIndex]) items[selIndex].scrollIntoView({ block: 'nearest' });
+async function loginGoogle() {
+  try {
+    await authReady;
+    if (!auth || !fb) return;
+    await fb.signInWithPopup(auth, new fb.GoogleAuthProvider());
+    closeUpsell();
+    closeAllFlyouts();
+  } catch (e) { console.error(e); }
+}
+
+async function logout() {
+  try {
+    await authReady;
+    if (auth && fb) await fb.signOut(auth);
+  } catch (e) { console.error(e); }
+}
+
+function humanAuthError(err) {
+  const code = (err && err.code) || '';
+  if (code === 'auth/invalid-email') return 'Correu no vàlid.';
+  if (code === 'auth/missing-password') return 'Falta la contrasenya.';
+  if (code === 'auth/weak-password') return 'La contrasenya ha de tenir com a mínim 6 caràcters.';
+  if (code === 'auth/email-already-in-use') return 'Aquest correu ja té un compte.';
+  if (code === 'auth/user-not-found' || code === 'auth/wrong-password' || code === 'auth/invalid-credential') return 'Correu o contrasenya incorrectes.';
+  if (code === 'auth/too-many-requests') return 'Massa intents. Torna-ho a provar més tard.';
+  if (code === 'auth/operation-not-allowed') return 'El mètode correu/contrasenya no està activat.';
+  if (code === 'auth/unauthorized-domain') return 'Aquest domini no està autoritzat.';
+  return (err && err.message) || 'Error inesperat.';
+}
+
+function updateAccountUI() {
+  const userBtn = $('userBtn');
+  const accountBox = $('accountBox');
+  const chipPlan = $('chipPlan');
+  if (chipPlan) chipPlan.textContent = `${ACCESS[tier].name} · ${ACCESS[tier].window}`;
+  if (!accountBox) return;
+
+  if (!currentUser) {
+    if (userBtn) userBtn.innerHTML = `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg><span class="label">Perfil</span>`;
+    accountBox.innerHTML = `
+      <div class="acc-line"><span>Historial visible</span><span class="acc-badge">${ACCESS.anon.window}</span></div>
+      <div class="info-text">Inicia sessió o crea un compte per desbloquejar més historial.</div>
+      <div class="acc-actions"><button class="primary" id="accGoogle">Continuar amb Google</button></div>
+      <div id="authFormWrap">
+        <form class="auth-form" id="authForm">
+          <input type="email" name="email" placeholder="Correu electrònic" autocomplete="email" required />
+          <input type="password" name="password" placeholder="Contrasenya" autocomplete="current-password" minlength="6" required />
+          <div class="auth-error" id="authError"></div>
+          <button class="primary" type="submit" id="authSubmit">Iniciar sessió</button>
+        </form>
+        <button class="auth-toggle" id="authToggle">No tinc compte · Crear-ne un</button>
+      </div>`;
+    $('accGoogle').addEventListener('click', loginGoogle);
+    let mode = 'login';
+    const form = $('authForm');
+    const submitBtn = $('authSubmit');
+    const toggle = $('authToggle');
+    const errEl = $('authError');
+    toggle.addEventListener('click', () => {
+      mode = mode === 'login' ? 'register' : 'login';
+      submitBtn.textContent = mode === 'register' ? 'Crear compte' : 'Iniciar sessió';
+      toggle.textContent = mode === 'register' ? 'Ja tinc compte · Iniciar sessió' : 'No tinc compte · Crear-ne un';
+      form.querySelector('input[name="password"]').setAttribute('autocomplete', mode === 'register' ? 'new-password' : 'current-password');
+      errEl.textContent = '';
     });
-
-    searchClear.addEventListener('click', clearSearch);
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.search-wrap')) searchResults.classList.remove('visible');
-    });
-
-    // ------------------------------------------------------------------
-    // Poll de la línia de temps
-    // ------------------------------------------------------------------
-    setInterval(() => {
-      if (dragging || activeKey === 'acum') return;
-      const s = radar.getLayerState(activeKey);
-      if (s) {
-        updateUI(s.currentIndex);
-        if (s.currentTime) lastRadarMs = s.currentTime;
-        if (s.totalFrames) lastAtLatest = s.currentIndex >= s.totalFrames - 1;
-      }
-    }, 100);
-
-    // ------------------------------------------------------------------
-    // Desar la vista (producte, hora, pausa, mapa, capes)
-    // ------------------------------------------------------------------
-    function saveView() {
-      if (!appReady) return;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errEl.textContent = '';
+      const email = (form.querySelector('input[name="email"]').value || '').trim();
+      const password = (form.querySelector('input[name="password"]').value || '');
       try {
-        const c = map.getCenter();
-        const chk = {};
-        document.querySelectorAll('#sidePanel input[type=checkbox]').forEach((el) => {
-          if (el.id && el.id !== 'chkAutoReload') chk[el.id] = el.checked;
-        });
-        sessionStorage.setItem(VIEW_KEY, JSON.stringify({
-          product: activeKey,
-          ms: lastRadarMs,
-          atLatest: lastAtLatest,
-          paused: uiPaused,
-          acumPeriod,
-          c: [c.lng, c.lat],
-          z: map.getZoom(),
-          p: map.getPitch(),
-          b: map.getBearing(),
-          chk,
-          density: $('densitySelect').value,
-        }));
-      } catch (e) {}
-    }
-    setInterval(saveView, 1000);
-    map.on('moveend', saveView);
-    window.addEventListener('pagehide', saveView);
-    document.addEventListener('visibilitychange', () => { if (document.hidden) saveView(); });
-    ['prodDbz', 'prodLluvia', 'prodAcum', 'playPauseBtn', 'prevBtn', 'nextBtn', 'acumPlayBtn'].forEach((id) => {
-      $(id).addEventListener('click', () => setTimeout(saveView, 50));
-    });
-    document.querySelectorAll('.acum-chip').forEach((b) => b.addEventListener('click', () => setTimeout(saveView, 50)));
-    document.querySelectorAll('#sidePanel input[type=checkbox]').forEach((el) => el.addEventListener('change', saveView));
-    $('densitySelect').addEventListener('change', saveView);
-    timelineEl.addEventListener('mouseup', () => setTimeout(saveView, 50));
-    window.addEventListener('mouseup', () => setTimeout(saveView, 50));
-    window.addEventListener('touchend', () => setTimeout(saveView, 50));
-
-    // Ajustos que depenen de l'accés (quan ja se sap el pla de l'usuari)
-    async function applyRestoreLate() {
-      if (lateDone || !saved || !appReady || !authSettled) return;
-      lateDone = true;
-      if (saved.product === 'acum') {
-        if (Number.isFinite(saved.acumPeriod) && activeKey === 'acum') setAcumPeriod(saved.acumPeriod);
-      } else if (saved.paused && !saved.atLatest && Number.isFinite(saved.ms) && activeKey !== 'acum') {
-        await radar.syncToTime(activeKey, saved.ms);
-        lastRendered = -1;
-      }
-    }
-
-    // ------------------------------------------------------------------
-    // Accés per pla
-    // ------------------------------------------------------------------
-    const PREUS_URL = 'https://tempestes.cat/privacitat/preus';
-    const DB_URL = 'https://tempestescat-default-rtdb.europe-west1.firebasedatabase.app';
-    const userName = (u) => (u.displayName || '').trim() || (u.email ? u.email.split('@')[0] : 'Usuari');
-
-    async function fetchPlan(u) {
-      try {
-        const token = await u.getIdToken();
-        const r = await fetch(`${DB_URL}/users/${encodeURIComponent(u.uid)}/pla.json?auth=${token}`, { cache: 'no-store' });
-        if (!r.ok) return 'gratuït';
-        const k = String((await r.json()) || '').trim().toLowerCase().replace('gratuit', 'gratuït');
-        return ['gratuït', 'entusiasta', 'professional', 'equips'].includes(k) ? k : 'gratuït';
-      } catch (e) { return 'gratuït'; }
-    }
-
-    async function fetchIsAdmin(u) {
-      if (!u || !u.email) return false;
-      try {
-        const token = await u.getIdToken();
-        const k = u.email.toLowerCase().replace(/\./g, ',');
-        const r = await fetch(`${DB_URL}/admin/${encodeURIComponent(k)}.json?auth=${token}`, { cache: 'no-store' });
-        return r.ok && (await r.json()) === true;
-      } catch (e) { return false; }
-    }
-
-    function minIndexFor(key) {
-      const st = radar.getLayerState(key);
-      if (!st || !st.initialized) return 0;
-      const mins = ACCESS[tier].minutes;
-      if (!isFinite(mins)) return 0;
-      const ts = st.timestamps;
-      let latest = null;
-      for (let i = ts.length - 1; i >= 0; i--) { if (ts[i]) { latest = ts[i].getTime(); break; } }
-      if (latest === null) return 0;
-      const limit = latest - mins * 60000 - 1000;
-      for (let i = 0; i < ts.length; i++) { if (ts[i] && ts[i].getTime() >= limit) return i; }
-      return 0;
-    }
-
-    function computeAccess() {
-      for (const k of Object.keys(PRODUCTS)) radar.setMinIndex(k, minIndexFor(k));
-      const st = radar.getLayerState(activeKey);
-      minIndex = st ? st.minIndex : 0;
-      lockPct = totalFrames > 1 ? (minIndex / (totalFrames - 1)) * 100 : 0;
-
-      const locked = $('timelineLocked'), lock = $('timelineLock');
-      locked.style.width = lockPct + '%';
-      lock.style.display = lockPct > 0 ? 'block' : 'none';
-      lock.style.left = (lockPct / 2) + '%';
-      timelineLabels.querySelectorAll('.timeline-label').forEach((el) => {
-        el.classList.toggle('locked', parseFloat(el.style.left) < lockPct - 0.01);
-      });
-      lastRendered = -1;
-      if (st && st.initialized) updateUI(Math.max(st.currentIndex, minIndex));
-    }
-
-    function requiredTierFor(idx) {
-      const ts = timestamps;
-      let latest = null;
-      for (let i = ts.length - 1; i >= 0; i--) { if (ts[i]) { latest = ts[i].getTime(); break; } }
-      const d = ts[idx];
-      if (latest === null || !d) return 'free';
-      const age = (latest - d.getTime()) / 60000;
-      if (age <= ACCESS.anon.minutes) return 'anon';
-      if (age <= ACCESS.free.minutes) return 'free';
-      if (age <= ACCESS.entusiasta.minutes) return 'entusiasta';
-      return 'professional';
-    }
-
-    function promptLocked(idx) {
-      if (lockPrompted) return;
-      lockPrompted = true;
-      openUpsell(requiredTierFor(idx));
-    }
-
-    function openUpsell(need, custom) {
-      const here = TIERS.indexOf(tier);
-      const texts = {
-        anon: ['Inicia sessió per veure més',
-               'Sense compte pots veure els últims 25 minuts. Amb un compte gratuït de Google desbloqueges l\'hora sencera.',
-               'Iniciar sessió amb Google', () => loginGoogle()],
-        free: ['Inicia sessió per veure 1 hora',
-               'Sense compte pots veure els últims 25 minuts. Amb un compte gratuït de Google desbloqueges l\'hora sencera.',
-               'Iniciar sessió amb Google', () => loginGoogle()],
-        entusiasta: ['Amplia fins a 3 hores',
-               'Aquest tram del radar és del pla Entusiasta.',
-               'Veure el pla Entusiasta', () => { location.href = PREUS_URL + '?pla=entusiasta'; }],
-        professional: ['24 hores i arxiu',
-               'Aquest tram del radar i l\'arxiu històric són del pla Professional.',
-               'Veure el pla Professional', () => { location.href = PREUS_URL + '?pla=professional'; }],
-      };
-      let [title, text, cta, action] = texts[need] || texts.free;
-      if (custom) { title = custom.title; text = custom.text; }
-      $('upsellTitle').textContent = title;
-      $('upsellText').textContent = text;
-
-      const needIdx = TIERS.indexOf(need);
-      $('upsellTiers').innerHTML = TIERS.map((k, i) => {
-        const cls = ['tier-row', i <= here ? 'ok' : '', i === needIdx ? 'need' : '', i === here ? 'here' : ''].join(' ');
-        return `<div class="${cls}"><b>${ACCESS[k].name}</b><span>${ACCESS[k].window}</span></div>`;
-      }).join('');
-
-      const primary = $('upsellPrimary');
-      primary.textContent = cta;
-      primary.onclick = action;
-      upsell.classList.add('open');
-      upsell.setAttribute('aria-hidden', 'false');
-    }
-
-    function closeUpsell() {
-      upsell.classList.remove('open');
-      upsell.setAttribute('aria-hidden', 'true');
-    }
-    $('upsellX').addEventListener('click', closeUpsell);
-    $('upsellSecondary').addEventListener('click', closeUpsell);
-    upsell.addEventListener('click', (e) => { if (e.target === upsell) closeUpsell(); });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeUpsell(); });
-
-    function updateAccountUI() {
-      const u = currentUser;
-      if (!u) {
-        userBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>';
-        accountBox.innerHTML = `
-          <div class="acc-line"><span>Historial visible</span><span class="acc-badge">${ACCESS.anon.window}</span></div>
-          <div class="info-text">Inicia sessió gratis per veure l'hora sencera.</div>
-          <div class="acc-actions"><button class="primary" id="accLogin">Iniciar sessió amb Google</button></div>`;
-        $('accLogin').addEventListener('click', loginGoogle);
-        return;
-      }
-
-      const nom = userName(u);
-      const ini = escapeHtml(nom[0].toUpperCase());
-      const avatar = u.photoURL
-        ? `<img src="${escapeHtml(u.photoURL)}" alt="" referrerpolicy="no-referrer">`
-        : ini;
-      userBtn.innerHTML = u.photoURL
-        ? `<img src="${escapeHtml(u.photoURL)}" alt="" referrerpolicy="no-referrer">`
-        : `<span class="ini">${ini}</span>`;
-
-      accountBox.innerHTML = `
-        <div class="acc-who">
-          <div class="acc-av">${avatar}</div>
-          <div style="min-width:0"><div class="acc-name">${escapeHtml(nom)}</div><div class="acc-mail">${escapeHtml(u.email || '')}</div></div>
-        </div>
-        <div class="acc-line"><span>Pla</span><span class="acc-badge">${escapeHtml(planLabel || ACCESS[tier].name)}</span></div>
-        <div class="acc-line"><span>Historial visible</span><span>${ACCESS[tier].window}</span></div>
-        <div class="acc-actions">
-          ${tier !== 'professional' ? `<a class="primary" href="${PREUS_URL}">Veure plans</a>` : ''}
-          <button id="accLogout">Tancar sessió</button>
-        </div>`;
-      $('accLogout').addEventListener('click', logout);
-    }
-
-    userBtn.addEventListener('click', () => { if (currentUser) openPanel(); else loginGoogle(); });
-
-    function accessChanged() {
-      computeAccess();
-      updateAccountUI();
-      paintAvisTierBadge();
-      if (!acumAllowed(acumPeriod)) {
-        acumPeriod = 30;
-        stopAcumPlay();
-        if (activeKey === 'acum' && acumPeriods.length) { showAcumOnMap(acumPeriod); renderLegendAcum(); }
-      }
-      updateAcumChipsUI();
-      if (activeKey === 'acum') preloadAcum().catch(() => {});
-      if (appReady) refreshAvisos();
-    }
-
-    // ------------------------------------------------------------------
-    // Avisos de pluja + alertes AEMET
-    // ------------------------------------------------------------------
-    const avisBtn = $('avisBtn'), avisBadge = $('avisBadge'), avisPanel = $('avisPanel');
-    const avisList = $('avisList'), avisMsg = $('avisMsg'), avisMeta = $('avisMeta');
-    const avisTitle = $('avisTitle');
-    const chkAvisos = $('chkAvisos');
-    const avisBadgeTier = $('avisBadgeTier');
-
-    function avisAccessLevel() {
-      const i = TIERS.indexOf(tier);
-      if (i >= TIERS.indexOf('entusiasta')) return 'full';
-      if (i >= TIERS.indexOf('free')) return 'basic';
-      return 'none';
-    }
-    const hasAvisos = () => avisAccessLevel() !== 'none';
-    const levelInfo = (id) => LEVELS.find((l) => l.id === id) || LEVELS[0];
-
-    $('avisLegend').innerHTML = LEVELS.map((l) => `<span><i style="background:${l.color}"></i>${l.name} ≥ ${l.min} mm/h</span>`).join('');
-
-    function paintAvisTierBadge() {
-      const lvl = avisAccessLevel();
-      if (lvl === 'full') { avisBadgeTier.className = 'pro'; avisBadgeTier.textContent = 'Pro'; }
-      else if (lvl === 'basic') { avisBadgeTier.className = 'free'; avisBadgeTier.textContent = 'Free'; }
-      else { avisBadgeTier.className = 'free'; avisBadgeTier.textContent = 'Login'; }
-    }
-
-    function applyAvisosVisibility() {
-      const show = avisosLayerOn && hasAvisos();
-      radar.setAvisosData(show ? toFeatureCollection(avisItems) : null);
-    }
-
-    chkAvisos.addEventListener('change', async (e) => {
-      const on = e.target.checked;
-      const lvl = avisAccessLevel();
-
-      if (!on) { avisosLayerOn = false; applyAvisosVisibility(); return; }
-
-      if (lvl === 'none') {
-        chkAvisos.checked = false;
-        openUpsell('free', {
-          title: 'Avisos de pluja',
-          text: 'Inicia sessió gratis per veure les 3 comarques amb més pluja ara mateix. Amb el pla Entusiasta desbloquejaràs la llista completa per municipi.',
-        });
-        return;
-      }
-
-      avisosLayerOn = true;
-      if (!avisItems.length) await refreshAvisos();
-      applyAvisosVisibility();
-    });
-
-    function openAvis() {
-      // Actualitzem el títol i afegim el resum d'alertes AEMET
-      const lvl = avisAccessLevel();
-      let titol = lvl === 'basic' ? 'Top 3 comarques amb pluja · ara mateix' : 'Avisos · ara mateix';
-
-      // Resum alertes Catalunya
-      let resumHtml = '';
-      if (alertesCatalunya && alertesCatalunya.total > 0) {
-        const sev = alertesCatalunya.per_severitat;
-        const parts = [];
-        if (sev.Minor) parts.push(`${sev.Minor} groc${sev.Minor > 1 ? 's' : ''}`);
-        if (sev.Moderate) parts.push(`${sev.Moderate} taronja${sev.Moderate > 1 ? 's' : ''}`);
-        if (sev.Severe) parts.push(`${sev.Severe} vermell${sev.Severe > 1 ? 's' : ''}`);
-        if (sev.Extreme) parts.push(`${sev.Extreme} extrem${sev.Extreme > 1 ? 's' : ''}`);
-        resumHtml = `<div class="avis-meta" style="color:#fb923c">⚠ Alertes AEMET a Catalunya: ${parts.join(' · ')}</div>`;
-      }
-
-      avisTitle.textContent = titol;
-      if (resumHtml) {
-        avisMeta.innerHTML = resumHtml;
-      }
-
-      avisPanel.classList.add('open');
-    }
-    function closeAvis() { avisPanel.classList.remove('open'); }
-    $('avisX').addEventListener('click', closeAvis);
-
-    avisBtn.addEventListener('click', () => {
-      if (avisAccessLevel() === 'none') {
-        openUpsell('free', {
-          title: 'Avisos',
-          text: 'Inicia sessió gratis per veure les alertes i avisos.',
-        });
-        return;
-      }
-      if (avisPanel.classList.contains('open')) closeAvis(); else { openAvis(); refreshAvisos(); }
-    });
-
-    function paintAvisBtn() {
-      const lvl = avisAccessLevel();
-      avisBtn.classList.toggle('locked', lvl === 'none');
-      avisBtn.title = lvl === 'none'
-        ? 'Avisos (inicia sessió)'
-        : lvl === 'basic' ? 'Avisos · Top 3 comarques' : 'Avisos per municipi';
-
-      // Prioritat: alertes AEMET per sobre d'avisos de pluja
-      const teAlertes = alertesCatalunya && alertesCatalunya.total > 0;
-      const teAvisos = avisItems.length > 0;
-
-      if (teAlertes || (lvl !== 'none' && teAvisos)) {
-        const num = (teAlertes ? alertesCatalunya.total : 0) + (teAvisos ? avisItems.length : 0);
-        avisBadge.textContent = num > 99 ? '99+' : num;
-        // Color segons la severitat màxima d'alertes
-        if (teAlertes) {
-          const maxSev = alertesCatalunya.zones[0]?.severity;
-          const colors = { Minor: '#facc15', Moderate: '#fb923c', Severe: '#ef4444', Extreme: '#c2185b' };
-          avisBadge.style.background = colors[maxSev] || '#facc15';
-        } else {
-          const top = Math.max(...avisItems.map((i) => i.level));
-          avisBadge.style.background = levelInfo(top).color;
-        }
-        avisBadge.classList.add('on');
-      } else {
-        avisBadge.classList.remove('on');
-      }
-    }
-
-    function renderAvisos(message) {
-      paintAvisBtn();
-      const lvl = avisAccessLevel();
-
-      avisMsg.style.display = message ? 'block' : 'none';
-      avisMsg.textContent = message || '';
-      avisList.innerHTML = '';
-
-      if (avisLatest) {
-        const edat = Math.round((Date.now() - avisLatest.getTime()) / 60000);
-        avisMeta.textContent = `Radar de les ${hourFmt.format(avisLatest)}${edat > 20 ? ` (fa ${edat} min)` : ''} · estimació, pot diferir de la pluja real.`;
-      }
-
-      // Si tenim alertes AEMET, les mostrem primer
-      if (alertesCatalunya && alertesCatalunya.total > 0) {
-        const alertesHtml = alertesCatalunya.zones.slice(0, 10).map((z) => {
-          const colors = { Minor: '#facc15', Moderate: '#fb923c', Severe: '#ef4444', Extreme: '#c2185b' };
-          const names = { Minor: 'Groc', Moderate: 'Taronja', Severe: 'Vermell', Extreme: 'Extrem' };
-          return `<button class="avis-item" disabled>
-            <span class="avis-dot" style="background:${colors[z.severity] || '#facc15'}"></span>
-            <span class="avis-txt">
-              <span class="avis-name">${escapeHtml(z.zona)}</span>
-              <span class="avis-sub">${escapeHtml(names[z.severity] || z.severity)}</span>
-            </span>
-            <span class="avis-val">⚠<small>AEMET</small></span>
-          </button>`;
-        }).join('');
-
-        const alertHeader = `<div style="padding:10px 14px 6px;font-size:11px;color:#fb923c;font-weight:600;letter-spacing:.3px">ALERTES AEMET · CATALUNYA (${alertesCatalunya.total})</div>`;
-        avisList.innerHTML = alertHeader + alertesHtml;
-
-        if (alertesCatalunya.total > 10) {
-          avisList.innerHTML += `<div class="avis-more">I ${alertesCatalunya.total - 10} zones més amb alerta.</div>`;
-        }
-
-        avisList.innerHTML += `<div style="padding:10px 14px 6px;font-size:11px;color:#7f94b4;font-weight:600;letter-spacing:.3px">AVISOS DE PLUJA</div>`;
-      }
-
-      if (message) { $('avisChips').innerHTML = ''; return; }
-
-      if (lvl === 'basic') {
-        $('avisChips').innerHTML = '';
-
-        const byComarca = new Map();
-        for (const it of avisItems) {
-          const key = it.comarca || '—';
-          const prev = byComarca.get(key);
-          if (!prev) byComarca.set(key, { comarca: key, max: it.max, level: it.level, count: 1 });
-          else {
-            prev.count += 1;
-            if (it.max > prev.max) { prev.max = it.max; prev.level = it.level; }
-          }
-        }
-        const top = [...byComarca.values()].sort((a, b) => b.max - a.max).slice(0, 3);
-
-        if (top.length === 0) {
-          avisList.innerHTML += `<div class="avis-msg" style="display:block">Cap comarca amb pluja intensa ara mateix.</div>`;
-          return;
-        }
-
-        const plujaHtml = top.map((it) => {
-          const l = levelInfo(it.level);
-          return `<button class="avis-item" disabled>
-            <span class="avis-dot" style="background:${l.color}"></span>
-            <span class="avis-txt">
-              <span class="avis-name">${escapeHtml(it.comarca)}</span>
-              <span class="avis-sub">${escapeHtml(l.name)} · ${it.count} municipi${it.count > 1 ? 's' : ''} afectat${it.count > 1 ? 's' : ''}</span>
-            </span>
-            <span class="avis-val">${Math.round(it.max)}<small>mm/h</small></span>
-          </button>`;
-        }).join('');
-        avisList.innerHTML += plujaHtml;
-        return;
-      }
-
-      // Nivell complet
-      const counts = {};
-      avisItems.forEach((it) => { counts[it.level] = (counts[it.level] || 0) + 1; });
-      $('avisChips').innerHTML =
-        `<button class="avis-chip${avisFilter === 0 ? ' active' : ''}" data-l="0">Tots (${avisItems.length})</button>` +
-        LEVELS.filter((l) => counts[l.id]).map((l) =>
-          `<button class="avis-chip${avisFilter === l.id ? ' active' : ''}" data-l="${l.id}"><i style="background:${l.color}"></i>${l.name.replace('Pluja ', '')} (${counts[l.id]})</button>`).join('');
-
-      const plujaHtml = avisItems.map((it, i) => ({ it, i }))
-        .filter(({ it }) => !avisFilter || it.level === avisFilter)
-        .map(({ it, i }) => {
-          const l = levelInfo(it.level);
-          const sub = [it.comarca, l.name, it.when ? hourFmt.format(it.when) : ''].filter(Boolean).join(' · ');
-          return `<button class="avis-item" data-i="${i}">
-            <span class="avis-dot" style="background:${l.color}"></span>
-            <span class="avis-txt"><span class="avis-name">${escapeHtml(it.nom)}</span><span class="avis-sub">${escapeHtml(sub)}</span></span>
-            <span class="avis-val">${Math.round(it.max)}<small>mm/h</small></span>
-          </button>`;
-        }).join('');
-      avisList.innerHTML += plujaHtml;
-    }
-
-    $('avisChips').addEventListener('click', (e) => {
-      const b = e.target.closest('.avis-chip');
-      if (!b) return;
-      avisFilter = Number(b.dataset.l);
-      renderAvisos('');
-    });
-
-    avisList.addEventListener('click', (e) => {
-      const b = e.target.closest('.avis-item');
-      if (!b || b.disabled) return;
-      const it = avisItems[Number(b.dataset.i)];
-      if (!it) return;
-      map.fitBounds(boundsOf(it.feature), { padding: 90, maxZoom: 11, duration: 1000 });
-      if (isMobile()) closeAvis();
-    });
-
-    function clearAvisos() {
-      avisKey = ''; avisItems = []; avisLatest = null;
-      radar.setAvisosData(null);
-      closeAvis();
-      paintAvisBtn();
-    }
-
-    async function refreshAvisos() {
-      // Alertes AEMET de Catalunya: es descarta la caché del mòdul perquè sempre siguin fresques
-      try {
-        resetAlertesCatalunya();
-        alertesCatalunya = await getResumAlertesCatalunya();
-        if (alertesCatalunya.total > 0) {
-          console.log(`[alertes] ${alertesCatalunya.total} alertes a Catalunya`);
-        }
-      } catch (e) {
-        console.warn('[alertes]', e);
-      }
-
-      paintAvisBtn();
-
-      if (!hasAvisos()) { clearAvisos(); return; }
-      if (avisBusy) return;
-
-      const st = radar.getLayerState('lluvia');
-      if (!st || !st.initialized || !st.frames.length) { renderAvisos('No hi ha dades de pluja disponibles ara mateix.'); return; }
-
-      let latest = null;
-      for (let i = st.timestamps.length - 1; i >= 0; i--) { if (st.timestamps[i]) { latest = st.timestamps[i]; break; } }
-      if (!latest) { renderAvisos('No hi ha dades de pluja disponibles ara mateix.'); return; }
-
-      const key = String(latest.getTime());
-      if (key === avisKey) {
-        renderAvisos(avisItems.length ? '' : 'Cap municipi amb pluja intensa ara mateix.');
-        if (avisosLayerOn) applyAvisosVisibility();
-        return;
-      }
-
-      const limit = latest.getTime() - WINDOW_MIN * 60000 - 1000;
-      const frames = [];
-      st.timestamps.forEach((d, i) => { if (d && d.getTime() >= limit) frames.push({ url: st.frames[i], t: d }); });
-
-      avisBusy = true;
-      avisLatest = latest;
-      renderAvisos('Calculant els avisos…');
-      try {
-        const municipis = await radar.getMunicipis();
-        if (!municipis) { renderAvisos('No s\'han pogut carregar els municipis.'); return; }
-        const res = await computeAvisos({ frames, municipis });
-        avisItems = res.items;
-        avisLatest = res.latest || latest;
-        avisKey = key;
-        if (avisosLayerOn) applyAvisosVisibility();
-        renderAvisos(avisItems.length ? '' : 'Cap municipi amb pluja intensa ara mateix.');
-      } catch (e) {
-        console.error('[avisos]', e);
-        renderAvisos('No s\'han pogut calcular els avisos.');
+        submitBtn.disabled = true; submitBtn.textContent = 'Espera…';
+        await authReady;
+        if (!auth || !fb) throw new Error('Firebase no disponible');
+        if (mode === 'register') await fb.createUserWithEmailAndPassword(auth, email, password);
+        else await fb.signInWithEmailAndPassword(auth, email, password);
+        closeAllFlyouts();
+      } catch (err) {
+        errEl.textContent = humanAuthError(err);
       } finally {
-        avisBusy = false;
-        if (!hasAvisos()) clearAvisos();
-      }
-    }
-
-    // ------------------------------------------------------------------
-    // Càrrega inicial
-    // ------------------------------------------------------------------
-    radar.onLayerUpdate((key) => {
-      for (const [btn, k] of [[prodDbzBtn, 'dbz'], [prodLluviaBtn, 'lluvia']]) {
-        const s = radar.getLayerState(k);
-        btn.disabled = !(s && s.initialized && s.totalFrames > 0);
-      }
-      if (key === activeKey && key !== 'acum') syncTimeline(key);
-      else computeAccess();
-      if (key === 'lluvia' && appReady) refreshAvisos().catch(() => {});
-    });
-
-    paintThemeUI(currentTheme);
-    radar.setBaseTheme(currentTheme);
-    paintAvisTierBadge();
-    updateAccountUI();
-    updateAcumChipsUI();
-
-    map.once('style.load', async () => {
-      setLoad(35, 'Carregant el radar…');
-      hideBaseLabels();
-
-      // Alertes AEMET (en paral·lel)
-      alertes.start().then(lowerAlertes).catch((e) => console.warn('[alertes]', e));
-      setTimeout(lowerAlertes, 2500);
-
-      try {
-        await radar.initRadar(map);
-      } catch (e) {
-        console.error('[radar]', e);
-        setStatus('No s\'ha pogut carregar el radar.');
-        setLoad(100, 'Error carregant el radar');
-        setTimeout(hideLoader, 800);
-        return;
-      }
-
-      lowerAlertes();
-      const available = Object.keys(PRODUCTS).filter((k) => {
-        const s = radar.getLayerState(k);
-        return s && s.initialized && s.totalFrames > 0;
-      });
-      prodDbzBtn.disabled = !available.includes('dbz');
-      prodLluviaBtn.disabled = !available.includes('lluvia');
-      prodAcumBtn.disabled = false;
-
-      if (available.length === 0) {
-        setStatus('No hi ha cap imatge disponible.');
-        setLoad(100, 'Sense dades');
-        setTimeout(hideLoader, 800);
-        return;
-      }
-
-      const radarKey = (saved && available.includes(saved.product)) ? saved.product : available[0];
-      const restoreMs = (saved && !saved.atLatest && Number.isFinite(saved.ms)) ? saved.ms : NaN;
-      if (saved && Number.isFinite(saved.ms)) lastRadarMs = saved.ms;
-      await selectProduct(radarKey, saved ? { ms: restoreMs } : undefined);
-      radar.startAllAnimations();
-      if (saved && saved.paused) pauseUI();
-
-      // Capes i densitat com les havia deixat l'usuari
-      if (saved) {
-        if (saved.chk) {
-          for (const [id, val] of Object.entries(saved.chk)) {
-            const el = $(id);
-            if (!el || el.checked === !!val) continue;
-            if (id === 'chkAvisos' && val) continue;   // es reactiva sol segons el pla
-            el.checked = !!val;
-            el.dispatchEvent(new Event('change'));
-          }
-        }
-        if (saved.density && $('densitySelect').querySelector(`option[value="${saved.density}"]`)) {
-          $('densitySelect').value = saved.density;
-          radar.setDensity(saved.density);
-        }
-        if (saved.product === 'acum') {
-          if (Number.isFinite(saved.acumPeriod)) acumPeriod = saved.acumPeriod;
-          prodAcumBtn.click();
-        }
-      }
-
-      setLoad(100, 'A punt!');
-      hideLoader();
-
-      appReady = true;
-      applyRestoreLate();
-      setTimeout(() => {
-        refreshAcumulacions().catch(() => {});
-        refreshAvisos().catch(() => {});
-      }, 1200);
-
-      // Dades vives: sempre es tornen a llegir sense caché
-      setInterval(() => { if (!document.hidden) refreshAcumulacions().catch(() => {}); }, ACUM_REFRESH_MS);
-      setInterval(() => { if (!document.hidden && appReady) refreshAvisos().catch(() => {}); }, AVISOS_REFRESH_MS);
-    });
-
-    // ------------------------------------------------------------------
-    // Visibilitat i teclat
-    // ------------------------------------------------------------------
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        radar.pauseRadarAnimation();
-      } else {
-        if (!uiPaused && activeKey !== 'acum') radar.resumeRadarAnimation();
-        if (appReady) {
-          refreshAcumulacions().catch(() => {});
-          refreshAvisos().catch(() => {});
-        }
+        submitBtn.disabled = false;
+        submitBtn.textContent = mode === 'register' ? 'Crear compte' : 'Iniciar sessió';
       }
     });
-    document.addEventListener('keydown', (e) => {
-      if (e.target === searchInput) return;
-      if (activeKey === 'acum') {
-        const steps = acumSteps();
-        const cur = Math.max(0, steps.indexOf(acumPeriod));
-        if (e.key === 'ArrowLeft') { stopAcumPlay(); seekAcum(cur - 1); }
-        else if (e.key === 'ArrowRight') { stopAcumPlay(); seekAcum(cur + 1); }
-        else if (e.key === ' ') { e.preventDefault(); acumPlayBtn.click(); }
-        else if (e.key === 'Escape') closePanel();
-        return;
-      }
-      if (e.key === 'ArrowLeft') step(-1);
-      else if (e.key === 'ArrowRight') step(1);
-      else if (e.key === ' ') { e.preventDefault(); playPauseBtn.click(); }
-      else if (e.key === 'Escape') closePanel();
-    });
+    return;
+  }
 
-    // ------------------------------------------------------------------
-    // Firebase
-    // ------------------------------------------------------------------
-    let auth = null, fb = null;
+  const nom = userName(currentUser);
+  const ini = escapeHtml(nom[0] ? nom[0].toUpperCase() : '?');
+  const avatar = currentUser.photoURL
+    ? `<img src="${escapeHtml(currentUser.photoURL)}" alt="" referrerpolicy="no-referrer">` : ini;
+  if (userBtn) {
+    userBtn.innerHTML = currentUser.photoURL
+      ? `<img src="${escapeHtml(currentUser.photoURL)}" alt="" referrerpolicy="no-referrer">`
+      : `<span class="ini">${ini}</span><span class="label">Perfil</span>`;
+  }
+  accountBox.innerHTML = `
+    <div class="acc-who">
+      <div class="acc-av">${avatar}</div>
+      <div style="min-width:0"><div class="acc-name">${escapeHtml(nom)}</div><div class="acc-mail">${escapeHtml(currentUser.email || '')}</div></div>
+    </div>
+    <div class="acc-line"><span>Pla</span><span class="acc-badge">${escapeHtml(planLabel || ACCESS[tier].name)}</span></div>
+    <div class="acc-line"><span>Historial visible</span><span>${ACCESS[tier].window}</span></div>
+    <div class="acc-actions">
+      ${tier !== 'professional' ? `<a class="primary" href="${PREUS_URL}" target="_blank" rel="noopener">Veure plans / Comprar</a>` : `<a class="primary" href="${PREUS_URL}" target="_blank" rel="noopener">Gestionar pla</a>`}
+      <button id="accLogout">Tancar sessió</button>
+    </div>`;
+  $('accLogout').addEventListener('click', logout);
+}
 
-    const authReady = (async () => {
-      const [appMod, authMod] = await Promise.all([
-        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
-        import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'),
-      ]);
-      fb = authMod;
-      auth = authMod.getAuth(appMod.initializeApp({
-        apiKey: "AIzaSyBGcGUk2gsoDaHkg9Yv-nqMJ5_x-QPTMS8",
-        authDomain: "tempestescat.firebaseapp.com",
-        projectId: "tempestescat",
-        storageBucket: "tempestescat.firebasestorage.app",
-        messagingSenderId: "683240351775",
-        appId: "1:683240351775:web:bc65d73249537b9cc28d2a",
-      }));
+function accessChanged() {
+  computeAccess();
+  updateAccountUI();
+}
 
-      authMod.onAuthStateChanged(auth, async (u) => {
-        currentUser = u;
-        if (!u) { tier = 'anon'; planLabel = ''; accessChanged(); authSettled = true; applyRestoreLate(); return; }
+/* ===================== User button ===================== */
+$('userBtn').addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (UI.open === 'settings') { closeAllFlyouts(); return; }
+  closeAllFlyouts();
+  const flyout = document.getElementById('flyout-settings');
+  if (!flyout) return;
+  flyout.classList.add('open');
+  $('userBtn').classList.add('active');
+  UI.open = 'settings';
+  const rect = $('userBtn').getBoundingClientRect();
+  flyout.style.top = Math.max(12, rect.top) + 'px';
+  flyout.style.right = (window.innerWidth - rect.left + 8) + 'px';
+  flyout.style.left = '';
+  updateAccountUI();
+});
 
-        tier = 'free'; planLabel = 'Gratuït';
-        accessChanged();
+/* ===================== Estacions toggle ===================== */
+$('estacionsBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const currentVisible = $('chkEstacions').checked;
+  $('chkEstacions').checked = !currentVisible;
+  $('chkEstacions').dispatchEvent(new Event('change'));
+});
 
-        const [plan, admin] = await Promise.all([fetchPlan(u), fetchIsAdmin(u)]);
-        if (currentUser !== u) return;
+/* ===================== Avisos (botó) → Properament ===================== */
+$('avisBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  // Botó deshabilitat visualment: no fem res
+});
 
-        if (admin) { tier = 'professional'; planLabel = 'Admin'; }
-        else if (plan === 'entusiasta') { tier = 'entusiasta'; planLabel = 'Entusiasta'; }
-        else if (plan === 'professional' || plan === 'equips') { tier = 'professional'; planLabel = plan === 'equips' ? 'Equips' : 'Professional'; }
-        else { tier = 'free'; planLabel = 'Gratuït'; }
-        accessChanged();
-        authSettled = true;
-        applyRestoreLate();
-      });
-    })().catch((e) => console.warn('[firebase]', e));
+/* ===================== Inicialització ===================== */
+radar.onLayerUpdate((key) => {
+  if (key === activeKey) syncTimeline(key);
+  else computeAccess();
+});
 
-    async function loginGoogle() {
-      try {
-        await authReady;
-        if (!auth || !fb) return;
-        await fb.signInWithPopup(auth, new fb.GoogleAuthProvider());
-        closeUpsell();
-      } catch (e) { console.error(e); }
-    }
+updateAccountUI();
+bindFlyoutTriggers();
 
-    async function logout() {
-      try {
-        await authReady;
-        if (auth && fb) await fb.signOut(auth);
-      } catch (e) { console.error(e); }
-    }
-  </script>
+/* ===================== Map load ===================== */
+map.once('style.load', async () => {
+  setLoad(35, 'Carregant el radar…');
+  hideBaseLabels();
+  alertes.start().catch(() => {});
+  try {
+    await radar.initRadar(map);
+  } catch (e) {
+    console.error('[radar]', e);
+    setStatus('No s\'ha pogut carregar el radar.');
+    setLoad(100, 'Error');
+    setTimeout(hideLoader, 800);
+    return;
+  }
+
+  // Forçar estat inicial: relleu OFF, autoreload ON
+  $('chkRelleu').checked = false;
+  radar.setReliefVisibility(false);
+
+  const available = Object.keys(PRODUCTS).filter((k) => {
+    const s = radar.getLayerState(k);
+    return s && s.initialized && s.totalFrames > 0;
+  });
+  document.querySelectorAll('#flyout-productSelect .opt').forEach((o) => {
+    o.disabled = !available.includes(o.dataset.product);
+  });
+
+  if (available.length === 0) {
+    setStatus('No hi ha cap imatge disponible.');
+    setLoad(100, 'Sense dades');
+    setTimeout(hideLoader, 800);
+    return;
+  }
+
+  await selectProduct(available.includes('dbz') ? 'dbz' : available[0]);
+  radar.startAllAnimations();
+
+  // Activar autoreload per defecte (respectant si l'usuari l'havia desactivat explícitament)
+  let arStored = null;
+  try { arStored = localStorage.getItem('radar.autoreload'); } catch (_) {}
+  if (arStored !== '0') {
+    setAutoReload(true);
+  } else {
+    $('chkAutoReload').checked = false;
+  }
+
+  setLoad(100, 'A punt!');
+  hideLoader();
+  appReady = true;
+});
+</script>
+
 </body>
 </html>
