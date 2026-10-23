@@ -70,6 +70,7 @@ jobs:
           RADAR_FINESTRA_HORES: '26'
           RADAR_TIMEZONE: 'Europe/Madrid'
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
+          RADAR_OUT_DIR: ${{ github.workspace }}/scripts-privats/radar_out
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: python -X faulthandler scripts-privats/radar-real.py
