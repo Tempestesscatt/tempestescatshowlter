@@ -1,9 +1,14 @@
 name: Descarga Radar PNG
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      max_nous:
+        description: 'Frames nous per radar i producte (24 normal; 60 per omplir la finestra)'
+        required: false
+        default: '24'
   # schedule:
-  #   - cron: '*/5 * * * *'
+  #   - cron: '*/10 * * * *'
 
 permissions:
   contents: read
@@ -68,7 +73,7 @@ jobs:
           RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
           METEOGATE_API_KEY: ${{ secrets.METEOGATE_API_KEY }}
           RADAR_FINESTRA_HORES: '24'
-          RADAR_MAX_NOUS: '24'
+          RADAR_MAX_NOUS: ${{ github.event.inputs.max_nous || '24' }}
           RADAR_TIMEZONE: 'Europe/Madrid'
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
           RADAR_OUT_DIR: ${{ github.workspace }}/scripts-privats/radar_out
@@ -181,6 +186,9 @@ jobs:
             exit 1
           fi
 
+      - name: Instal·lar wrangler (un sol cop)
+        run: npm install -g wrangler@4 --silent
+
       - name: Pujar a R2 i esborrar frames fora de finestra
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -188,99 +196,87 @@ jobs:
           R2_BUCKET: ${{ env.R2_BUCKET }}
           R2_PREFIX_DBZ: ${{ env.R2_PREFIX_DBZ }}
           R2_PREFIX_VRADH: ${{ env.R2_PREFIX_VRADH }}
+          WRANGLER_SEND_METRICS: "false"
         run: |
           set -euo pipefail
 
-          upload_one() {
-            local f="$1"; local ct="$2"; local dest="$3"
-            local attempt=1
-            while [ "$attempt" -le 3 ]; do
-              echo "Pujant ($attempt/3): $dest"
-              if npx wrangler r2 object put "$dest" --file="$f" --remote --content-type="$ct" < /dev/null; then
-                return 0
-              fi
-              attempt=$((attempt + 1))
-              sleep 3
-            done
-            return 1
-          }
+          PARALLEL=6
+          UP="$RUNNER_TEMP/r2_put.sh"
+          DEL="$RUNNER_TEMP/r2_del.sh"
+          LIST="$RUNNER_TEMP/put_list.bin"
 
-          delete_one() {
-            local dest="$1"
-            local attempt=1
-            while [ "$attempt" -le 3 ]; do
-              echo "Esborrant ($attempt/3): $dest"
-              if npx wrangler r2 object delete "$dest" --remote < /dev/null; then
-                return 0
-              fi
-              attempt=$((attempt + 1))
-              sleep 3
-            done
-            echo "AVIS: no s'ha pogut esborrar $dest (ho netejarà la regla de cicle de vida)"
-            return 0
-          }
-
-          fail_count=0
-
-          # 1) PNGs nous (només hi ha els que s'han generat en aquesta execució)
-          upload_pngs() {
-            local src_dir="$1"
-            local r2_prefix="$2"
-            if [ ! -d "$src_dir" ]; then
-              echo "AVIS: no existeix $src_dir, salto"
-              return 0
+          # --- Scripts auxiliars (es criden en paral·lel amb xargs) ---
+          cat > "$UP" <<'EOS'
+          #!/usr/bin/env bash
+          f="$1"; ct="$2"; dest="$3"
+          out=""
+          for attempt in 1 2 3; do
+            if out=$(wrangler r2 object put "$dest" --file="$f" --remote --content-type="$ct" 2>&1 < /dev/null); then
+              echo "OK    $dest"
+              exit 0
             fi
-            local f sub_name base
+            sleep $((attempt * 3))
+          done
+          echo "FALLA $dest"
+          echo "$out" | tail -n 3
+          exit 1
+          EOS
+
+          cat > "$DEL" <<'EOS'
+          #!/usr/bin/env bash
+          for attempt in 1 2 3; do
+            if wrangler r2 object delete "$1" --remote > /dev/null 2>&1 < /dev/null; then
+              echo "DEL   $1"
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo "AVIS: no s'ha pogut esborrar $1 (ho netejarà la regla de cicle de vida)"
+          exit 0
+          EOS
+
+          chmod +x "$UP" "$DEL"
+
+          # --- 1) PNGs nous (només hi ha els generats en aquesta execució) ---
+          : > "$LIST"
+          add_pngs() {
+            local src_dir="$1" r2_prefix="$2" f sub_name base
+            [ -d "$src_dir" ] || { echo "AVIS: no existeix $src_dir, salto"; return 0; }
             for f in "$src_dir"/*/*.png; do
               [ -f "$f" ] || continue
               sub_name=$(basename "$(dirname "$f")")
               base=$(basename "$f")
-              upload_one "$f" "image/png" "${R2_BUCKET}/${r2_prefix}${sub_name}/${base}" || fail_count=$((fail_count + 1))
+              printf '%s\0%s\0%s\0' "$f" "image/png" "${R2_BUCKET}/${r2_prefix}${sub_name}/${base}" >> "$LIST"
             done
           }
 
-          # 2) Manifest (només si TOTS els PNGs han pujat bé)
-          upload_manifest() {
-            local src_dir="$1"
-            local r2_prefix="$2"
-            if [ -f "$src_dir/manifest.json" ]; then
-              upload_one "$src_dir/manifest.json" "application/json" "${R2_BUCKET}/${r2_prefix}manifest.json" || fail_count=$((fail_count + 1))
-            fi
-          }
+          add_pngs "dades_png/dades_radar_dbz" "$R2_PREFIX_DBZ"
+          add_pngs "dades_png/dades_radar_vradh" "$R2_PREFIX_VRADH"
 
-          # 3) Esborrar de R2 els frames que han sortit de la finestra de 24 h
+          n_nuls=$(tr -cd '\0' < "$LIST" | wc -c)
+          echo "PNGs a pujar: $((n_nuls / 3)) (en paral·lel: $PARALLEL)"
+
+          if ! xargs -0 -r -n 3 -P "$PARALLEL" "$UP" < "$LIST"; then
+            echo "::error::Hi ha PNGs que no s'han pogut pujar; no es publica el manifest"
+            exit 1
+          fi
+
+          # --- 2) Manifests (només si TOTS els PNGs han pujat bé) ---
+          "$UP" "dades_png/dades_radar_dbz/manifest.json" "application/json" "${R2_BUCKET}/${R2_PREFIX_DBZ}manifest.json"
+          if [ -s "dades_png/dades_radar_vradh/manifest.json" ]; then
+            "$UP" "dades_png/dades_radar_vradh/manifest.json" "application/json" "${R2_BUCKET}/${R2_PREFIX_VRADH}manifest.json"
+          fi
+
+          # --- 3) Esborrar de R2 els frames que han sortit de la finestra de 24 h ---
           delete_old() {
-            local src_dir="$1"
-            local r2_prefix="$2"
+            local src_dir="$1" r2_prefix="$2"
             local list="$src_dir/borrar.txt"
             [ -f "$list" ] || return 0
-            local rel n=0
-            while IFS= read -r -u 3 rel || [ -n "$rel" ]; do
-              rel="${rel%$'\r'}"
-              if [[ ! "$rel" =~ ^[a-z]+/[0-9a-f]{16}\.png$ ]]; then
-                continue
-              fi
-              delete_one "${R2_BUCKET}/${r2_prefix}${rel}"
-              n=$((n + 1))
-            done 3< "$list"
-            echo "Esborrats de R2 (${r2_prefix}): $n"
+            echo "Esborrant fora de finestra (${r2_prefix}): $(wc -l < "$list") fitxers"
+            { tr -d '\r' < "$list" | grep -E '^[a-z]+/[0-9a-f]{16}\.png$' || true; } \
+              | sed "s|^|${R2_BUCKET}/${r2_prefix}|" \
+              | xargs -r -n 1 -P "$PARALLEL" "$DEL"
           }
-
-          upload_pngs "dades_png/dades_radar_dbz" "$R2_PREFIX_DBZ"
-          upload_pngs "dades_png/dades_radar_vradh" "$R2_PREFIX_VRADH"
-
-          if [ "$fail_count" -gt 0 ]; then
-            echo "::error::$fail_count PNGs no s'han pogut pujar; no es publica el manifest"
-            exit 1
-          fi
-
-          upload_manifest "dades_png/dades_radar_dbz" "$R2_PREFIX_DBZ"
-          upload_manifest "dades_png/dades_radar_vradh" "$R2_PREFIX_VRADH"
-
-          if [ "$fail_count" -gt 0 ]; then
-            echo "::error::no s'ha pogut pujar algun manifest"
-            exit 1
-          fi
 
           delete_old "dades_png/dades_radar_dbz" "$R2_PREFIX_DBZ"
           delete_old "dades_png/dades_radar_vradh" "$R2_PREFIX_VRADH"
