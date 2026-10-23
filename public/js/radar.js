@@ -86,9 +86,9 @@ const CITY_TEXT_SIZE = [
 // ===========================================================================
 // RUTES LOCALS
 // ===========================================================================
-const LOCAL_BASE = '';
-const RADAR_BASE_DBZ = `${LOCAL_BASE}/dades_radar_dbz`;
-const RADAR_BASE_VEL = `${LOCAL_BASE}/dades_radar_velocitat`;
+const RADAR_DATA_BASE = 'https://radar-data.tempestes.cat';
+const RADAR_BASE_DBZ = `${RADAR_DATA_BASE}/dades_radar_dbz`;
+const RADAR_BASE_VEL = `${RADAR_DATA_BASE}/dades_radar_vradh`;
 
 const RADAR = {
   dbz: {
@@ -400,7 +400,7 @@ async function doSync(key, initial) {
   state.manifests[key] = manifest;
 
   if (!state.activeRadarId) {
-    const esgld = manifest.radars.find((r) => r.id && r.id.endsWith('-esgld'));
+    const esgld = manifest.radars.find((r) => r.id === 'esgld' || (r.id && r.id.endsWith('-esgld')));
     state.activeRadarId = esgld ? esgld.id : (manifest.radars[0] && manifest.radars[0].id) || null;
   }
 
