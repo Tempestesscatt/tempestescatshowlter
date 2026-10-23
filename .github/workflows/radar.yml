@@ -2,7 +2,6 @@ name: Descarga Radar PNG
 
 on:
   workflow_dispatch: {}
-  # Si vols execució periòdica, descomenta:
   # schedule:
   #   - cron: '*/5 * * * *'
 
@@ -18,14 +17,10 @@ env:
   R2_PREFIX_DBZ: dades_radar_dbz/
   R2_PREFIX_VRADH: dades_radar_vradh/
   DADES_PNG_DIR: scripts-privats/radar_out
-  DADES_VRADH_DIR: scripts-privats/radar_png_final
   R2_PUBLIC_BASE: https://radar-data.tempestes.cat
 
 jobs:
 
-  # ============================================================
-  # JOB 1: Radar dBZ (reflectivitat)
-  # ============================================================
   radar-png:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -71,38 +66,49 @@ jobs:
         env:
           METEOFRANCE_API_KEY: ${{ secrets.METEOFRANCE_API_KEY }}
           RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
+          METEOGATE_API_KEY: ${{ secrets.METEOGATE_API_KEY }}
           RADAR_FINESTRA_HORES: '26'
           RADAR_TIMEZONE: 'Europe/Madrid'
           R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
-          R2_PREFIX: ${{ env.R2_PREFIX_DBZ }}
           PYTHONUNBUFFERED: "1"
           PYTHONFAULTHANDLER: "1"
         run: python -X faulthandler scripts-privats/radar-real.py
         continue-on-error: true
 
-      - name: Verificar manifest i PNGs dBZ
+      - name: Verificar manifests i PNGs
         id: verify
         run: |
           set -euo pipefail
-          dir="$DADES_PNG_DIR/dades_radar_dbz"
+          ok=true
+          n_total=0
 
-          if [ ! -d "$dir" ]; then
-            echo "AVIS: no existeix $dir"
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
+          declare -A SUBS=(
+            ["dbz"]="dades_radar_dbz"
+            ["vradh"]="dades_radar_vradh"
+          )
 
-          if [ ! -s "$dir/manifest.json" ]; then
-            echo "ERROR: falta $dir/manifest.json"
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 1
-          fi
+          for sub in "${!SUBS[@]}"; do
+            dir="$DADES_PNG_DIR/${SUBS[$sub]}"
+            echo "--- Comprovant $sub ($dir) ---"
+            if [ ! -d "$dir" ]; then
+              echo "AVIS: no existeix $dir"
+              ok=false
+              continue
+            fi
+            if [ ! -s "$dir/manifest.json" ]; then
+              echo "ERROR: falta $dir/manifest.json"
+              ok=false
+              continue
+            fi
+            n=$(find "$dir" -maxdepth 1 -type d -name "es*" | wc -l)
+            n_png=$(find "$dir" -maxdepth 2 -name "*.png" | wc -l)
+            echo "$sub: $n_png PNGs en $n carpetes de radar"
+            n_total=$((n_total + n_png))
+          done
 
-          n=$(find "$dir" -maxdepth 1 -name "*.png" | wc -l)
-          n=$((n))
-          echo "dBZ: $n PNGs"
+          echo "Total PNGs: $n_total"
 
-          if [ "$n" -eq 0 ]; then
+          if [ "$ok" != "true" ] || [ "$n_total" -eq 0 ]; then
             echo "files_ok=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -114,108 +120,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dades-radar-png
-          path: ${{ env.DADES_PNG_DIR }}/dades_radar_dbz/
+          path: ${{ env.DADES_PNG_DIR }}/
           retention-days: 1
           if-no-files-found: error
 
-
-  # ============================================================
-  # JOB 2: Doppler VRADH (velocitat radial)
-  # ============================================================
-  radar-vradh:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    outputs:
-      files_ok: ${{ steps.verify.outputs.files_ok }}
-
-    steps:
-
-      - name: Clonar repositori (sense submòduls)
-        uses: actions/checkout@v4
-        with:
-          submodules: false
-
-      - name: Configurar clau SSH per al submòdul privat
-        env:
-          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
-          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
-
-      - name: Inicialitzar submòdul privat
-        run: |
-          git submodule sync --recursive
-          git submodule update --init --recursive --depth=1
-
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instal·lar dependències
-        run: |
-          set -euo pipefail
-          pip install --quiet requests h5py numpy pillow pyproj matplotlib cartopy
-          pip check || true
-
-      - name: Executar radar_aemet_plot_vradh_transparent.py
-        env:
-          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
-          R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
-          PYTHONUNBUFFERED: "1"
-          PYTHONFAULTHANDLER: "1"
-        run: python -X faulthandler scripts-privats/radar_aemet_plot_vradh_transparent.py
-        continue-on-error: true
-
-      - name: Verificar manifest i PNGs VRADH
-        id: verify
-        run: |
-          set -euo pipefail
-          dir="$DADES_VRADH_DIR"
-
-          if [ ! -d "$dir" ]; then
-            echo "AVIS: no existeix $dir"
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ ! -s "$dir/manifest.json" ]; then
-            echo "AVIS: no s'ha generat manifest.json a $dir"
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          n=$(find "$dir" -maxdepth 1 -name "*.png" | wc -l)
-          n=$((n))
-          echo "VRADH: $n PNGs"
-
-          if [ "$n" -eq 0 ]; then
-            echo "files_ok=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "files_ok=true" >> "$GITHUB_OUTPUT"
-
-      - name: Pujar artifact radar-vradh
-        if: steps.verify.outputs.files_ok == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dades-radar-vradh
-          path: ${{ env.DADES_VRADH_DIR }}/
-          retention-days: 1
-          if-no-files-found: warn
-
-
-  # ============================================================
-  # JOB 3: Publicar a R2
-  # ============================================================
   publicar:
-    needs: [radar-png, radar-vradh]
+    needs: [radar-png]
     if: |
       always() &&
       needs.radar-png.outputs.files_ok == 'true'
@@ -231,43 +141,30 @@ jobs:
           name: dades-radar-png
           path: dades_png/
 
-      - name: Descarregar artifact radar-vradh (si existeix)
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: dades-radar-vradh
-          path: dades_vradh/
-
       - name: Verificar què tenim
         id: check
         run: |
           set -euo pipefail
 
-          echo "=== radar-png (dBZ) ==="
-          ls -la dades_png/ || echo "no existeix"
+          echo "=== dBZ ==="
+          ls -la dades_png/dades_radar_dbz/ || echo "no existeix"
           ok_dbz=false
-          if [ -d "dades_png" ] && [ -s "dades_png/manifest.json" ]; then
-            n=$(find "dades_png" -maxdepth 1 -name "*.png" | wc -l)
-            echo "  dBZ: $n PNGs"
+          if [ -s "dades_png/dades_radar_dbz/manifest.json" ]; then
             ok_dbz=true
           fi
 
-          echo "=== radar-vradh ==="
-          ls -la dades_vradh/ || echo "no existeix"
+          echo "=== VRADH ==="
+          ls -la dades_png/dades_radar_vradh/ || echo "no existeix"
           ok_vradh=false
-          if [ -d "dades_vradh" ] && [ -s "dades_vradh/manifest.json" ]; then
-            n=$(find "dades_vradh" -maxdepth 1 -name "*.png" | wc -l)
-            echo "  VRADH: $n PNGs"
-            if [ "$n" -gt 0 ]; then
-              ok_vradh=true
-            fi
+          if [ -s "dades_png/dades_radar_vradh/manifest.json" ]; then
+            ok_vradh=true
           fi
 
           echo "dbz_ok=$ok_dbz" >> "$GITHUB_OUTPUT"
           echo "vradh_ok=$ok_vradh" >> "$GITHUB_OUTPUT"
 
           if [ "$ok_dbz" != "true" ]; then
-            echo "::error::No hi ha dades de radar dBZ per publicar"
+            echo "::error::No hi ha dades dBZ per publicar"
             exit 1
           fi
 
@@ -286,8 +183,7 @@ jobs:
             local attempt=1
             while [ "$attempt" -le 3 ]; do
               echo "Pujant ($attempt/3): $dest"
-              if npx wrangler r2 object put "$dest" \
-                   --file="$f" --remote --content-type="$ct"; then
+              if npx wrangler r2 object put "$dest" --file="$f" --remote --content-type="$ct"; then
                 return 0
               fi
               attempt=$((attempt + 1))
@@ -300,73 +196,47 @@ jobs:
             local dest="$1"
             local attempt=1
             while [ "$attempt" -le 3 ]; do
-              echo "Esborrant ($attempt/3): $dest"
               if npx wrangler r2 object delete "$dest" --remote; then
                 return 0
               fi
               attempt=$((attempt + 1))
               sleep 3
             done
-            echo "AVIS: no s'ha pogut esborrar $dest"
             return 0
           }
 
           fail_count=0
 
-          upload_dir() {
+          upload_dir_recursive() {
             local src_dir="$1"
             local r2_prefix="$2"
-
             if [ ! -d "$src_dir" ]; then
               echo "AVIS: no existeix $src_dir, salto"
               return
             fi
-
             cd "$src_dir"
-
-            # Esborrar els PNG que ja no són al manifest
-            if [ -f .esborrar.txt ]; then
-              echo "→ esborrant $(wc -l < .esborrar.txt) fitxers antics de $r2_prefix"
-              while IFS= read -r nom; do
-                [ -z "$nom" ] && continue
-                delete_one "$R2_BUCKET/${r2_prefix}${nom}"
-              done < .esborrar.txt
-              rm -f .esborrar.txt
-            fi
-
-            if [ -f .neteja ]; then
-              echo "→ esborrant prefix $r2_prefix"
-              npx wrangler r2 object delete --recursive \
-                "$R2_BUCKET/$r2_prefix" --remote || true
-              rm -f .neteja
-            fi
-
-            for f in *.png; do
-              [ -f "$f" ] || continue
-              upload_one "$f" "image/png" "${R2_BUCKET}/${r2_prefix}$f" \
-                || fail_count=$((fail_count + 1))
+            # Subdirectoris per radar (esgld, espdg, ...)
+            for sub in */; do
+              [ -d "$sub" ] || continue
+              sub_name="${sub%/}"
+              echo "→ radar $sub_name"
+              for f in "$sub_name"/*.png; do
+                [ -f "$f" ] || continue
+                base=$(basename "$f")
+                upload_one "$f" "image/png" "${R2_BUCKET}/${r2_prefix}${sub_name}/${base}" || fail_count=$((fail_count + 1))
+              done
             done
-
             if [ -f manifest.json ]; then
-              upload_one "manifest.json" "application/json" \
-                "${R2_BUCKET}/${r2_prefix}manifest.json" \
-                || fail_count=$((fail_count + 1))
+              upload_one "manifest.json" "application/json" "${R2_BUCKET}/${r2_prefix}manifest.json" || fail_count=$((fail_count + 1))
             fi
-
             cd - > /dev/null
           }
 
-          upload_dir "dades_png" "$R2_PREFIX_DBZ"
-
-          if [ -d "dades_vradh" ] && [ -s "dades_vradh/manifest.json" ]; then
-            upload_dir "dades_vradh" "$R2_PREFIX_VRADH"
-          else
-            echo "AVIS: no hi ha dades VRADH per publicar (es salta)"
-          fi
+          upload_dir_recursive "dades_png/dades_radar_dbz" "$R2_PREFIX_DBZ"
+          upload_dir_recursive "dades_png/dades_radar_vradh" "$R2_PREFIX_VRADH"
 
           if [ "$fail_count" -gt 0 ]; then
             echo "::error::$fail_count fitxers no s'han pogut pujar"
             exit 1
           fi
-
           echo "OK: dades pujades a R2."
