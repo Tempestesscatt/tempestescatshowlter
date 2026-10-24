@@ -1599,3 +1599,32 @@ button.active {
   animation: litres-spin .7s linear infinite;
 }
 @keyframes litres-spin { to { transform: rotate(360deg); } }
+
+
+/* Llegenda dins del flyout de Litres */
+.flyout-litres .litres-legend {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.flyout-litres .litres-legend-bar {
+  height: 6px;
+  border-radius: 3px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+.flyout-litres .litres-legend-labels {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  color: rgba(255,255,255,.4);
+  font-variant-numeric: tabular-nums;
+}
+.flyout-litres .litres-legend-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.flyout-litres .litres-legend-label:first-child { transform: translateX(0); }
+.flyout-litres .litres-legend-label:last-child { transform: translateX(-100%); }

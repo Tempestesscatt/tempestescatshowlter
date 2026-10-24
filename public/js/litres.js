@@ -1,6 +1,7 @@
 // public/js/litres.js
 
-const MANIFEST_URL = '/dades_litres/manifest.json';
+const R2_BASE = 'https://radar-data.tempestes.cat/dades_litres';
+const MANIFEST_URL = `${R2_BASE}/manifest.json`;
 const SRC_ID = 'litres-src';
 const LAYER_ID = 'litres-layer';
 
@@ -37,7 +38,7 @@ export function initLitres({ map, onActivate, onDeactivate }) {
 
   // ---------------------------------------------------------------- flyout
   flyoutEl = document.createElement('div');
-  flyoutEl.className = 'flyout flyout-litres'; // <-- Classe blindada
+  flyoutEl.className = 'flyout flyout-litres';
   flyoutEl.id = 'flyout-litresSelect';
   flyoutEl.innerHTML = `
     <div class="flyout-title litres-head">
@@ -82,6 +83,12 @@ export function initLitres({ map, onActivate, onDeactivate }) {
       </div>
 
       <div class="litres-axis" id="litresAxis"></div>
+      
+      <!-- NOU: Llegenda de colors -->
+      <div class="litres-legend" id="litresLegend">
+        <div class="litres-legend-bar" id="litresLegendBar"></div>
+        <div class="litres-legend-labels" id="litresLegendLabels"></div>
+      </div>
     </div>
 
     <div class="litres-loading" id="litresLoading" hidden>
@@ -99,6 +106,8 @@ export function initLitres({ map, onActivate, onDeactivate }) {
   const panelEl = $('litresPanel');
   const badgeEl = $('litresBadge');
   const loadingEl = $('litresLoading');
+  const legendBarEl = $('litresLegendBar');
+  const legendLabelsEl = $('litresLegendLabels');
 
   // ---------------------------------------------------------------- events
   flyoutEl.querySelectorAll('.opt[data-litres]').forEach((opt) => {
@@ -177,7 +186,10 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     try {
       const r = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: 'no-store' });
       return r.ok ? await r.json() : null;
-    } catch (e) { return null; }
+    } catch (e) {
+      console.warn('[litres] manifest', e);
+      return null;
+    }
   }
 
   function setLoading(on) {
@@ -194,7 +206,7 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     manifest = await fetchManifest();
     if (!manifest || !manifest.products || !manifest.products[key]) {
       setLoading(false);
-      console.warn(`[litres] Sense dades per a ${key}`);
+      console.warn(`[litres] Sense dades per a ${key}`, manifest && Object.keys(manifest.products || {}));
       return false;
     }
     const prod = manifest.products[key];
@@ -211,6 +223,9 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     badgeEl.hidden = false;
     badgeEl.textContent = key;
     buildAxis();
+    
+    // NOU: Generar la llegenda de colors a partir del manifest
+    buildLegend(prod.levels, prod.colors);
 
     const ok = await goToFrame(frames.length - 1, true);
     setLoading(false);
@@ -242,6 +257,39 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     });
   }
 
+  function buildLegend(levels, colors) {
+    // El manifest ens dona `levels` (ex: [0, 0.1, 0.5, ...]) i `colors` (ex: ["#000000", "#00ffff", ...])
+    if (!levels || !colors || !levels.length || !colors.length) return;
+
+    // Construïm el gradient CSS
+    const stops = [];
+    const min = levels[0];
+    const max = levels[levels.length - 1];
+    const range = max - min || 1;
+
+    levels.forEach((val, i) => {
+      const pct = ((val - min) / range) * 100;
+      stops.push(`${colors[i]} ${pct}%`);
+    });
+    legendBarEl.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
+
+    // Etiquetes: mostrem els valors clau (els que no siguin 0, per netedat)
+    // Mostrem un màxim de ~6 etiquetes per no omplir-ho massa
+    legendLabelsEl.innerHTML = '';
+    const step = Math.ceil(levels.length / 6);
+    levels.forEach((val, i) => {
+      if (i === 0 || i === levels.length - 1 || i % step === 0) {
+        const span = document.createElement('span');
+        span.className = 'litres-legend-label';
+        // Posició relativa sobre la barra
+        const pct = ((val - min) / range) * 100;
+        span.style.left = `${pct}%`;
+        span.textContent = val >= 100 ? Math.round(val) : val; // enters si és gran
+        legendLabelsEl.appendChild(span);
+      }
+    });
+  }
+
   function paintPosition(i) {
     if (!frames.length) return;
     const pct = (i / Math.max(1, frames.length - 1)) * 100;
@@ -263,7 +311,7 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     paintPosition(idx);
 
     const fr = frames[idx];
-    const url = `/dades_litres/${fr.f}.png`;
+    const url = `${R2_BASE}/${fr.f}.png`;
 
     if (url === activeFrameUrl && map.getLayer(LAYER_ID)) {
       map.setLayoutProperty(LAYER_ID, 'visibility', 'visible');
@@ -273,8 +321,8 @@ export function initLitres({ map, onActivate, onDeactivate }) {
 
     try {
       const head = await fetch(url, { method: 'HEAD', cache: 'no-store' });
-      if (!head.ok) return false;
-    } catch (e) { return false; }
+      if (!head.ok) { console.warn(`[litres] ${url} (${head.status})`); return false; }
+    } catch (e) { console.warn('[litres] HEAD', e); return false; }
 
     activeFrameUrl = url;
 
@@ -300,8 +348,8 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     clearTimeout(preloadTimer);
     preloadTimer = setTimeout(() => {
       const a = frames[idx - 1]; const b = frames[idx + 1];
-      if (a) new Image().src = `/dades_litres/${a.f}.png`;
-      if (b) new Image().src = `/dades_litres/${b.f}.png`;
+      if (a) new Image().src = `${R2_BASE}/${a.f}.png`;
+      if (b) new Image().src = `${R2_BASE}/${b.f}.png`;
     }, 200);
   }
 
@@ -339,7 +387,7 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     if (chip) chip.textContent = productKey === 'RATE' ? 'mm/h' : 'mm';
     const bar = document.getElementById('bottomBar');
     if (bar) bar.style.display = 'none';
-    const legend = document.getElementById('legend');
+    const legend = document.getElementById('legend'); // llegenda gran del mapa principal
     if (legend) legend.classList.add('hidden');
   }
 
