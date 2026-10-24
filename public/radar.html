@@ -578,6 +578,10 @@ const valor = initValor({
   getLayerState: radar.getLayerState,
   getKey: () => activeKey,
   isRadarVisible: () => radarOn,
+  // NOU: Litres (les funcions es criden al moment del mousemove, així que litres ja estarà assignat)
+  getLitresProduct: () => (litres ? litres.getCurrentProduct() : null),
+  getLitresFrames: () => (litres ? litres.getFrames() : []),
+  getLitresFrameIndex: () => (litres ? litres.getFrameIndex() : -1),
 });
 $('chkValor').addEventListener('change', (e) => valor.setEnabled(e.target.checked));
 

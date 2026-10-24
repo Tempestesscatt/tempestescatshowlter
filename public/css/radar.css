@@ -1628,3 +1628,132 @@ button.active {
 }
 .flyout-litres .litres-legend-label:first-child { transform: translateX(0); }
 .flyout-litres .litres-legend-label:last-child { transform: translateX(-100%); }
+
+
+
+/* Llegenda dins del flyout de Litres */
+.flyout-litres .litres-legend {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,.07);
+  /* espai extra perquè les etiquetes no quedin tallades */
+  padding-bottom: 4px;
+}
+
+.flyout-litres .litres-legend-bar {
+  height: 10px;
+  border-radius: 4px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* Contenidor de les etiquetes: ample complet, alçada suficient */
+.flyout-litres .litres-legend-labels {
+  position: relative;
+  height: 20px;
+  width: 100%;
+  margin: 0;
+  font-size: 11px;
+  color: rgba(255,255,255,.6);
+  font-variant-numeric: tabular-nums;
+  overflow: visible;
+}
+
+/* Cada etiqueta: no es col·lapsa, té fons propi */
+.flyout-litres .litres-legend-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 1px 3px;
+  line-height: 1;
+  background: rgba(15, 20, 28, 0.9);
+  border-radius: 3px;
+  pointer-events: none;
+  font-size: 10px;
+  color: rgba(255,255,255,.75);
+}
+
+/* Primera: alineada a l'esquerra, sense sortir */
+.flyout-litres .litres-legend-label:first-child {
+  transform: translateX(0);
+  padding-left: 0;
+}
+/* Última: alineada a la dreta, sense sortir */
+.flyout-litres .litres-legend-label:last-child {
+  transform: translateX(-100%);
+  padding-right: 0;
+}
+
+.flyout-litres {
+  width: 320px !important;
+  padding: 0 !important;
+}
+
+
+/* ============================================================
+   Llegenda VERTICAL de Litres (a la dreta, ocupa tota l'alçada)
+   ============================================================ */
+
+/* Contenidor principal del flyout: dues columnes */
+.flyout-litres .litres-body {
+  display: flex;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.flyout-litres .litres-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.flyout-litres .litres-right {
+  flex: none;
+  width: 60px;
+  display: flex;
+  align-items: stretch;
+  padding-top: 12px;
+}
+.flyout-litres .litres-right[hidden] { display: none; }
+
+/* La llegenda vertical */
+.flyout-litres .litres-legend-v {
+  position: relative;
+  display: flex;
+  flex-direction: row-reverse;
+  gap: 6px;
+  width: 100%;
+  /* Alçada mínima perquè es vegi bé */
+  min-height: 160px;
+  height: 100%;
+}
+
+/* Barra de gradient */
+.flyout-litres .litres-legend-v-bar {
+  width: 14px;
+  border-radius: 4px;
+  flex: none;
+  height: 100%;
+  background: linear-gradient(to top, #333, #fff);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+}
+
+/* Etiquetes alineades a l'esquerra de la barra */
+.flyout-litres .litres-legend-v-labels {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  font-size: 10px;
+  color: rgba(255,255,255,.75);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.flyout-litres .litres-legend-v-label {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  white-space: nowrap;
+  line-height: 1;
+  padding: 0 2px;
+}

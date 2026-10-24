@@ -5,15 +5,20 @@ const MANIFEST_URL = `${R2_BASE}/manifest.json`;
 const SRC_ID = 'litres-src';
 const LAYER_ID = 'litres-layer';
 
+const POLL_INTERVAL_MS = 60_000;
+
 export function initLitres({ map, onActivate, onDeactivate }) {
   let currentProduct = null;
   let manifest = null;
+  let manifestUpdated = null;
   let frames = [];
   let frameIndex = -1;
   let activeFrameUrl = null;
   let flyoutEl = null;
   let sliderEl = null;
   let preloadTimer = null;
+  let pollTimer = null;
+  let followLatest = true;
 
   // ------------------------------------------------------------------ botó
   const rail = document.querySelector('.side-rail.left');
@@ -46,54 +51,62 @@ export function initLitres({ map, onActivate, onDeactivate }) {
       <span class="litres-badge" id="litresBadge" hidden></span>
     </div>
 
-    <div class="litres-options">
-      <button class="opt" data-litres="RATE">
-        <div class="opt-main">
-          <span class="opt-name">Tasa de lluvia</span>
-          <span class="opt-sub">mm/h · OPERA RATE</span>
+    <div class="litres-body">
+      <div class="litres-left">
+        <div class="litres-options">
+          <button class="opt" data-litres="RATE">
+            <div class="opt-main">
+              <span class="opt-name">Intensitat de la precipitació</span>
+              <span class="opt-sub">mm/h · OPERA RATE</span>
+            </div>
+            <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+          <button class="opt" data-litres="ACRR">
+            <div class="opt-main">
+              <span class="opt-name">Acumulat 1h</span>
+              <span class="opt-sub">mm · OPERA ACRR</span>
+            </div>
+            <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
         </div>
-        <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-      <button class="opt" data-litres="ACRR">
-        <div class="opt-main">
-          <span class="opt-name">Acumulado 1h</span>
-          <span class="opt-sub">mm · OPERA ACRR</span>
-        </div>
-        <svg class="check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-    </div>
 
-    <div class="litres-panel" id="litresPanel" hidden>
-      <div class="litres-meta">
-        <span class="litres-time" id="litresTime">—</span>
-        <span class="litres-count" id="litresCount"></span>
+        <div class="litres-panel" id="litresPanel" hidden>
+          <div class="litres-meta">
+            <span class="litres-time" id="litresTime">—</span>
+            <span class="litres-count" id="litresCount"></span>
+          </div>
+
+          <div class="litres-slider-row">
+            <button class="litres-nav" id="litresPrev" type="button" aria-label="Anterior">
+              <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div class="litres-track">
+              <div class="litres-progress" id="litresProgress"></div>
+              <input type="range" id="litresSlider" min="0" max="0" value="0" step="1" />
+            </div>
+            <button class="litres-nav" id="litresNext" type="button" aria-label="Següent">
+              <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+
+          <div class="litres-axis" id="litresAxis"></div>
+        </div>
       </div>
 
-      <div class="litres-slider-row">
-        <button class="litres-nav" id="litresPrev" type="button" aria-label="Anterior">
-          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="litres-track">
-          <div class="litres-progress" id="litresProgress"></div>
-          <input type="range" id="litresSlider" min="0" max="0" value="0" step="1" />
+      <!-- NOU: Llegenda vertical a la dreta -->
+      <div class="litres-right" id="litresRight" hidden>
+        <div class="litres-legend-v" id="litresLegendV">
+          <div class="litres-legend-v-labels" id="litresLegendVLabels"></div>
+          <div class="litres-legend-v-bar" id="litresLegendVBar"></div>
         </div>
-        <button class="litres-nav" id="litresNext" type="button" aria-label="Següent">
-          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-      </div>
-
-      <div class="litres-axis" id="litresAxis"></div>
-      
-      <!-- NOU: Llegenda de colors -->
-      <div class="litres-legend" id="litresLegend">
-        <div class="litres-legend-bar" id="litresLegendBar"></div>
-        <div class="litres-legend-labels" id="litresLegendLabels"></div>
       </div>
     </div>
 
     <div class="litres-loading" id="litresLoading" hidden>
       <span class="litres-spin"></span> Carregant…
     </div>
+
+    <div class="litres-status" id="litresStatus" hidden></div>
   `;
   document.body.appendChild(flyoutEl);
 
@@ -106,8 +119,10 @@ export function initLitres({ map, onActivate, onDeactivate }) {
   const panelEl = $('litresPanel');
   const badgeEl = $('litresBadge');
   const loadingEl = $('litresLoading');
-  const legendBarEl = $('litresLegendBar');
-  const legendLabelsEl = $('litresLegendLabels');
+  const statusEl = $('litresStatus');
+  const rightEl = $('litresRight');
+  const legendVBarEl = $('litresLegendVBar');
+  const legendVLabelsEl = $('litresLegendVLabels');
 
   // ---------------------------------------------------------------- events
   flyoutEl.querySelectorAll('.opt[data-litres]').forEach((opt) => {
@@ -121,18 +136,25 @@ export function initLitres({ map, onActivate, onDeactivate }) {
   });
 
   sliderEl.addEventListener('input', () => {
+    followLatest = false;
     const i = parseInt(sliderEl.value, 10) || 0;
     paintPosition(i);
     debouncedGo(i);
   });
   sliderEl.addEventListener('change', () => goToFrame(parseInt(sliderEl.value, 10) || 0));
 
-  $('litresPrev').addEventListener('click', () => goToFrame(Math.max(0, frameIndex - 1)));
-  $('litresNext').addEventListener('click', () => goToFrame(Math.min(frames.length - 1, frameIndex + 1)));
+  $('litresPrev').addEventListener('click', () => {
+    followLatest = false;
+    goToFrame(Math.max(0, frameIndex - 1));
+  });
+  $('litresNext').addEventListener('click', () => {
+    goToFrame(Math.min(frames.length - 1, frameIndex + 1));
+    if (frameIndex === frames.length - 1) followLatest = true;
+  });
 
   flyoutEl.addEventListener('keydown', (e) => {
     if (!flyoutEl.classList.contains('open') || !frames.length) return;
-    if (e.key === 'ArrowLeft')  { e.preventDefault(); goToFrame(Math.max(0, frameIndex - 1)); }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); followLatest = false; goToFrame(Math.max(0, frameIndex - 1)); }
     if (e.key === 'ArrowRight') { e.preventDefault(); goToFrame(Math.min(frames.length - 1, frameIndex + 1)); }
   });
 
@@ -151,12 +173,14 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     btn.classList.add('active');
     flyoutEl.tabIndex = -1;
     flyoutEl.focus({ preventScroll: true });
+    if (currentProduct) startPolling();
   }
 
   function closeFlyout() {
     flyoutEl.classList.remove('open');
     const btn = document.getElementById('litresBtn');
     if (btn) btn.classList.remove('active');
+    stopPolling();
   }
 
   function closeAllOtherFlyouts() {
@@ -197,22 +221,39 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     panelEl.classList.toggle('is-loading', on);
   }
 
+  function setStatus(msg, isError = false) {
+    if (!msg) {
+      statusEl.hidden = true;
+      statusEl.textContent = '';
+      return;
+    }
+    statusEl.hidden = false;
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? '#ff6b6b' : '';
+  }
+
   async function loadProduct(productKey) {
     if (!map) return false;
     const key = String(productKey || '').toUpperCase();
     if (key !== 'RATE' && key !== 'ACRR') return false;
 
     setLoading(true);
+    setStatus('');
     manifest = await fetchManifest();
     if (!manifest || !manifest.products || !manifest.products[key]) {
       setLoading(false);
-      console.warn(`[litres] Sense dades per a ${key}`, manifest && Object.keys(manifest.products || {}));
+      setStatus(`Sense dades per a ${key}`, true);
       return false;
     }
     const prod = manifest.products[key];
-    if (!prod.frames || !prod.frames.length) { setLoading(false); return false; }
+    if (!prod.frames || !prod.frames.length) {
+      setLoading(false);
+      setStatus(`0 frames per a ${key}`, true);
+      return false;
+    }
 
     currentProduct = key;
+    manifestUpdated = manifest.updated || null;
     frames = prod.frames.slice();
 
     sliderEl.min = 0;
@@ -222,14 +263,15 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     panelEl.hidden = false;
     badgeEl.hidden = false;
     badgeEl.textContent = key;
+    rightEl.hidden = false; // Mostrem la llegenda vertical
     buildAxis();
-    
-    // NOU: Generar la llegenda de colors a partir del manifest
-    buildLegend(prod.levels, prod.colors);
+    buildLegendV(prod.levels, prod.colors, key);
 
+    followLatest = true;
     const ok = await goToFrame(frames.length - 1, true);
     setLoading(false);
     if (ok && onActivate) onActivate();
+    if (ok) startPolling();
     return ok;
   }
 
@@ -257,38 +299,59 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     });
   }
 
-  function buildLegend(levels, colors) {
-    // El manifest ens dona `levels` (ex: [0, 0.1, 0.5, ...]) i `colors` (ex: ["#000000", "#00ffff", ...])
-    if (!levels || !colors || !levels.length || !colors.length) return;
+function buildLegendV(levels, colors, productKey) {
+  if (!levels || !colors || !levels.length || !colors.length) return;
 
-    // Construïm el gradient CSS
-    const stops = [];
-    const min = levels[0];
-    const max = levels[levels.length - 1];
-    const range = max - min || 1;
+  // Límit per a la llegenda: 500 mm (ACRR) o 1000 mm/h (RATE)
+  const LIMIT_MAX = productKey === 'ACRR' ? 500 : 1000;
 
-    levels.forEach((val, i) => {
-      const pct = ((val - min) / range) * 100;
-      stops.push(`${colors[i]} ${pct}%`);
-    });
-    legendBarEl.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
-
-    // Etiquetes: mostrem els valors clau (els que no siguin 0, per netedat)
-    // Mostrem un màxim de ~6 etiquetes per no omplir-ho massa
-    legendLabelsEl.innerHTML = '';
-    const step = Math.ceil(levels.length / 6);
-    levels.forEach((val, i) => {
-      if (i === 0 || i === levels.length - 1 || i % step === 0) {
-        const span = document.createElement('span');
-        span.className = 'litres-legend-label';
-        // Posició relativa sobre la barra
-        const pct = ((val - min) / range) * 100;
-        span.style.left = `${pct}%`;
-        span.textContent = val >= 100 ? Math.round(val) : val; // enters si és gran
-        legendLabelsEl.appendChild(span);
+  // Filtrem els nivells fins al límit
+  const filtered = [];
+  for (let i = 0; i < levels.length; i++) {
+    if (levels[i] <= LIMIT_MAX) {
+      filtered.push({ val: levels[i], color: colors[i] });
+    } else {
+      if (filtered.length > 0) {
+        const prev = filtered[filtered.length - 1];
+        if (prev.val < LIMIT_MAX) {
+          filtered.push({ val: LIMIT_MAX, color: colors[i] });
+        }
       }
-    });
+      break;
+    }
   }
+
+  if (filtered.length < 2) return;
+
+  const min = filtered[0].val;
+  const max = filtered[filtered.length - 1].val;
+  const range = max - min || 1;
+
+  // Gradient vertical
+  const stops = filtered.map(({ val, color }) => {
+    const pct = ((val - min) / range) * 100;
+    return `${color} ${pct}%`;
+  });
+  legendVBarEl.style.background = `linear-gradient(to top, ${stops.join(', ')})`;
+
+  // Generem exactament 6 etiquetes (0, i 5 més fins al màxim)
+  legendVLabelsEl.innerHTML = '';
+  const numLabels = 6;
+  
+  for (let k = 0; k < numLabels; k++) {
+    // Calculem la posició en % (0% a baix, 100% a dalt)
+    const pct = (k / (numLabels - 1)) * 100;
+    // Calculem el valor corresponent
+    const val = min + (range * pct / 100);
+    
+    const span = document.createElement('span');
+    span.className = 'litres-legend-v-label';
+    span.style.bottom = `${pct}%`;
+    // Mostrem enters si és gran, decimals si és petit
+    span.textContent = val >= 100 ? Math.round(val) : (val >= 10 ? Math.round(val) : val.toFixed(1));
+    legendVLabelsEl.appendChild(span);
+  }
+}
 
   function paintPosition(i) {
     if (!frames.length) return;
@@ -353,6 +416,68 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     }, 200);
   }
 
+  // ---------------------------------------------------------------- polling
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(checkForUpdates, POLL_INTERVAL_MS);
+    checkForUpdates();
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  async function checkForUpdates() {
+    if (!currentProduct) return;
+    try {
+      const m = await fetchManifest();
+      if (!m || !m.products || !m.products[currentProduct]) return;
+
+      const newUpdated = m.updated || null;
+      const newFrames = m.products[currentProduct].frames || [];
+      if (!newFrames.length) return;
+
+      if (newUpdated === manifestUpdated && newFrames.length === frames.length) return;
+
+      const prevFrameTs = frames[frameIndex]?.t || null;
+
+      manifest = m;
+      manifestUpdated = newUpdated;
+      frames = newFrames.slice();
+
+      sliderEl.max = Math.max(0, frames.length - 1);
+      buildAxis();
+      buildLegendV(
+        m.products[currentProduct].levels,
+        m.products[currentProduct].colors,
+        currentProduct
+      );
+
+      if (followLatest) {
+        await goToFrame(frames.length - 1, true);
+      } else {
+        const newIdx = prevFrameTs ? frames.findIndex(f => f.t === prevFrameTs) : -1;
+        if (newIdx >= 0) {
+          paintPosition(newIdx);
+          const fr = frames[newIdx];
+          activeFrameUrl = `${R2_BASE}/${fr.f}.png`;
+        } else {
+          await goToFrame(frames.length - 1, true);
+          followLatest = true;
+        }
+      }
+
+      setStatus('Actualitzat', false);
+      setTimeout(() => setStatus(''), 2000);
+    } catch (e) {
+      console.warn('[litres] checkForUpdates', e);
+    }
+  }
+
+  // ---------------------------------------------------------------- utils
   function parseT(t) {
     if (!t || t.length < 13) return null;
     const d = new Date(`${t.slice(0,4)}-${t.slice(4,6)}-${t.slice(6,8)}T${t.slice(9,11)}:${t.slice(11,13)}:00Z`);
@@ -387,13 +512,16 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     if (chip) chip.textContent = productKey === 'RATE' ? 'mm/h' : 'mm';
     const bar = document.getElementById('bottomBar');
     if (bar) bar.style.display = 'none';
-    const legend = document.getElementById('legend'); // llegenda gran del mapa principal
+    const legend = document.getElementById('legend');
     if (legend) legend.classList.add('hidden');
   }
 
   function hide() {
+    stopPolling();
     if (map && map.getLayer(LAYER_ID)) map.setLayoutProperty(LAYER_ID, 'visibility', 'none');
     currentProduct = null;
+    manifest = null;
+    manifestUpdated = null;
     frames = [];
     frameIndex = -1;
     activeFrameUrl = null;
@@ -402,6 +530,8 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     panelEl.hidden = true;
     badgeEl.hidden = true;
     badgeEl.textContent = '';
+    rightEl.hidden = true; // Amaguem la llegenda vertical
+    setStatus('');
 
     const bar = document.getElementById('bottomBar');
     if (bar) bar.style.display = '';
@@ -418,5 +548,6 @@ export function initLitres({ map, onActivate, onDeactivate }) {
     getCurrentProduct: () => currentProduct,
     getFrameIndex: () => frameIndex,
     getFrames: () => frames.slice(),
+    checkForUpdates,
   };
 }
