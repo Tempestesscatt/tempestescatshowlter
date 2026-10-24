@@ -1,0 +1,252 @@
+name: Litres OPERA PNG
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_nous:
+        description: 'Frames nous per producte (12 normal; 60 per omplir la finestra)'
+        required: false
+        default: '12'
+  schedule:
+    - cron: '*/10 * * * *'   # cada 10 minuts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: litres-opera
+  cancel-in-progress: false
+
+env:
+  R2_BUCKET: tempestes-radar-data
+  R2_PREFIX_LITRES: dades_litres/
+  DADES_LITRES_DIR: scripts-privats/dades_litres
+  R2_PUBLIC_BASE: https://radar-data.tempestes.cat
+
+jobs:
+
+  # ============================================================
+  # 1) GENERAR PNGs
+  # ============================================================
+  litres-png:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      files_ok: ${{ steps.verify.outputs.files_ok }}
+
+    steps:
+      - name: Clonar repositori (sense submòduls)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Configurar clau SSH per al submòdul privat
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.SUBMODULE_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global core.sshCommand "ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+
+      - name: Inicialitzar submòdul privat
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --depth=1
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instal·lar dependències
+        run: |
+          set -euo pipefail
+          pip install --quiet requests h5py numpy pillow pyproj scipy
+          pip check || true
+
+      - name: Executar litres.py
+        env:
+          METEOGATE_API_KEY: ${{ secrets.METEOGATE_API_KEY }}
+          RADAR_SECRET_KEY: ${{ secrets.RADAR_SECRET_KEY }}
+          RADAR_MAX_NOUS: ${{ github.event.inputs.max_nous || '12' }}
+          RADAR_TIMEZONE: 'Europe/Madrid'
+          R2_PUBLIC_BASE: ${{ env.R2_PUBLIC_BASE }}
+          RADAR_OUT_DIR: ${{ github.workspace }}/scripts-privats/dades_litres
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: python -X faulthandler scripts-privats/litres.py
+        continue-on-error: true
+
+      - name: Verificar manifest i PNGs
+        id: verify
+        run: |
+          set -euo pipefail
+          ok=true
+          n_frames_total=0
+          n_png_total=0
+
+          dir="$DADES_LITRES_DIR"
+          echo "--- Comprovant litres ($dir) ---"
+
+          if [ ! -d "$dir" ]; then
+            echo "AVIS: no existeix $dir"
+            ok=false
+          elif [ ! -s "$dir/manifest.json" ]; then
+            echo "ERROR: falta $dir/manifest.json"
+            ok=false
+          else
+            n_png=$(find "$dir" -maxdepth 1 -name "*.png" | wc -l)
+            n_fr=$(python3 - "$dir/manifest.json" <<'PY'
+          import json, sys
+          m = json.load(open(sys.argv[1], encoding="utf-8"))
+          prods = m.get("products", {})
+          print(sum(len(p.get("frames", [])) for p in prods.values()))
+          PY
+          )
+            n_borrar=0
+            if [ -f "$dir/borrar.txt" ]; then
+              n_borrar=$(wc -l < "$dir/borrar.txt")
+            fi
+            echo "litres: $n_fr frames al manifest, $n_png PNGs nous, $n_borrar a esborrar de R2"
+            n_frames_total=$((n_frames_total + n_fr))
+            n_png_total=$((n_png_total + n_png))
+          fi
+
+          echo "Total frames al manifest: $n_frames_total | PNGs nous: $n_png_total"
+
+          if [ "$ok" != "true" ] || [ "$n_frames_total" -eq 0 ]; then
+            echo "files_ok=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "files_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Pujar artifact litres-png
+        if: steps.verify.outputs.files_ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dades-litres-png
+          path: ${{ env.DADES_LITRES_DIR }}/
+          retention-days: 1
+          if-no-files-found: error
+
+  # ============================================================
+  # 2) PUBLICAR A R2
+  # ============================================================
+  publicar-litres:
+    needs: [litres-png]
+    if: |
+      always() &&
+      needs.litres-png.outputs.files_ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Descarregar artifact litres-png
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: dades-litres-png
+          path: dades_png/
+
+      - name: Verificar què tenim
+        id: check
+        run: |
+          set -euo pipefail
+          ls -la dades_png/ || echo "no existeix"
+          if [ ! -s "dades_png/manifest.json" ]; then
+            echo "::error::No hi ha manifest de litres per publicar"
+            exit 1
+          fi
+
+      - name: Instal·lar wrangler
+        run: npm install -g wrangler@4 --silent
+
+      - name: Pujar a R2 i esborrar frames fora de finestra
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET: ${{ env.R2_BUCKET }}
+          R2_PREFIX_LITRES: ${{ env.R2_PREFIX_LITRES }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          set -euo pipefail
+
+          PARALLEL=6
+          UP="$RUNNER_TEMP/r2_put.sh"
+          DEL="$RUNNER_TEMP/r2_del.sh"
+          LIST="$RUNNER_TEMP/put_list.bin"
+
+          cat > "$UP" <<'EOS'
+          #!/usr/bin/env bash
+          f="$1"; ct="$2"; dest="$3"
+          out=""
+          for attempt in 1 2 3; do
+            if out=$(wrangler r2 object put "$dest" --file="$f" --remote --content-type="$ct" 2>&1 < /dev/null); then
+              echo "OK    $dest"
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo "FALLA $dest"
+          echo "$out" | tail -n 3
+          exit 1
+          EOS
+
+          cat > "$DEL" <<'EOS'
+          #!/usr/bin/env bash
+          for attempt in 1 2 3; do
+            if wrangler r2 object delete "$1" --remote > /dev/null 2>&1 < /dev/null; then
+              echo "DEL   $1"
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo "AVIS: no s'ha pogut esborrar $1 (ho netejarà la regla de cicle de vida)"
+          exit 0
+          EOS
+
+          chmod +x "$UP" "$DEL"
+
+          # --- 1) PNGs nous ---
+          : > "$LIST"
+          add_pngs() {
+            local src_dir="$1" f base
+            [ -d "$src_dir" ] || { echo "AVIS: no existeix $src_dir, salto"; return 0; }
+            for f in "$src_dir"/*.png; do
+              [ -f "$f" ] || continue
+              base=$(basename "$f")
+              printf '%s\0%s\0%s\0' "$f" "image/png" "${R2_BUCKET}/${R2_PREFIX_LITRES}${base}" >> "$LIST"
+            done
+          }
+
+          add_pngs "dades_png"
+
+          n_nuls=$(tr -cd '\0' < "$LIST" | wc -c)
+          echo "PNGs a pujar: $((n_nuls / 3)) (en paral·lel: $PARALLEL)"
+
+          if ! xargs -0 -r -n 3 -P "$PARALLEL" "$UP" < "$LIST"; then
+            echo "::error::Hi ha PNGs que no s'han pogut pujar; no es publica el manifest"
+            exit 1
+          fi
+
+          # --- 2) Manifest (només si TOTS els PNGs han pujat bé) ---
+          "$UP" "dades_png/manifest.json" "application/json" "${R2_BUCKET}/${R2_PREFIX_LITRES}manifest.json"
+
+          # --- 3) Esborrar de R2 els frames que han sortit de la finestra ---
+          delete_old() {
+            local src_dir="$1"
+            local list="$src_dir/borrar.txt"
+            [ -f "$list" ] || return 0
+            echo "Esborrant fora de finestra: $(wc -l < "$list") fitxers"
+            { tr -d '\r' < "$list" | grep -E '^[0-9a-f]{16}\.png$' || true; } \
+              | sed "s|^|${R2_BUCKET}/${R2_PREFIX_LITRES}|" \
+              | xargs -r -n 1 -P "$PARALLEL" "$DEL"
+          }
+
+          delete_old "dades_png"
+
+          echo "OK: dades litres pujades a R2."

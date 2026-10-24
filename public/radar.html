@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://radar-data.tempestes.cat" crossorigin />
 <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
 <link rel="modulepreload" href="/js/radar.js" />
+<link rel="modulepreload" href="/js/litres.js" />
 <link rel="modulepreload" href="/js/estacions.js" />
 <link rel="modulepreload" href="/js/alertes.js" />
 <link rel="modulepreload" href="/dades/escales.js" />
@@ -235,6 +236,7 @@ import { SCALES } from '/dades/escales.js';
 import { initAutoReload } from '/dades/autoreload.js';
 import { initEstacions } from '/js/estacions.js';
 import { initAlertes } from '/js/alertes.js';
+import { initLitres } from '/js/litres.js';
 
 /* ===================== Helpers ===================== */
 const $ = (id) => document.getElementById(id);
@@ -285,6 +287,7 @@ let lockPrompted = false;
 let appReady = false;
 let switchSeq = 0;
 let lastRadarMs = null;
+let litres = null;
 
 const TIERS = ['anon', 'free', 'entusiasta', 'professional'];
 const ACCESS = {
@@ -330,7 +333,9 @@ const alertes = initAlertes({ map, visible: true });
 const UI = { open: null };
 function closeAllFlyouts() {
   document.querySelectorAll('.flyout.open').forEach((f) => f.classList.remove('open'));
-  document.querySelectorAll('.rail-btn.active').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('.rail-btn.active').forEach((b) => {
+    if (b.dataset.flyout) b.classList.remove('active');
+  });
   UI.open = null;
 }
 function positionFlyout(flyout, anchorBtn) {
@@ -521,6 +526,10 @@ function syncTimeline(key) {
 
 async function selectProduct(key) {
   if (!PRODUCTS[key]) return;
+
+  // Si es tria dbz o vel, amaguem els litres
+  if (litres) litres.hide();
+
   const seq = ++switchSeq;
   const st = radar.getLayerState(key);
   if (!st || !st.initialized) {
@@ -922,6 +931,19 @@ map.once('style.load', async () => {
 
   await selectProduct(available.includes('dbz') ? 'dbz' : available[0]);
   radar.startAllAnimations();
+
+  // Inicialitzem Litres
+  litres = initLitres({
+    map,
+    onActivate: () => {
+      radar.setLayerVisibility('dbz', false);
+      radar.setLayerVisibility('vel', false);
+    },
+    onDeactivate: () => {
+      radar.setLayerVisibility('dbz', activeKey === 'dbz' && radarOn);
+      radar.setLayerVisibility('vel', activeKey === 'vel' && radarOn);
+    }
+  });
 
   let arStored = null;
   try { arStored = localStorage.getItem('radar.autoreload'); } catch (_) {}

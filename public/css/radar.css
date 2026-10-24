@@ -1393,3 +1393,209 @@ button.active {
     border-color: var(--btn-border);
   }
 }
+
+
+/* ============================================================
+   Litres — Integració neta amb l'estil del Radar
+   ============================================================ */
+.flyout-litres {
+  width: 290px !important;
+  padding: 0 !important;
+  display: block !important;
+}
+.flyout-litres.open { display: block !important; }
+.flyout-litres:not(.open) { display: none !important; }
+
+/* Capçalera */
+.flyout-litres .litres-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  margin: 0 !important;
+}
+
+.flyout-litres .litres-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.1);
+  color: rgba(255,255,255,.85);
+}
+.flyout-litres .litres-badge[hidden] { display: none; }
+
+/* Opcions */
+.flyout-litres .litres-options {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.flyout-litres .litres-options .opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.flyout-litres .litres-options .opt:hover { background: rgba(255,255,255,.04); }
+.flyout-litres .litres-options .opt.loading { opacity: .5; pointer-events: none; }
+
+/* Panell del slider */
+.flyout-litres .litres-panel {
+  padding: 12px 14px 14px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.flyout-litres .litres-panel[hidden] { display: none; }
+.flyout-litres .litres-panel.is-loading { opacity: .45; pointer-events: none; }
+
+.flyout-litres .litres-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.flyout-litres .litres-time {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+}
+.flyout-litres .litres-count {
+  font-size: 11px;
+  color: rgba(255,255,255,.4);
+}
+
+/* Controls i Slider */
+.flyout-litres .litres-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flyout-litres .litres-nav {
+  flex: none;
+  width: 24px !important;
+  height: 24px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.5);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.flyout-litres .litres-nav:hover { background: rgba(255,255,255,.08); color: #fff; }
+.flyout-litres .litres-nav svg {
+  width: 14px; height: 14px;
+  fill: none; stroke: currentColor; stroke-width: 2;
+}
+
+.flyout-litres .litres-track {
+  position: relative;
+  flex: 1;
+  height: 24px;
+  display: flex;
+  align-items: center;
+}
+.flyout-litres .litres-track::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: rgba(255,255,255,.15);
+  border-radius: 2px;
+}
+.flyout-litres .litres-progress {
+  position: absolute;
+  left: 0; top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: #fff;
+  border-radius: 2px;
+  pointer-events: none;
+  width: 0;
+}
+.flyout-litres .litres-track input[type="range"] {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.flyout-litres .litres-track input[type="range"]::-webkit-slider-runnable-track { height: 24px; background: transparent; }
+.flyout-litres .litres-track input[type="range"]::-moz-range-track { height: 24px; background: transparent; }
+
+.flyout-litres .litres-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.6);
+  cursor: grab;
+}
+.flyout-litres .litres-track input[type="range"]::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.6);
+  cursor: grab;
+}
+
+/* Eix inferior (Marques d'hora) */
+.flyout-litres .litres-axis {
+  position: relative;
+  height: 14px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: rgba(255,255,255,.3);
+}
+.flyout-litres .litres-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.flyout-litres .litres-tick.active { color: rgba(255,255,255,.8); }
+
+/* Loading */
+.flyout-litres .litres-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid rgba(255,255,255,.07);
+  font-size: 12px;
+  color: rgba(255,255,255,.5);
+}
+.flyout-litres .litres-loading[hidden] { display: none; }
+.flyout-litres .litres-spin {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.15);
+  border-top-color: rgba(255,255,255,.8);
+  animation: litres-spin .7s linear infinite;
+}
+@keyframes litres-spin { to { transform: rotate(360deg); } }
