@@ -87,7 +87,7 @@ export const PALETES = {
     "max": 68.0
   },
   "VRADH": {
-    "unit": "m/s",
+    "unit": "km/h",
     "levels": [
       -46.25,
       -45.25,

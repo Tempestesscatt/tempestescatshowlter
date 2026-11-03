@@ -347,28 +347,6 @@ export function initAlertes({ map, visible = true, onClick = null } = {}) {
       popup.setLngLat(e.lngLat).setHTML(popupHtml(trobat.zona)).addTo(map);
     });
 
-    map.on('mousemove', (e) => {
-      const now = performance.now();
-      if (now - lastMove < 60) return;
-      lastMove = now;
-
-      const trobat = avisSotaPunt(e.lngLat);
-      if (trobat && trobat.zona) {
-        map.getCanvas().style.cursor = 'pointer';
-        const info = SEVERITY_LABELS[trobat.severity] || { name: trobat.severity };
-        const html = `
-          <div class="al-tip">
-            <span class="al-tip-dot al-sev-${trobat.severity.toLowerCase()}"></span>
-            <span class="al-tip-name">${escapeHtml(info.name)}</span>
-            <span class="al-tip-zona">${escapeHtml(trobat.zona.zona || '')}</span>
-          </div>`;
-        showTooltip(html, e.originalEvent.clientX, e.originalEvent.clientY);
-      } else {
-        map.getCanvas().style.cursor = '';
-        hideTooltip();
-      }
-    });
-
     map.on('mouseout', () => {
       map.getCanvas().style.cursor = '';
       hideTooltip();

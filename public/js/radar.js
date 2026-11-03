@@ -1339,3 +1339,67 @@ export default {
   goToFrameLayer, syncToTime, refreshNow, setLayerVisibility, setLayerOpacity, setMinIndex,
   getLayerState, onLayerUpdate, getRadars, getActiveRadarId, setActiveRadar,
 };
+
+
+// ============================================================
+// VALOR SOTA EL CURSOR — integració amb valor.js
+// ============================================================
+(() => {
+  function iniciarValorCursor() {
+    if (typeof window.initValor !== 'function') {
+      console.warn('[Valor] No s’ha trobat initValor a valor.js');
+      return;
+    }
+
+    const mapActual = window.map;
+    if (!mapActual) {
+      console.warn('[Valor] No s’ha trobat el mapa.');
+      return;
+    }
+
+    const control = document.getElementById('chkValor');
+
+    const valorCursor = window.initValor({
+      map: mapActual,
+
+      getLayerState: (key) => {
+        if (typeof getLayerState === 'function') {
+          return getLayerState(key);
+        }
+        return null;
+      },
+
+      getKey: () => {
+        const producte = window.activeKey || 'dbz';
+        return producte;
+      },
+
+      isRadarVisible: () => true,
+
+      getLitresProduct: () =>
+        window.litres?.getCurrentProduct?.() || null,
+
+      getLitresFrames: () =>
+        window.litres?.getFrames?.() || [],
+
+      getLitresFrameIndex: () =>
+        window.litres?.getFrameIndex?.() ?? -1
+    });
+
+    if (control) {
+      valorCursor.setEnabled(control.checked);
+
+      control.addEventListener('change', (e) => {
+        valorCursor.setEnabled(e.target.checked);
+      });
+    }
+
+    console.log('[Valor] Lectura sota el cursor activada.');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', iniciarValorCursor);
+  } else {
+    iniciarValorCursor();
+  }
+})();

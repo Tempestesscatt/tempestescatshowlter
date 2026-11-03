@@ -611,19 +611,9 @@ body {
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, .12);
 }
-.legend-ticks {
-  position: relative;
-  width: 30px;
-}
-.legend-tick {
-  position: absolute;
-  left: 0;
-  transform: translateY(50%);
-  font-size: 11px;
-  color: #cfdcf0;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+  .legend-ticks { width: 70px !important; min-width: 70px; position: relative; }
+  .legend-tick { position: absolute; left: 0; font-size: 9px; white-space: nowrap; }
+  .legend-body { width: auto !important; min-width: 0 !important; }
 
 /* ===================== BOTTOM BAR ===================== */
 #bottomBar {
@@ -1756,4 +1746,41 @@ button.active {
   white-space: nowrap;
   line-height: 1;
   padding: 0 2px;
+}
+
+
+@media (min-width: 769px) {
+  #legend {
+    width: max-content !important;
+    max-width: none !important;
+    padding-right: 16px !important;
+    box-sizing: border-box;
+  }
+  #legend .legend-body { width: max-content; min-width: 230px; }
+  #legend .legend-ticks { position: relative; white-space: nowrap; }
+  #legend .legend-tick { position: absolute; left: 0; white-space: nowrap; }
+}
+
+@media (max-width: 768px) {
+  /* Zoom amb els dits: fora els botons */
+  .maplibregl-ctrl-top-right { display: none !important; }
+
+  /* Llegenda compacta, enganxada a l'esquerra */
+  #legend {
+    width: auto !important;
+    max-width: none !important;
+    padding: 6px 8px !important;
+    top: max(52px, calc(env(safe-area-inset-top) + 46px));
+    opacity: .92;
+  }
+  #legend h3 { font-size: 10px; margin-bottom: 4px; }
+  .legend-body { height: 110px; min-width: 0 !important; width: auto !important; gap: 6px; }
+  .legend-bar { width: 8px; }
+  .legend-ticks { width: auto; min-width: 26px; position: relative; }
+  .legend-tick { position: absolute; left: 0; font-size: 9px; white-space: nowrap; }
+
+  /* Capçalera més neta */
+  .brand { padding: 6px 10px; font-size: 12px; }
+  .chip { padding: 6px 9px; font-size: 10.5px; }
+  .chip.plan { max-width: 38vw; }
 }

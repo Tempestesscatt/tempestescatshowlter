@@ -1,352 +1,217 @@
-// public/dades/valor.js
-// Creu "+" sota el cursor amb el valor numèric (dBZ, m/s, mm/h, mm).
-//
-// El valor es llegeix del PNG original del frame (no del canvas WebGL del mapa),
-// així no depèn de preserveDrawingBuffer, del devicePixelRatio, de l'opacitat
-// de la capa ni del mapa base que hi ha a sota.
+// Generat automaticament per valor.py. No editar a ma.
+const PALETES = {"DBZH":{"unitat":"dBZ","inici":-4.0,"pas":2.0,"colors":["#f6f6f6","#e8e8e8","#dadada","#cccccc","#bebebe","#b0b0b0","#05e6e7","#03c5ed","#01a3f3","#0274f4","#024bf4","#0220f4","#029f5b","#01fd01","#01e101","#01c801","#01a201","#018801","#006b00","#7fbc01","#fdf802","#f1da02","#e5bc02","#f2a801","#ff9400","#fe4a00","#fd0000","#e90000","#d40000","#c80000","#bc0000","#da007f","#f800fd","#c82ae2","#9854c6","#ccaae3","#eeeeee"],"tipus":"indexada"},"VRADH":{"unitat":"km/h","factor":3.6,"inici":-46.25,"pas":1.0,"colors":["#ed0086","#db0189","#c8018b","#b6028e","#a9028f","#970392","#840494","#780496","#5d0599","#450499","#2c0399","#1c0299","#1717a0","#1a37aa","#1c4cb1","#1f6cbc","#228cc7","#25acd1","#27c2d8","#34e0e3","#47e2e5","#54e3e6","#68e5e8","#7be7ea","#8feaed","#9cebee","#afedf0","#9af2c8","#7ff5a3","#57f86c","#2efc34","#03f503","#03ea03","#03db03","#03cb03","#03c003","#03b103","#02a102","#029102","#028702","#027702","#026702","#4e794c","#5a7d58","#668164","#728570","#757575","#8a7281","#885f6c","#864c56","#853f48","#730000","#840001","#8f0001","#a00002","#b00003","#c10004","#cc0005","#dd0006","#ee0007","#fa3751","#fa4769","#fb5782","#fc689b","#fd73ab","#fe83c4","#ff95d0","#ffa8c6","#ffc5b7","#ffe1a8","#ffe09b","#ffd793","#ffca86","#ffbd79","#ffb471","#ffa764","#ff9a57","#fc874e","#f5814a","#ea7845","#e06f3f","#d8683c","#ce5f36","#c35631","#b94d2c","#b14628","#a73d23","#9c341d","#952e1a","#8a2414","#801b0f","#751209","#6e0c06","#6e0c06"],"tipus":"indexada"},"RATE":{"unitat":"mm/h","nivells":[0.0,0.1,0.5,1.0,2.0,5.0,10.0,20.0,30.0,50.0,80.0,120.0,200.0,300.0,500.0,700.0,1000.0],"colors":["#00000000","#00ffffff","#00c8ffff","#0078ffff","#0000ffff","#00c800ff","#00ff00ff","#64ff00ff","#ffff00ff","#ffc800ff","#ff9600ff","#ff6400ff","#ff0000ff","#c80000ff","#ff0096ff","#c800c8ff","#ffffffff"],"tipus":"nivells","coords":[[-3.0,44.5],[4.5,44.5],[4.5,39.5],[-3.0,39.5]]},"ACRR":{"unitat":"mm","nivells":[0.0,0.2,1.0,2.0,5.0,10.0,20.0,50.0,100.0,200.0,300.0,500.0,750.0,1000.0,1500.0,2000.0,3000.0],"colors":["#00000000","#aad7ffff","#8cc3ffff","#64aaffff","#3278f0ff","#14a0dcff","#14c8c8ff","#1ec85aff","#5ad728ff","#96e128ff","#fdeb02ff","#fda000ff","#fd3c00ff","#c80014ff","#c800a0ff","#8c3cdcff","#ffffffff"],"tipus":"nivells","coords":[[-3.0,44.5],[4.5,44.5],[4.5,39.5],[-3.0,39.5]]}};
+window.VALOR_PALETES = PALETES;
 
-import { PALETES } from './paletes.js';
+const LITRES_BASE = 'https://radar-data.tempestes.cat/dades_litres';
+const PRODUCTE_A_PALETA = { dbz: 'DBZH', vel: 'VRADH' };
+const TOLERANCIA2 = 40 * 40;      // paletes indexades: distància de color màxima (al quadrat)
+const TOLERANCIA_CONT2 = 36 * 36; // litres: residu màxim (al quadrat) sobre el segment
 
-const LITRES_R2_BASE = 'https://radar-data.tempestes.cat/dades_litres';
-const LITRES_MANIFEST_URL = `${LITRES_R2_BASE}/manifest.json`;
-const CACHE_MAX = 4;          // imatges descodificades en memòria
-const REFRESH_MS = 300;       // refresca el número mentre el frame canvia
-const TOL2 = 24 * 24 * 3;     // distància² màxima de color acceptada
-
-export function initValor({
-  map,
-  getLayerState,
-  getKey,
-  isRadarVisible,
-  getLitresProduct,
-  getLitresFrames,
-  getLitresFrameIndex,
-}) {
-  injectStyles();
-
-  const tooltip = document.createElement('div');
-  tooltip.className = 'valor-tooltip';
-  tooltip.style.display = 'none';
-  document.body.appendChild(tooltip);
-
-  const crosshair = document.createElement('div');
-  crosshair.className = 'valor-crosshair';
-  crosshair.style.display = 'none';
-  crosshair.innerHTML = `
-    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-      <line x1="10" y1="0" x2="10" y2="20" stroke="currentColor" stroke-width="1.6"/>
-      <line x1="0" y1="10" x2="20" y2="10" stroke="currentColor" stroke-width="1.6"/>
-    </svg>`;
-  document.body.appendChild(crosshair);
-
-  let enabled = true;
-  let lastPos = null;
-  let seq = 0;
-  let manifestCache = null;
-  let manifestTs = 0;
-  let refreshTimer = 0;
-  let lastWhy = '';
-  // Diagnòstic: escriu a la consola el motiu de "sense dada" (només quan canvia)
-  function why(msg) {
-    if (msg !== lastWhy) { lastWhy = msg; console.info('[valor]', msg); }
-    return null;
-  }
-
-  const container = map.getCanvasContainer();
-
-  // ---------------------------------------------------------------- manifest litres
-  async function loadLitresManifest() {
-    const now = Date.now();
-    if (manifestCache && now - manifestTs < 60_000) return manifestCache;
-    try {
-      const r = await fetch(`${LITRES_MANIFEST_URL}?t=${now}`, { cache: 'no-store' });
-      if (!r.ok) return manifestCache;
-      manifestCache = await r.json();
-      manifestTs = now;
-    } catch (e) { /* ens quedem amb la còpia anterior */ }
-    return manifestCache;
-  }
-
-  // ---------------------------------------------------------------- imatges
-  const imgCache = new Map(); // clau -> Promise<{ctx,w,h}|null>
-
-  function getImageEntry(key, src) {
-    let p = imgCache.get(key);
-    if (p) { imgCache.delete(key); imgCache.set(key, p); return p; }
-    p = new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        try {
-          const c = document.createElement('canvas');
-          c.width = img.naturalWidth;
-          c.height = img.naturalHeight;
-          const cx = c.getContext('2d', { willReadFrequently: true });
-          cx.imageSmoothingEnabled = false;
-          cx.drawImage(img, 0, 0);
-          resolve({ ctx: cx, w: c.width, h: c.height });
-        } catch (e) { resolve(null); }
-      };
-      img.onerror = () => resolve(null);
-      img.src = src;
-    });
-    imgCache.set(key, p);
-    while (imgCache.size > CACHE_MAX) imgCache.delete(imgCache.keys().next().value);
-    p.then((r) => { if (!r) imgCache.delete(key); });
-    return p;
-  }
-
-  const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
-
-  // coords = [[lonW,latN],[lonE,latN],[lonE,latS],[lonW,latS]] (com MapLibre)
-  async function samplePixel(key, src, coords, ll) {
-    if (!coords || coords.length < 4) return why('coords invàlides');
-    const lonW = coords[0][0], latN = coords[0][1];
-    const lonE = coords[2][0], latS = coords[2][1];
-    const u = (ll.lng - lonW) / (lonE - lonW);
-    const v = (mercY(latN) - mercY(ll.lat)) / (mercY(latN) - mercY(latS));
-    if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) return why(`fora de la imatge (u=${u.toFixed(3)}, v=${v.toFixed(3)})`);
-
-    const entry = await getImageEntry(key, src);
-    if (!entry) return why("no s'ha pogut carregar/descodificar la imatge (CORS o blob?)");
-    const px = Math.floor(u * entry.w);
-    const py = Math.floor(v * entry.h);
-    try {
-      const d = entry.ctx.getImageData(px, py, 1, 1).data;
-      if (d[3] < 8) return why('píxel transparent (no hi ha eco aquí)');
-      return { r: d[0], g: d[1], b: d[2] };
-    } catch (e) {
-      return why('canvas tainted: ' + (e && e.message));
-    }
-  }
-
-  // ---------------------------------------------------------------- color -> valor
-  const palCache = new Map();
-  function hexToRgb(h) {
-    const s = h.replace('#', '');
-    return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
-  }
-  function getPal(name, levels, colors) {
-    const k = `${name}|${levels.length}|${colors.length}`;
-    let p = palCache.get(k);
-    if (!p) { p = { levels, rgb: colors.map(hexToRgb) }; palCache.set(k, p); }
-    return p;
-  }
-
-  // Paleta discreta (radar): el píxel és exactament un color de la paleta.
-  function decodeDiscrete(r, g, b, pal) {
-    let best = Infinity, bi = -1;
-    for (let i = 0; i < pal.rgb.length; i++) {
-      const c = pal.rgb[i];
-      const d = (r - c[0]) ** 2 + (g - c[1]) ** 2 + (b - c[2]) ** 2;
-      if (d < best) { best = d; bi = i; }
-    }
-    return bi >= 0 && best <= TOL2 ? pal.levels[bi] : null;
-  }
-
-  // Litres: litres.py pinta amb una LUT de 1024 entrades repartides LINEALMENT
-  // entre levels[0] i levels[última] (aplicar_escala). Reconstruïm la mateixa
-  // LUT aquí i busquem l'entrada més propera al color del píxel.
-  // Nota: la resolució és d'(max-min)/1023 (≈1 mm/h a RATE, ≈3 mm a ACRR) i els
-  // valors per sota d'aquest pas són transparents: és el que genera el Python.
-  const LUT_SIZE = 1024;
-  const LUT_TOL2 = 16 * 16 * 3;
-  const lutCache = new Map();
-
-  function getLut(name, levels, colors) {
-    const k = `${name}|${levels.length}|${levels[0]}|${levels[levels.length - 1]}`;
-    let lut = lutCache.get(k);
-    if (lut) return lut;
-    const vmin = levels[0], vmax = levels[levels.length - 1];
-    const pos = levels.map((v) => (v - vmin) / (vmax - vmin));
-    const rgb = colors.map(hexToRgb);
-    lut = new Float32Array(LUT_SIZE * 3);
-    let s = 0;
-    for (let i = 0; i < LUT_SIZE; i++) {
-      const p = i / (LUT_SIZE - 1);
-      while (s < pos.length - 2 && p > pos[s + 1]) s++;
-      const span = pos[s + 1] - pos[s];
-      const t = span > 0 ? Math.max(0, Math.min(1, (p - pos[s]) / span)) : 0;
-      for (let c = 0; c < 3; c++) lut[i * 3 + c] = rgb[s][c] + t * (rgb[s + 1][c] - rgb[s][c]);
-    }
-    lutCache.set(k, lut);
-    return lut;
-  }
-
-  function decodeLut(r, g, b, name, levels, colors) {
-    const lut = getLut(name, levels, colors);
-    let best = Infinity, bi = -1;
-    for (let i = 1; i < LUT_SIZE; i++) { // l'entrada 0 és transparent
-      const d = (r - lut[i * 3]) ** 2 + (g - lut[i * 3 + 1]) ** 2 + (b - lut[i * 3 + 2]) ** 2;
-      if (d < best) { best = d; bi = i; }
-    }
-    if (bi < 0 || best > LUT_TOL2) return null;
-    const vmin = levels[0], vmax = levels[levels.length - 1];
-    return vmin + ((bi + 0.5) / (LUT_SIZE - 1)) * (vmax - vmin);
-  }
-
-  // ---------------------------------------------------------------- cerca
-  async function lookupLitres(ll) {
-    const product = typeof getLitresProduct === 'function' ? getLitresProduct() : null;
-    if (!product) return undefined; // litres no actiu
-    const frames = getLitresFrames ? getLitresFrames() : [];
-    const idx = getLitresFrameIndex ? getLitresFrameIndex() : -1;
-    const fr = frames[idx];
-    if (!fr) return null;
-
-    const m = await loadLitresManifest();
-    const prod = m && m.products && m.products[product];
-    if (!prod || !m.coords) return null;
-    const levels = prod.levels || (PALETES[product] && PALETES[product].levels);
-    const colors = prod.colors || (PALETES[product] && PALETES[product].colors);
-    const unit = prod.unit || (PALETES[product] && PALETES[product].unit) || '';
-    if (!levels || !colors) return null;
-
-    const src = `${LITRES_R2_BASE}/${fr.f}.png`;
-    const px = await samplePixel(src, src, m.coords, ll);
-    if (!px) return null;
-    const v = decodeLut(px.r, px.g, px.b, product, levels, colors);
-    return v === null ? null : { text: `≈ ${formatValue(v, unit)}`, source: 'litres' };
-  }
-
-  async function lookupRadar(ll) {
-    if (typeof getLayerState !== 'function' || typeof getKey !== 'function') return null;
-    if (typeof isRadarVisible === 'function' && !isRadarVisible()) return null;
-    const key = getKey(); // 'dbz' | 'vel'
-    const name = key === 'dbz' ? 'DBZH' : key === 'vel' ? 'VRADH' : null;
-    const palDef = name && PALETES[name];
-    if (!palDef) return null;
-
-    const st = getLayerState(key);
-    if (!st || !st.initialized || !st.coords || !st.currentBlob) {
-      return why(`estat radar: init=${!!(st && st.initialized)} coords=${!!(st && st.coords)} blob=${!!(st && st.currentBlob)}`);
-    }
-
-    const px = await samplePixel(st.currentUrl, st.currentBlob, st.coords, ll);
-    if (!px) return null;
-    let v = decodeDiscrete(px.r, px.g, px.b, getPal(name, palDef.levels, palDef.colors));
-    if (v === null) return why(`color sense coincidència amb la paleta: rgb(${px.r},${px.g},${px.b})`);
-    // Velocitat: el nivell és el límit inferior d'un bin d'1 m/s desplaçat 0.25;
-    // mostrem el valor enter més proper al centre del bin.
-    if (name === 'VRADH') v = Math.round(v + 0.5);
-    return { text: formatValue(v, palDef.unit), source: 'radar' };
-  }
-
-  async function lookup(clientX, clientY) {
-    const rect = container.getBoundingClientRect();
-    const x = clientX - rect.left, y = clientY - rect.top;
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null;
-    const ll = map.unproject([x, y]);
-
-    const lit = await lookupLitres(ll);
-    if (lit !== undefined) return lit; // litres actiu: el radar està amagat
-    return lookupRadar(ll);
-  }
-
-  // ---------------------------------------------------------------- format
-  function formatValue(v, unit) {
-    if (unit === 'dBZ') return `${Math.round(v)} dBZ`;
-    if (unit === 'm/s') return `${Math.round(v)} m/s`;
-    if (unit === 'mm/h' || unit === 'mm') {
-      const dec = v < 1 ? 2 : v < 10 ? 1 : 0;
-      return `${v.toFixed(dec)} ${unit}`;
-    }
-    return `${v.toFixed(1)} ${unit || ''}`.trim();
-  }
-
-  // ---------------------------------------------------------------- UI
-  function showCrosshair(x, y) {
-    crosshair.style.display = 'block';
-    crosshair.style.transform = `translate(${x - 10}px, ${y - 10}px)`;
-  }
-  function hideCrosshair() { crosshair.style.display = 'none'; }
-
-  function showTooltip(x, y, text, source) {
-    tooltip.textContent = text;
-    tooltip.dataset.source = source;
-    tooltip.style.display = 'block';
-    const w = tooltip.offsetWidth, h = tooltip.offsetHeight;
-    let left = x + 16, top = y - 8;
-    if (left + w > window.innerWidth - 8) left = x - w - 16;
-    if (top + h > window.innerHeight - 8) top = y - h + 8;
-    tooltip.style.transform = `translate(${left}px, ${Math.max(4, top)}px)`;
-  }
-  function hideTooltip() { tooltip.style.display = 'none'; }
-  function hideAll() { hideTooltip(); hideCrosshair(); }
-
-  async function update() {
-    if (!enabled || !lastPos) return;
-    const my = ++seq;
-    let res = null;
-    try { res = await lookup(lastPos.x, lastPos.y); } catch (e) { console.warn('[valor] error', e); }
-    if (my !== seq || !enabled || !lastPos) return;
-    if (res) {
-      const tag = 'ok ' + res.text;
-      if (lastWhy !== tag) { lastWhy = tag; console.info('[valor] valor trobat:', res.text); }
-      showTooltip(lastPos.x, lastPos.y, res.text, res.source);
-    }
-    else hideTooltip();
-  }
-
-  function onMouseMove(e) {
-    if (!enabled) { hideAll(); return; }
-    lastPos = { x: e.clientX, y: e.clientY };
-    showCrosshair(lastPos.x, lastPos.y);
-    update();
-  }
-  function onMouseLeave() {
-    lastPos = null;
-    seq++;
-    hideAll();
-  }
-
-  // ---------------------------------------------------------------- setup
-  container.addEventListener('mousemove', onMouseMove);
-  container.addEventListener('mouseleave', onMouseLeave);
-  container.style.cursor = 'none';
-  refreshTimer = setInterval(() => { if (lastPos && enabled) update(); }, REFRESH_MS);
-  loadLitresManifest();
-
-  return {
-    setEnabled(on) {
-      enabled = !!on;
-      container.style.cursor = enabled ? 'none' : '';
-      if (!enabled) { lastPos = null; seq++; hideAll(); }
-    },
-    isEnabled: () => enabled,
-    refresh: () => { manifestCache = null; manifestTs = 0; imgCache.clear(); loadLitresManifest(); },
-    destroy() {
-      clearInterval(refreshTimer);
-      container.removeEventListener('mousemove', onMouseMove);
-      container.removeEventListener('mouseleave', onMouseLeave);
-      container.style.cursor = '';
-      tooltip.remove();
-      crosshair.remove();
-    },
-  };
+/* ---------- Paletes preparades ---------- */
+function parseHex(h) {
+  h = h.replace('#', '');
+  return [
+    parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16),
+    h.length >= 8 ? parseInt(h.slice(6, 8), 16) : 255,
+  ];
+}
+const preparades = {};
+function preparar(nom) {
+  if (preparades[nom]) return preparades[nom];
+  const p = PALETES[nom];
+  if (!p) return null;
+  const rgb = p.colors.map(parseHex);
+  const exacte = new Map();
+  rgb.forEach((c, i) => {
+    if (c[3] === 0) return;
+    const k = (c[0] << 16) | (c[1] << 8) | c[2];
+    if (!exacte.has(k)) exacte.set(k, i);
+  });
+  return (preparades[nom] = { p, rgb, exacte });
 }
 
-// ---------------------------------------------------------------- estils
-function injectStyles() {
-  if (document.getElementById('valor-styles')) return;
-  const s = document.createElement('style');
-  s.id = 'valor-styles';
-  s.textContent = `
-    .valor-crosshair {
-      position: fixed; left: 0; top: 0; width: 20px; height: 20px;
-      pointer-events: none; z-index: 9999; color: #fff;
-      filter: drop-shadow(0 0 1.5px rgba(0,0,0,.95)) drop-shadow(0 0 1px rgba(0,0,0,.95));
+/* ---------- Paletes indexades (dBZ, velocitat) ---------- */
+// Al PNG, l'índex de paleta k+1 té el color colors[k] i el valor inici + k*pas.
+function indexDeColor(prep, r, g, b) {
+  const k = (r << 16) | (g << 8) | b;
+  if (prep.exacte.has(k)) return prep.exacte.get(k);
+  let best = -1, bestD = Infinity;
+  prep.rgb.forEach((c, i) => {
+    if (c[3] === 0) return;
+    const d = (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return bestD <= TOLERANCIA2 ? best : -1;
+}
+function textIndexada(prep, d) {
+  const i = indexDeColor(prep, d[0], d[1], d[2]);
+  if (i < 0) return null;
+  const p = prep.p;
+  const v = (p.inici + i * p.pas) * (p.factor || 1);
+  const txt = p.factor ? Math.round(v) : Number(v.toFixed(2));
+  return `${txt} ${p.unitat}`;
+}
+
+/* ---------- Paletes contínues (litres: RATE, ACRR) ---------- */
+// El PNG s'ha pintat interpolant colors entre nivells consecutius. Per invertir-ho,
+// busquem el segment [nivell i, nivell i+1] més proper al color i interpolem el valor.
+function textContinua(prep, d) {
+  const { p, rgb } = prep;
+  const px = [d[0], d[1], d[2], d[3]];
+  let best = null, bestRes = Infinity;
+  for (let i = 0; i < rgb.length - 1; i++) {
+    const c0 = rgb[i], c1 = rgb[i + 1];
+    let dd = 0, dp = 0;
+    for (let k = 0; k < 4; k++) {
+      const dk = c1[k] - c0[k];
+      dd += dk * dk;
+      dp += (px[k] - c0[k]) * dk;
     }
-    .valor-tooltip {
-      position: fixed !important; left: 0 !important; top: 0 !important;
-      opacity: 1 !important; visibility: visible !important;
-      pointer-events: none; z-index: 99999;
-      padding: 3px 8px; white-space: nowrap;
-      font: 600 13px/1.3 system-ui, -apple-system, 'Segoe UI', sans-serif;
-      color: #fff; background: rgba(10,12,20,.88);
-      border: 1px solid rgba(255,255,255,.25); border-radius: 6px;
-      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+    const t = dd > 0 ? Math.max(0, Math.min(1, dp / dd)) : 0;
+    let res = 0;
+    for (let k = 0; k < 4; k++) {
+      const e = px[k] - (c0[k] + t * (c1[k] - c0[k]));
+      res += e * e;
     }
-  `;
-  document.head.appendChild(s);
+    if (res < bestRes) {
+      bestRes = res;
+      best = p.nivells[i] + t * (p.nivells[i + 1] - p.nivells[i]);
+    }
+  }
+  if (best === null || bestRes > TOLERANCIA_CONT2) return null;
+  const dec = best < 1 ? 2 : best < 10 ? 1 : 0;
+  return `${best.toFixed(dec)} ${p.unitat}`;
+}
+
+function textDePixel(nom, d) {
+  const prep = preparar(nom);
+  if (!prep) return null;
+  return prep.p.tipus === 'indexada' ? textIndexada(prep, d) : textContinua(prep, d);
+}
+
+/* ---------- Càrrega de píxels (amb memòria cau) ---------- */
+const cache = new Map();
+function carregar(url) {
+  if (cache.has(url)) return cache.get(url);
+  const prom = (async () => {
+    const r = await fetch(url, { mode: 'cors' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const bmp = await createImageBitmap(await r.blob());
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bmp, 0, 0);
+    return { ctx, w: c.width, h: c.height };
+  })();
+  cache.set(url, prom);
+  prom.catch(() => cache.delete(url));
+  if (cache.size > 8) cache.delete(cache.keys().next().value);
+  return prom;
+}
+
+/* ---------- Geometria (igual que MapLibre: lineal en Mercator entre cantonades) ---------- */
+const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+function lngLatAPixel(coords, lng, lat, w, h) {
+  const lonW = coords[0][0], latN = coords[0][1];
+  const lonE = coords[2][0], latS = coords[2][1];
+  const fx = (lng - lonW) / (lonE - lonW);
+  const fy = (mercY(latN) - mercY(lat)) / (mercY(latN) - mercY(latS));
+  if (fx < 0 || fx >= 1 || fy < 0 || fy >= 1) return null;
+  return [Math.floor(fx * w), Math.floor(fy * h)];
+}
+
+/* ---------- Litres ---------- */
+function nomPaletaLitres(prod) {
+  if (!prod) return null;
+  const s = String(typeof prod === 'object' ? (prod.id || prod.key || prod.name || '') : prod).toUpperCase();
+  if (PALETES[s] && PALETES[s].tipus === 'nivells') return s;
+  if (s.includes('ACRR') || s.includes('ACUM')) return 'ACRR';
+  if (s.includes('RATE') || s.includes('INTENS')) return 'RATE';
+  return null;
+}
+function urlDeFrame(f) {
+  if (!f) return null;
+  if (typeof f === 'string') {
+    return /^(https?:|blob:|data:|\/)/.test(f) ? f : `${LITRES_BASE}/${f.replace(/\.png$/, '')}.png`;
+  }
+  if (f.blob || f.url || f.src) return f.blob || f.url || f.src;
+  if (f.f) return `${LITRES_BASE}/${f.f}.png`;
+  return null;
+}
+
+/* ---------- initValor ---------- */
+export function initValor(opts) {
+  const { map, getLayerState, getKey, isRadarVisible } = opts;
+  const getLitresProduct = opts.getLitresProduct || (() => null);
+  const getLitresFrames = opts.getLitresFrames || (() => []);
+  const getLitresFrameIndex = opts.getLitresFrameIndex || (() => -1);
+
+  let enabled = true;
+  let last = null;
+  let raf = 0;
+  let seq = 0;
+
+  const tip = document.createElement('div');
+  tip.style.cssText =
+    'position:absolute;z-index:5;pointer-events:none;display:none;' +
+    'padding:3px 8px;border-radius:6px;font:600 12px/1.3 system-ui,sans-serif;' +
+    'background:rgba(10,12,20,.9);color:#fff;border:1px solid rgba(255,255,255,.25);' +
+    'white-space:nowrap;transform:translate(14px,14px)';
+  map.getContainer().appendChild(tip);
+
+  const amaga = () => { tip.style.display = 'none'; };
+
+  function fontActual() {
+    const prodL = getLitresProduct();
+    if (prodL) {
+      const nom = nomPaletaLitres(prodL);
+      if (!nom) return null;
+      const frames = getLitresFrames() || [];
+      const frame = frames[getLitresFrameIndex()];
+      const url = urlDeFrame(frame);
+      const coords = (frame && typeof frame === 'object' && frame.coords) || PALETES[nom].coords;
+      return url && coords ? { nom, url, coords } : null;
+    }
+    if (!isRadarVisible()) return null;
+    const key = getKey();
+    const nom = PRODUCTE_A_PALETA[key];
+    const st = getLayerState(key);
+    if (!nom || !st || !st.initialized || !st.coords) return null;
+    const url = st.currentBlob || st.currentUrl;
+    return url ? { nom, url, coords: st.coords } : null;
+  }
+
+  async function actualitza() {
+    if (!enabled || !last) return amaga();
+    const f = fontActual();
+    if (!f) return amaga();
+    const mi = ++seq;
+    const { lngLat, point } = last;
+    let img;
+    try { img = await carregar(f.url); } catch (e) { return amaga(); }
+    if (mi !== seq) return;
+    const px = lngLatAPixel(f.coords, lngLat.lng, lngLat.lat, img.w, img.h);
+    if (!px) return amaga();
+    const d = img.ctx.getImageData(px[0], px[1], 1, 1).data;
+    if (d[3] < 10) return amaga();
+    const text = textDePixel(f.nom, d);
+    if (!text) return amaga();
+    tip.textContent = text;
+    tip.style.left = point.x + 'px';
+    tip.style.top = point.y + 'px';
+    tip.style.display = 'block';
+  }
+
+  map.on('mousemove', (e) => {
+    last = e;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; actualitza(); });
+  });
+  map.on('mouseout', () => { last = null; amaga(); });
+  // Refresca mentre l'animació canvia de frame amb el ratolí quiet
+  setInterval(() => { if (enabled && last) actualitza(); }, 350);
+
+  return {
+    setEnabled(v) { enabled = !!v; if (!enabled) amaga(); },
+    destroy() { tip.remove(); },
+  };
 }

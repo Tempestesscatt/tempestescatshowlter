@@ -60,7 +60,20 @@ export const SCALES = {
       [ 62, [200,   0,   0]], [ 64, [160,   0,   0]], [ 66, [230,   0, 200]],
       [ 68, [200,   0, 230]],
     ],
-    ticks: [-4, 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68],
+    // Cada marca: [valor_dBZ, text]. Classificació de convecció orientativa:
+    //   < 20 dBZ  -> convecció fluixa / precipitació feble
+    //   20-34 dBZ -> convecció suau (pluja moderada)
+    //   35-44 dBZ -> convecció moderada (ruixats forts)
+    //   >= 45 dBZ -> convecció forta (tempesta / calamarsa)
+    ticks: [
+      [  0, 'nula (0 dBZ)' ],
+      [ 10, 'poc notable (10 dBZ)'],
+      [ 20, 'dèbil (20 dBZ)'  ],
+      [ 30, 'suau (30 dBZ)'  ],
+      [ 40, 'moderada(40 dBZ)'],
+      [ 50, 'forta (50 dBZ)' ],
+      [ 60, 'severa (60 dBZ)' ],
+    ],
     format: (v) => {
       if (v >= 68) return '68+';
       if (v <= -4) return '< -4';
@@ -68,45 +81,46 @@ export const SCALES = {
     },
   },
 
-  // VRADH — Velocitat radial (Doppler)
-  // Verd   = cap al radar (negatiu)
-  // Vermell = allunyant-se (positiu)
-  // Blanc  = ~0 m/s (zona estàtica)
   vel: {
     label: 'Velocitat radial (VRADH)',
-    title: 'VRADH',
-    unit: 'm/s',
+    title: 'VRADH km/h',
+    unit: 'km/h',
     log: false,
-    min: -50,
-    max: 50,
+    min: -46 * 3.6,
+    max: 47 * 3.6,
     stops: [
-      [-50, [128,   0,   0]],
-      [-40, [160,   0,   0]],
-      [-30, [208,   0,   0]],
-      [-25, [255,   0,   0]],
-      [-20, [255,  64,  64]],
-      [-15, [255, 128, 128]],
-      [-10, [255, 176, 176]],
-      [ -5, [255, 224, 224]],
-      [ -3, [255, 255, 255]],
-      [  3, [255, 255, 255]],
-      [  5, [224, 255, 224]],
-      [ 10, [176, 255, 176]],
-      [ 15, [128, 255, 128]],
-      [ 20, [ 64, 255,  64]],
-      [ 25, [  0, 255,   0]],
-      [ 30, [  0, 208,   0]],
-      [ 40, [  0, 160,   0]],
-      [ 50, [  0, 128,   0]],
+      [-46, [237,   0, 134]],
+      [-40, [132,   4, 148]],
+      [-34, [ 28,   2, 153]],
+      [-28, [ 31, 108, 188]],
+      [-22, [ 39, 194, 216]],
+      [-16, [175, 237, 240]],
+      [-12, [ 87, 248, 108]],
+      [ -8, [  3, 203,   3]],
+      [ -4, [  2, 135,   2]],
+      [ -2, [114, 133, 112]],
+      [  0, [117, 117, 117]],
+      [  3, [136,  76,  86]],
+      [  6, [115,   0,   0]],
+      [ 12, [221,   0,   6]],
+      [ 18, [255, 149, 208]],
+      [ 24, [255, 224, 155]],
+      [ 30, [255, 154,  87]],
+      [ 36, [201,  86,  49]],
+      [ 42, [148,  46,  26]],
+      [ 47, [110,  12,   6]],
+    ].map(([v, c]) => [v * 3.6, c]),
+    ticks: [
+      [-144, "Ve a(-144 km/h)"],
+      [ -90, "Ve a(-90 km/h)"],
+      [ -36, "Ve a(-36 km/h)"],
+      [   0, 'Estatic(0 km/h)'],
+      [  36, "Marxa a(+36 km/h)"],
+      [  90, "Marxa a(+90 km/h)"],
+      [ 144, "Marxa a (+144 km/h)"],
     ],
-    ticks: [-50, -40, -30, -20, -10, -3, 3, 10, 20, 30, 40, 50],
-    format: (v) => {
-      if (v >= 50) return '50+';
-      if (v <= -50) return '< -50';
-      return v.toFixed(0);
-    },
+    format: (v) => v.toFixed(0),
   },
-
   lluvia: {
     label: 'Pluja (mm/h)',
     title: 'mm/h',
