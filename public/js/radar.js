@@ -861,7 +861,7 @@ function addCities(map) {
     const next = tiers[i + 1];
     map.addLayer({
       id: CITIES_PREFIX + i, type: 'symbol', source: CITIES_SRC,
-      minzoom: zoomMin, maxzoom: next ? next[0] : 24,
+      minzoom: zoomMin, maxzoom: 24,
       filter: ['==', ['get', 'nivell'], nivell],
       layout: {
         visibility: vis(state.citiesVisible),
